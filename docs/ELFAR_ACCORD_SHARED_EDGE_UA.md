@@ -41,6 +41,20 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py \
 
 Origin CA замінюється вручну після закінчення його строку або відкликання; Certbot renew його не подовжує. Повторний запуск такого встановлення потребує тих самих `--origin-cert`/`--origin-key`, щоб випадково не змінити постачальника сертифіката.
 
+## Якщо migrate завершується з помилкою ACCEPTED
+
+Якщо журнал `docker logs --tail 200 accord-niche-migrate-1` містить `UnsafeNewEnumValueUsageError: unsafe use of new value "ACCEPTED"`, оновіть `backend/alembic/env.py` зі збірки v1.6.5 або новішої. Потім від root:
+
+```bash
+cd /opt/accord-niche
+bash deploy/domains.sh --docker-edge build migrate api
+python3 scripts/connect_elfar_edge.py \
+  --origin-cert /etc/accord-niche/tls/origin.pem \
+  --origin-key /etc/accord-niche/tls/origin.key
+```
+
+Причина — нове значення PostgreSQL ENUM використовувалося до commit. Виправлення задає окрему транзакцію на кожну ревізію. Базу видаляти або виконувати `alembic stamp` не потрібно. Збережіть `.env.domains`, томи й приватний ключ. У режимі Let's Encrypt повторюйте сценарій зі своїми початковими аргументами замість Origin CA.
+
 ## Підготовка для Let's Encrypt
 
 1. Розпакуйте оновлену повну збірку в `/opt/accord-niche`, зберігши `.env.domains`. Скрипт не генерує й не змінює паролі.

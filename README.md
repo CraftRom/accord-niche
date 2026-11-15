@@ -14,6 +14,8 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py
 
 ## Перший запуск
 
+Виправлення помилки міграцій PostgreSQL `unsafe use of new value "ACCEPTED"` описане у [примітках v1.6.5](ACCORD_NICHE_v1.6.5_UA.md). Оновіть `backend/alembic/env.py` і перебудуйте backend перед повторним запуском; наявні томи зберігаються.
+
 Потрібні Python 3.11+, Docker Engine та Compose v2. У каталозі ACCORD:
 
 ```bash
