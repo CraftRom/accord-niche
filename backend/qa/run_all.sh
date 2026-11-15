@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# Повний цикл тестування. Запуск: bash qa/run_all.sh
+#
+# Провалом вважається позначка ✗, рядок ПРОВАЛЕНО або ненульовий код виходу.
+# Трейсбеки в логах самі по собі не рахуються: частина наборів навмисно
+# імітує збої Telegram і бази, і виняток там — очікуваний результат. А от
+# набір, що впав і вийшов з кодом 1, раніше показувався «ok», якщо встиг
+# упасти до першої позначки ✗.
+set -u
+cd "$(dirname "$0")/.."
+export TRUSTED_HOSTS="testserver,t,test,qa,localhost,127.0.0.1,www.elfar.pp.ua"
+export PYTHONPATH="$PWD:$PWD/qa"
+PY="${PY:-python3}"
+
+# Без aiosqlite кожен Python-набір падає на імпорті, і зведення показує
+# десятки однакових провалів замість однієї причини.
+if ! $PY -c "import aiosqlite" 2>/dev/null; then
+  echo "Не встановлено залежності QA: pip install -r requirements-qa.txt"
+  exit 2
+fi
+fail=0
+# One private directory per run; never delete another process's SQLite files.
+QA_RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/elfar-qa-run.XXXXXX")
+export QA_DATA_DIR="$QA_RUN_DIR/db"
+mkdir -p "$QA_DATA_DIR"
+# Never inherit live credentials or service URLs from a VPS shell/.env.
+export DATABASE_URL="sqlite+aiosqlite:///$QA_DATA_DIR/default.db"
+export BOT_TOKEN="777001:TESTTOKEN" JWT_SECRET="$(printf 't%.0s' {1..32})"
+export REDIS_URL="" SALESDRIVE_API_KEY="" NOVAPOSHTA_API_KEY=""
+trap 'rm -rf -- "$QA_DATA_DIR"' EXIT
+QA_LOG_DIR="${QA_LOG_DIR:-$QA_RUN_DIR/logs}"
+mkdir -p "$QA_LOG_DIR"
+
+run() {
+  printf '  %-13s ' "$1"
+  out=$(timeout "${QA_TIMEOUT_SECONDS:-60}" $PY "$2" 2>&1)
+  code=$?
+  echo "$out" > "$QA_LOG_DIR/$1.log"
+  summary=$(echo "$out" | grep -E ':[[:space:]]*[0-9]+/[0-9]+|Всього провалено|усі контракти' | tail -1)
+  # Код виходу враховується, як і в run_node. Без цього набір, що падав
+  # із traceback до першої перевірки, показувався «ok».
+  if [[ $code -ne 0 ]] || echo "$out" | grep -qE '✗|ПРОВАЛЕНО'; then
+    echo "ПРОВАЛ (код $code) — ${summary:-див. деталі}"
+    echo "$out" | grep -E '✗' | head -5 | sed 's/^/      /'
+    echo "$out" | grep -qE '✗' || echo "$out" | tail -4 | sed 's/^/      /'
+    fail=1
+  else
+    echo "${summary:-ok}"
+  fi
+}
+
+echo "QA logs: $QA_LOG_DIR"
+echo "Комплектність"
+printf '  %-13s ' "wiring"
+if out=$($PY qa/audit_wiring.py 2>&1) && ! echo "$out" | grep -q "✗"; then
+  echo "усі рівні звʼязані"
+else
+  echo "ПРОВАЛ"; echo "$out" | grep "✗" | head -5 | sed 's/^/      /'; fail=1
+fi
+
+# Тести вітрини на Node. Їх не було в цьому переліку взагалі: три набори
+# лежали в miniapp/tests і не запускались ніколи, хоч саме вони стережуть
+# стан «Збереженого» й видимість полів введення.
+# $1 — назва в зведенні, $2 — шлях до набору, $3 — каталог застосунку
+# (за замовчуванням вітрина). Каталог параметром, а не другою копією
+# цього ж блоку: копія для панелі вже існувала окремо, і будь-яка правка
+# тут довелося б робити двічі.
+run_node() {
+  printf '  %-13s ' "$1"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "ПРОВАЛ — немає node"
+    fail=1
+    return
+  fi
+  # Код виходу враховується разом із позначками. Раніше дивились лише на
+  # ✗/ПРОВАЛЕНО у виводі: набір, що друкував «FAIL» і виходив з кодом 1,
+  # показувався зеленим — так client-logging падав непоміченим.
+  out=$(cd "../${3:-miniapp}" && node "$2" 2>&1)
+  code=$?
+  if [[ $code -ne 0 ]] || echo "$out" | grep -qE '✗|ПРОВАЛЕНО|FAIL'; then
+    echo "ПРОВАЛ (код $code)"
+    # Без позначок у виводі (падіння до першої перевірки) показуємо хвіст.
+    echo "$out" | grep -E '✗|FAIL' | head -5 | sed 's/^/      /'
+    echo "$out" | grep -qE '✗|FAIL' || echo "$out" | tail -3 | sed 's/^/      /'
+    fail=1
+  else
+    echo "$(echo "$out" | tail -1)"
+  fi
+}
+
+echo
+echo "Вітрина"
+run_node attribution tests/attribution.mjs
+run_node cart-response tests/cart-response.mjs
+run_node catalog-order tests/catalog-order.mjs
+run_node wishlist-state tests/wishlist-state.mjs
+run_node wishlist-wiring tests/wishlist-wiring.mjs
+run_node support-requests tests/support-requests.mjs
+run_node checkout tests/checkout-validation.mjs
+run_node money tests/money.mjs
+run_node tg-contact tests/checkout-telegram-contact.mjs
+run_node input-visibility tests/input-visibility.mjs
+run_node field-paint tests/field-paint.mjs
+run_node phone tests/phone.mjs
+run_node client-logging tests/client-logging.mjs
+run_node legacy-bridge tests/legacy-bridge.mjs
+run_node bridge-runtime tests/legacy-bridge-runtime.mjs
+# Набори полів і дизайну. field-guard і text-input стерегли поля, але не
+# входили в зведення, як і колишній ui-refresh (він друкував OK/FAIL, а
+# зведення бачить лише ✓/✗). Дизайн-набір замінює ui-refresh.
+run_node field-guard tests/field-guard.mjs
+run_node text-input tests/text-input.mjs
+run_node design tests/storefront-design.mjs
+run_node ui-refresh tests/ui-refresh.mjs
+run_node checkout-required tests/checkout-required-fields.mjs
+run_node deep-actions tests/deep-actions.mjs
+run_node crm-status-ui tests/crm-status-source.mjs dashboard
+run_node crm-api-rich tests/crm-api-richness.mjs dashboard
+run_node crm-order-update tests/crm-order-update.mjs dashboard
+run_node crm-card-payment-rule tests/crm-card-payment-rule.mjs dashboard
+run_node order-live-sync tests/order-live-sync.mjs dashboard
+run_node order-chat-history tests/order-chat-history.mjs dashboard
+run_node chat-drafts tests/chat-drafts.mjs dashboard
+run_node chat-drafts-persist tests/chat-drafts-persistence.mjs dashboard
+run_node filters tests/filters.mjs dashboard
+run_node new-markers tests/new-order-message-markers.mjs dashboard
+run_node catalog-ux tests/catalog-ux.mjs dashboard
+run_node support-ux tests/support-ux.mjs dashboard
+run_node notifications tests/notifications.mjs dashboard
+# Ці три набори існували, але в зведення не входили. Два з них уже падали
+# (закріплена версія 1.32.1), і цього ніхто не бачив.
+run_node payment-ux tests/order-payment-ux.mjs dashboard
+run_node volume tests/notification-volume.mjs dashboard
+run_node performance tests/performance.mjs dashboard
+run_node stats-business-ui tests/stats-business.mjs dashboard
+run_node form-chart tests/form-chart-normalization.mjs dashboard
+run_node deep-actions-ui tests/deep-actions.mjs dashboard
+run_node promo-domain-ux tests/promo-domain-ux.mjs dashboard
+run_node promo-form tests/promo-form.mjs dashboard
+run_node settings-model tests/settings-model.mjs dashboard
+run_node scroll tests/scroll.mjs
+
+echo
+echo "Контракти й дані"
+run domains qa/qa_domain_compatibility.py
+
+run miniapp-support qa/qa_miniapp_support.py
+run support-migration qa/qa_support_request_migration.py
+run bot-lifecycle qa/qa_bot_lifecycle.py
+run bot-inputs qa/qa_bot_inputs.py
+run bot-checkout-nav qa/qa_bot_checkout_navigation.py
+run bot-text-receipts qa/qa_bot_text_receipts.py
+run qa-isolation qa/qa_isolation.py
+run cart-unstick qa/qa_cart_unstick.py
+run checkout-integrity qa/qa_checkout_integrity.py
+run promo-codes qa/qa_promo_codes.py
+run promo-categories qa/qa_promo_categories.py
+run promo-category-migration qa/qa_promo_category_migration.py
+run working-data qa/qa_working_data.py
+run after-sales-chat qa/qa_after_sales_chat.py
+run enum-migration qa/qa_migration_enum_backfill.py
+run checkout-precision qa/qa_checkout_precision.py
+run tg-contact qa/qa_telegram_contact_bridge.py
+run cart-lock qa/qa_postgres_cart_lock.py
+run deep-integrity qa/qa_deep_integrity.py
+run order-chat-history qa/qa_order_chat_history.py
+run contracts tests_contracts.py
+run repo tests_repo.py
+run catalog-hierarchy qa/qa_catalog_hierarchy.py
+run catalog-import qa/qa_catalog_import.py
+run catalog-deploy qa/qa_catalog_deploy.py
+# Наскрізні сценарії бота. Існували, але в зведення не входили — і
+# tests_bot падав непоміченим, відколи маршрут статусів отримав обовʼязкове
+# «Прийнято». Саме він проганяє кнопки статусу в чаті.
+run bot tests_bot.py
+run smoke-api tests_smoke.py
+run api tests_api.py
+echo
+echo "Рівні тестування"
+run smoke qa/qa_smoke.py
+run negative qa/qa_negative.py
+run security qa/qa_security.py
+run modern-security qa/qa_modern_security.py
+run chat-draft-scope qa/qa_chat_draft_scope.py
+run session-expiry qa/qa_session_expiry_1519.py
+run revoke qa/qa_revoke.py
+run headers qa/qa_headers.py
+run transport-sec qa/qa_transport_security.py
+run security-log qa/qa_security_log.py
+run database qa/qa_db.py
+run auto-replies qa/qa_auto_replies.py
+run faq qa/qa_faq.py
+run faq-intent-router qa/qa_faq_intent_router.py
+run faq-delivery qa/qa_dynamic_delivery_faq.py
+run faq-flow qa/qa_faq_flow.py
+run support qa/qa_support.py
+run panel-notify qa/qa_panel_notifications.py
+run faq-public qa/qa_faq_public.py
+run env qa/qa_env.py
+run docs qa/qa_docs.py
+run legal qa/qa_legal.py
+run deploy-phases qa/qa_deploy_phases.py
+run deploy-security qa/qa_deploy_security.py
+run deploy-health qa/qa_deploy_health.py
+run promo-google qa/qa_promo_google.py
+run promo-landing qa/qa_promo_landing.py
+run promo-cloudflare qa/qa_promo_cloudflare.py
+run external-api qa/qa_external_api_contracts.py
+run injection-boundaries qa/qa_injection_boundaries.py
+run external-origin qa/qa_external_origin.py
+run external-google qa/qa_external_google.py
+run scheduler qa/qa_scheduler.py
+run broadcast-recovery qa/qa_broadcast_recovery.py
+run broadcast-content qa/qa_broadcast_content.py
+run broadcast-content-migration qa/qa_broadcast_content_migration.py
+run public qa/qa_public_chat.py
+run logging qa/qa_logging.py
+run storefront-log qa/qa_storefront_logging.py
+run storage-lifecycle qa/qa_storage_lifecycle.py
+run logs-api qa/qa_logs_api.py
+run backups-api qa/qa_backups_api.py
+run status-flow qa/qa_status_flow.py
+run stats-business qa/qa_stats_business.py
+run acquisition qa/qa_acquisition_analytics.py
+run financial-periods qa/qa_financial_periods.py
+run support-history qa/qa_support_history.py
+run crm-terminal qa/qa_crm_terminal_outcomes.py
+run background-crm-identity qa/qa_background_crm_and_identity.py
+run salesdrive-background-batch qa/qa_salesdrive_background_batch.py
+run runtime-freshness qa/qa_runtime_freshness.py
+run realtime-status qa/qa_realtime_status_sync.py
+run status-autonomy qa/qa_status_autonomy_1516.py
+run auto-accept qa/qa_auto_accept.py
+run recon qa/qa_recon.py
+run alerts qa/qa_alerts.py
+run edges qa/qa_edges.py
+run dialect qa/qa_dialect.py
+run orders_delete qa/qa_orders_delete.py
+run settings_save qa/qa_settings_save.py
+run novaposhta qa/qa_novaposhta.py
+run product-io qa/qa_product_io.py
+run e2e qa/qa_e2e.py
+run salesdrive qa/qa_salesdrive.py
+run sd-dicts qa/qa_salesdrive_dictionaries.py
+run sd-no-backfill qa/qa_salesdrive_no_backfill.py
+run sd-read-side qa/qa_salesdrive_read_side.py
+run sd-rich-read qa/qa_salesdrive_rich_read.py
+run sd-order-update qa/qa_salesdrive_order_update.py
+run crm-live-sync qa/qa_crm_live_sync.py
+run crm-status qa/qa_crm_status_authority.py
+run salesdrive-source qa/qa_salesdrive_source_guard.py
+run wishlists qa/qa_wishlists.py
+run performance qa/qa_perf.py
+
+# Fixed system groups and domain bootstrap use pytest/SQLite and isolated repositories.
+run_node groups tests/roles.mjs dashboard
+run accord-public qa/qa_accord_public_catalog.py
+run accord-site qa/qa_accord_website_security.py
+printf '  %-13s ' "domain-groups"
+out=$(env -u DATABASE_URL -u DOMAIN_ONLY -u DASHBOARD_PUBLIC_URL "$PY" -m pytest tests_accord qa/qa_accord_domain_split.py -q 2>&1)
+code=$?
+printf '%s\n' "$out" > "$QA_LOG_DIR/domain-groups.log"
+if [[ $code -ne 0 ]]; then
+  echo "ПРОВАЛ (код $code)"; printf '%s\n' "$out" | tail -8; fail=1
+else
+  printf '%s\n' "$out" | tail -1
+fi
+
+echo
+[ $fail -eq 0 ] && echo "Усі набори пройдено" || echo "Є провали — див. вище"
+exit $fail
+

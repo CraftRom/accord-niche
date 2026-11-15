@@ -1,0 +1,294 @@
+"""Завдання планувальника.
+
+Кожне завдання самодостатнє: бере власне зʼєднання з базою, читає чинні
+налаштування магазину і саме вирішує, чи його час настав. Так планувальник
+лишається тонким циклом, а завдання можна викликати поштучно з тестів.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import subprocess
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from shop.config import settings
+from shop.entities import BroadcastStatus
+from shop.repo.factory import open_repo
+from shop.services import broadcast as broadcast_service
+from shop.services.shop_settings import get_shop_settings
+
+log = logging.getLogger("scheduler")
+
+
+# --------------------------------------------------------------- розсилки
+
+async def run_due_broadcasts() -> int:
+    """Запускає розсилки, чий час настав. Повертає кількість запущених.
+
+    Тихі години перевіряються тут, а не при плануванні: адміністратор може
+    змінити їх після того, як розсилку вже поставлено в чергу, і правильним
+    є те значення, яке чинне на момент відправки.
+    """
+    now = datetime.now(timezone.utc)
+    async with open_repo() as repo:
+        shop = await get_shop_settings(repo)
+        if shop.in_quiet_hours(now):
+            return 0
+        due = await repo.due_broadcasts(now)
+    started = 0
+    # One bounded chunk per candidate per tick, so CRM/backup tasks still run.
+    # Selection grants no ownership: send_chunk performs an atomic lease claim.
+    for item in due:
+        try:
+            async with open_repo() as repo:
+                count, finished = await broadcast_service.send_chunk(
+                    repo, item, min(max(1, settings.broadcast_chunk), 30))
+            started += int(count > 0 or finished)
+        except Exception:
+            log.exception("Розсилка %s чекає наступного recovery-тіку", item.id)
+    return started
+
+
+# ---------------------------------------------------------------- бекапи
+
+def _backup_dir() -> Path:
+    from shop.paths import backups_dir
+
+    return backups_dir()
+
+
+def _pg_dump(target: Path) -> None:
+    """Знімок бази через pg_dump у стиснутому власному форматі.
+
+    Формат `custom` (-Fc), а не звичайний SQL: він стискається вдвічі й
+    дозволяє відновлювати окремі таблиці через pg_restore.
+    """
+    env = dict(os.environ, PGPASSWORD=settings.postgres_password)
+    subprocess.run(
+        [
+            "pg_dump",
+            "-h", settings.postgres_host,
+            "-p", str(settings.postgres_port),
+            "-U", settings.postgres_user,
+            "-d", settings.postgres_db,
+            "-Fc", "-f", str(target),
+        ],
+        check=True, env=env, capture_output=True, timeout=1800,
+    )
+
+
+async def run_backup_if_due(state: dict) -> bool:
+    """Один бекап на добу о заданій годині за часом магазину.
+
+    `state` — памʼять між тіками в межах процесу: дата останнього бекапу.
+    Перезапуск контейнера скидає її, тому додатково перевіряємо, чи файл
+    за сьогодні вже не лежить на диску.
+    """
+    if not settings.backup_enabled:
+        return False
+
+    async with open_repo() as repo:
+        shop = await get_shop_settings(repo)
+
+    local = datetime.now(timezone.utc).astimezone(shop.tz)
+    if local.hour != shop.backup_hour:
+        return False
+    if state.get("last_backup_date") == local.date():
+        return False
+
+    target = _backup_dir() / f"elfar-{local:%Y-%m-%d}.dump"
+    if target.exists():
+        state["last_backup_date"] = local.date()
+        return False
+
+    started = time.monotonic()
+    try:
+        _pg_dump(target)
+    except subprocess.CalledProcessError as exc:
+        log.error("Бекап не вдався: %s", (exc.stderr or b"").decode()[:300])
+        target.unlink(missing_ok=True)
+        return False
+    except FileNotFoundError:
+        log.error("pg_dump не знайдено в образі — бекап пропущено")
+        return False
+
+    state["last_backup_date"] = local.date()
+    size_mb = target.stat().st_size / 1024 / 1024
+    log.info("Бекап %s готовий: %.1f МБ за %.0f с", target.name, size_mb, time.monotonic() - started)
+
+    return True
+
+
+def prune_logs(retention_days: int) -> int:
+    """Прибирає ротовані файли журналу, старші за ретенцію.
+
+    Саме ротовані (api.log.1, bot.log.3), а не поточні: активний файл
+    видаляти не можна — процес тримає його відкритим і продовжить писати
+    в неіснуючий inode, після чого журнал зникне мовчки.
+    """
+    from shop.paths import logs_dir
+
+    if retention_days < 1:
+        return 0
+    directory = logs_dir()
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    removed = 0
+    for item in directory.glob("*.log.*"):
+        try:
+            if datetime.fromtimestamp(item.stat().st_mtime, timezone.utc) < cutoff:
+                item.unlink()
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        log.info("Видалено старих файлів журналу: %s", removed,
+                 extra={"event": "logs.pruned", "removed": removed,
+                        "retentionDays": retention_days})
+    return removed
+
+
+def prune_backups(retention_days: int) -> int:
+    """Прибирає бекапи, старші за ретенцію. Повертає кількість видалених."""
+    if retention_days < 1:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    removed = 0
+    for item in _backup_dir().glob("elfar-*.dump"):
+        if datetime.fromtimestamp(item.stat().st_mtime, timezone.utc) < cutoff:
+            item.unlink(missing_ok=True)
+            removed += 1
+    if removed:
+        log.info("Видалено старих бекапів: %s (ретенція %s днів)", removed, retention_days)
+    return removed
+
+
+# ------------------------------------------------------- строк зберігання
+
+# Скільки днів після «Виконано» тримаємо коди вкладень.
+#
+# Три дні — це запас на «а надішліть ще раз квитанцію» й на розбір
+# спірного замовлення одразу після видачі. Далі квитанція не потрібна
+# нікому, а код доступу до неї, який у нас лежить, лишається чинним:
+# витік бази означав би витік чужих знімків із банківськими додатками.
+CHAT_FILE_RETENTION_DAYS = 3
+MESSAGE_HOT_RETENTION_DAYS = 180
+PANEL_NOTIFICATION_RETENTION_DAYS = 90
+
+
+async def forget_old_chat_files() -> int:
+    """Прибирає коди вкладень давно виконаних замовлень.
+
+    Сам файл лишається в Telegram — видалити його звідти ми не можемо й
+    не маємо права. Прибираємо своє: посилання, за яким його дістають.
+    """
+    async with open_repo() as repo:
+        cleared = await repo.forget_chat_files(CHAT_FILE_RETENTION_DAYS)
+    if cleared:
+        log.info("Прибрано вкладень за строком зберігання: %s", cleared)
+    return cleared
+
+
+async def run_housekeeping() -> dict:
+    """Добове обслуговування, незалежне від успіху резервної копії.
+
+    Раніше prune_logs/prune_backups жили в ``run_backup_if_due``. Якщо backup
+    був вимкнений, не настав його час або ``pg_dump`` падав, retention не
+    працював узагалі. Housekeeping має власний scheduler gate, тому прибирає
+    старе навіть при проблемах із резервним копіюванням.
+    """
+    logs_removed = prune_logs(settings.log_retention_days)
+
+    backups_removed = 0
+    try:
+        async with open_repo() as repo:
+            shop = await get_shop_settings(repo)
+        backups_removed = prune_backups(shop.backup_retention_days)
+    except Exception:
+        # Вкладення нижче все одно пробуємо очистити: одна операція
+        # обслуговування не повинна блокувати решту.
+        log.exception("Не вдалося застосувати retention резервних копій")
+
+    chat_files_removed = 0
+    try:
+        chat_files_removed = await forget_old_chat_files()
+    except Exception:
+        log.exception("Не вдалося очистити старі посилання вкладень")
+
+    # Cold-tier: завершені діалоги не повинні роками роздувати hot tables та
+    # їхні індекси. Текст НЕ видаляється — він стискається в один gzip chunk
+    # на замовлення/support thread і прозоро читається тим самим API.
+    archived = {"orders": 0, "order_messages": 0, "support_threads": 0, "support_messages": 0}
+    panel_notifications_removed = 0
+    try:
+        async with open_repo() as repo:
+            archived = await repo.archive_cold_messages(
+                MESSAGE_HOT_RETENTION_DAYS, batch=200
+            )
+            panel_notifications_removed = await repo.prune_panel_notifications(
+                PANEL_NOTIFICATION_RETENTION_DAYS
+            )
+    except Exception:
+        log.exception("Не вдалося виконати DB lifecycle housekeeping")
+
+    result = {
+        "logs_removed": logs_removed,
+        "backups_removed": backups_removed,
+        "chat_files_removed": chat_files_removed,
+        "panel_notifications_removed": panel_notifications_removed,
+        **{f"archived_{key}": value for key, value in archived.items()},
+    }
+    if any(result.values()):
+        log.info("Housekeeping завершено", extra={"event": "housekeeping.done", **result})
+    return result
+
+
+async def sync_salesdrive() -> dict:
+    """Доганяє чергу SalesDrive: відправки, що не пройшли одразу.
+
+    Основна відправка йде з процесу API в мить зміни. Тут — страховка:
+    SalesDrive лежав, ключ поміняли, API перезапустився посеред запиту.
+    """
+    from shop.repo.factory import open_repo
+    from shop.services import salesdrive
+
+    async with open_repo() as repo:
+        result = await salesdrive.sync_pending(repo)
+    if result.get("synced") or result.get("failed"):
+        log.info("SalesDrive: синхронізовано %s, не вдалося %s",
+                 result.get("synced", 0), result.get("failed", 0),
+                 extra={"event": "salesdrive.sync.pass", **result})
+    return result
+
+
+async def refresh_salesdrive_orders() -> dict:
+    """Shared CRM read-side repair path used by the dedicated scheduler.
+
+    Actual cadence and cross-process de-duplication live in
+    ``shop.services.salesdrive_reconciler`` so API watchdog and scheduler can
+    never spend SalesDrive quota independently. The scheduler is allowed to
+    continue without Redis because it is the primary background worker; the
+    API watchdog backs off in that failure mode to avoid duplicate traffic.
+    """
+    from shop.services.salesdrive_reconciler import refresh_once
+
+    result = await refresh_once(allow_without_redis=True, source="scheduler")
+    if result.get("failed"):
+        log.warning(
+            "SalesDrive background refresh: перевірено %s, оновлено %s, "
+            "помилок %s, відкладено %s",
+            result.get("checked", 0), result.get("refreshed", 0),
+            result.get("failed", 0), result.get("deferred", 0),
+            extra={"event": "salesdrive.background_refresh.pass", **result},
+        )
+    elif result.get("refreshed"):
+        log.info(
+            "SalesDrive background refresh: перевірено %s, оновлено %s, відкладено %s",
+            result.get("checked", 0), result.get("refreshed", 0),
+            result.get("deferred", 0),
+            extra={"event": "salesdrive.background_refresh.pass", **result},
+        )
+    return result

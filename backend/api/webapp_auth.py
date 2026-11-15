@@ -1,0 +1,146 @@
+"""Автентифікація Telegram Mini App.
+
+Telegram передає у вікно Mini App рядок initData, підписаний ключем бота.
+Перевірка підпису — єдине, що відрізняє справжнього покупця від будь-кого,
+хто відкрив API у браузері. Без неї можна було б оформити замовлення від
+чужого імені, підставивши довільний tg_id.
+
+Алгоритм описаний у документації Telegram:
+  secret_key   = HMAC_SHA256(key="WebAppData", msg=<bot_token>)
+  data_check   = рядки "ключ=значення", відсортовані за ключем, через \\n
+  очікуваний   = HMAC_SHA256(key=secret_key, msg=data_check).hexdigest()
+"""
+from __future__ import annotations
+
+import hashlib
+import logging
+import hmac
+import json
+import time
+from urllib.parse import parse_qsl
+
+from fastapi import Depends, Header, HTTPException
+
+from shop import security_log as security
+from shop.config import settings
+from shop.entities import User
+from shop.repo.base import Repository
+from shop.repo.factory import get_repo
+from shop.services.shop_service import get_or_create_user
+
+# Скільки максимум живе підпис. Telegram не оновлює initData під час сесії,
+# тож надто короткий строк вибиватиме покупця посеред оформлення.
+MAX_AGE_SECONDS = 24 * 60 * 60
+
+log = logging.getLogger(__name__)
+
+
+class InitDataError(Exception):
+    pass
+
+
+def parse_init_data(init_data: str, bot_token: str, max_age: int = MAX_AGE_SECONDS) -> dict:
+    """Перевіряє підпис і повертає розібрані поля. Кидає InitDataError."""
+    if not init_data:
+        raise InitDataError("Порожній initData")
+    if len(init_data) > 16_384:
+        raise InitDataError("initData завеликий")
+    if not bot_token:
+        raise InitDataError("Не заданий BOT_TOKEN")
+
+    raw_pairs = parse_qsl(init_data, keep_blank_values=True)
+    names = [k for k, _ in raw_pairs]
+    if len(names) != len(set(names)):
+        raise InitDataError("Дубльований параметр initData")
+    pairs = dict(raw_pairs)
+    received = pairs.pop("hash", None)
+    if not received or len(received) != 64 or any(c not in "0123456789abcdefABCDEF" for c in received):
+        raise InitDataError("У initData немає підпису")
+
+    check_string = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs))
+    secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    expected = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+
+    # compare_digest — щоб не зливати підпис через час порівняння
+    if not hmac.compare_digest(expected, received.lower()):
+        raise InitDataError("Підпис не збігається")
+
+    auth_date = pairs.get("auth_date", "")
+    if not auth_date.isascii() or not auth_date.isdecimal() or int(auth_date) <= 0:
+        raise InitDataError("Зіпсований або відсутній auth_date")
+    age = time.time() - int(auth_date)
+    if age < -300:
+        raise InitDataError("auth_date з майбутнього")
+    if max_age and age > max_age:
+        raise InitDataError("Сесію прострочено, перезапустіть застосунок")
+
+    try:
+        user = json.loads(pairs.get("user", ""))
+        if not isinstance(user, dict) or type(user.get("id")) is not int or not 0 < user["id"] < 2 ** 52:
+            raise ValueError()
+        for field, limit in (("username", 64), ("first_name", 128), ("last_name", 128)):
+            if field in user and (not isinstance(user[field], str) or len(user[field]) > limit):
+                raise ValueError()
+        pairs["user"] = user
+    except (json.JSONDecodeError, ValueError, TypeError):
+        raise InitDataError("Зіпсовані дані користувача")
+
+    return pairs
+
+
+async def require_webapp_user(
+    x_telegram_init_data: str = Header(default=""),
+    repo: Repository = Depends(get_repo),
+) -> User:
+    """Покупець, який відкрив Mini App. Створюється при першому заході."""
+    try:
+        data = parse_init_data(x_telegram_init_data, settings.bot_token)
+    except InitDataError as exc:
+        # Не кожен 401 є атакою. Telegram не оновлює initData в уже
+        # відкритому WebView, тому прострочення — нормальний lifecycle
+        # довгої сесії. Підроблений/зіпсований підпис лишається warning.
+        reason = str(exc)
+        expired = reason.startswith("Сесію прострочено")
+        missing = not x_telegram_init_data
+        write_log = log.info if (expired or missing) else log.warning
+        write_log(
+            "initData відхилено: %s (довжина заголовка: %d, поля: %s)",
+            exc,
+            len(x_telegram_init_data or ""),
+            "не зберігаються",
+        )
+        if missing:
+            event = "security.initdata.missing"
+        elif expired:
+            event = "security.initdata.expired"
+        else:
+            event = "security.initdata.rejected"
+        security.record(event, reason=reason)
+        raise HTTPException(401, reason)
+
+    tg_user = data.get("user") or {}
+    tg_id = tg_user.get("id")
+    if not tg_id:
+        raise HTTPException(401, "У initData немає користувача")
+
+    referral_code = data.get("start_param")
+    user, _ = await get_or_create_user(
+        repo,
+        tg_id=int(tg_id),
+        username=tg_user.get("username"),
+        first_name=tg_user.get("first_name"),
+        # start_param несе реферальний код із посилання t.me/bot?startapp=<code>
+        referral_code=referral_code,
+    )
+
+    # get_or_create_user прив'язує реферера лише при створенні. Той, хто вже
+    # заходив у бот, але реферера не має, інакше втрачав би запрошення —
+    # у чаті таке посилання спрацьовує, і вітрина не має поводитись інакше.
+    if referral_code and not user.referrer_id:
+        referrer = await repo.get_user_by_referral_code(referral_code.strip())
+        if referrer and referrer.id != user.id:
+            await repo.set_user_referrer(user, referrer.id)
+    if user.is_blocked:
+        security.record("security.customer.blocked", actor=str(tg_id))
+        raise HTTPException(403, "Доступ обмежено")
+    return user

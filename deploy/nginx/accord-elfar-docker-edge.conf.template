@@ -1,0 +1,65 @@
+# Sample additional server blocks inside ELFAR's Nginx container.
+# Mount this into a directory included from the http context; connect
+# ELFAR nginx to the external network accord-shared-edge. Do not put
+# dashboard on this network. Certificate paths must be mounted into ELFAR.
+# No server block for dashboard: Cloudflare Tunnel + Access required.
+server {
+    listen 80;
+    server_name accordniche.pp.ua shop.accordniche.pp.ua;
+    if ($host !~ ^(accordniche\.pp\.ua|shop\.accordniche\.pp\.ua)$) { return 444; }
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 308 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_tokens off;
+    http2 on;
+    server_name accordniche.pp.ua;
+    if ($host != accordniche.pp.ua) { return 444; }
+    ssl_certificate __ACCORD_CERT__;
+    ssl_certificate_key __ACCORD_KEY__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    location / {
+        set $accord_website http://accord-website:80;
+        proxy_pass $accord_website;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+server {
+    listen 443 ssl;
+    server_tokens off;
+    http2 on;
+    server_name shop.accordniche.pp.ua;
+    if ($host != shop.accordniche.pp.ua) { return 444; }
+    ssl_certificate __ACCORD_CERT__;
+    ssl_certificate_key __ACCORD_KEY__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    location ^~ /api/telegram/ {
+        access_log off;
+        set $accord_miniapp http://accord-miniapp:80;
+        proxy_pass $accord_miniapp;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+    location / {
+        set $accord_miniapp http://accord-miniapp:80;
+        proxy_pass $accord_miniapp;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_buffering off;
+        proxy_read_timeout 370s;
+    }
+}

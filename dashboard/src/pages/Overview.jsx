@@ -1,0 +1,472 @@
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import { useSearchParams } from 'react-router-dom'
+import { api } from '../api'
+import { AnalyticsControls, MarketingMetrics, AnalyticsOrders, SpendEditor, dateInZone } from '../components/AnalyticsPanels'
+import { ManagedTable } from '../components/ManagedTable'
+import { ClosedPeriods } from '../components/ClosedPeriods'
+import { STATUS_LABELS } from '../components/StatusRail'
+import { StatusBadge } from '../components/OrderStatus'
+import { ErrorBar, Loading, money } from '../components/ui'
+import { useVisiblePolling } from '../components/useVisiblePolling'
+
+const RevenueChart = lazy(() => import('../components/RevenueChart'))
+
+const PERIODS = [
+  { key: 'today', label: 'Сьогодні' },
+  { key: '7d', label: '7 днів' },
+  { key: 'month', label: 'Цей місяць' },
+  { key: '90d', label: '90 днів' },
+  { key: 'all', label: 'Весь час' },
+  { key: 'custom', label: 'Довільні дати' },
+]
+
+function Metric({ label, value, sub, tone, change }) {
+  return (
+    <div className={`card metric ${tone || ''}`}>
+      <div className="label">{label}</div>
+      <div className="value">{value}</div>
+      {change !== undefined && change !== null && (
+        <div className={`delta ${change >= 0 ? 'up' : 'down'}`}>
+          {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(1)}% до попереднього періоду
+        </div>
+      )}
+      {sub && <div className="sub">{sub}</div>}
+    </div>
+  )
+}
+
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд']
+
+function Bars({ title, hint, labels, values }) {
+  const peak = Math.max(1, ...values)
+  return (
+    <div className="card">
+      <h2 style={{ marginTop: 0 }}>{title}</h2>
+      {hint && <p className="faint" style={{ marginTop: 0 }}>{hint}</p>}
+      <div className="bars" tabIndex={0} role="group" aria-label={title}>
+        {values.map((value, index) => (
+          <div className="bar-slot" key={labels[index]}>
+            <div className="bar-track">
+              <div
+                className={`bar-fill ${value === peak && value > 0 ? 'peak' : ''}`}
+                style={{ height: `${Math.round((value / peak) * 100)}%` }}
+                title={`${labels[index]}: ${value}`}
+              />
+            </div>
+            <span className="bar-label">{labels[index]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Split({ title, hint, rows }) {
+  const total = rows.reduce((sum, row) => sum + row.value, 0)
+  return (
+    <div className="card">
+      <h2 style={{ marginTop: 0 }}>{title}</h2>
+      {hint && <p className="faint" style={{ marginTop: 0 }}>{hint}</p>}
+      {total === 0 ? (
+        <p className="faint">За цей період даних немає.</p>
+      ) : (
+        rows.map((row) => (
+          <div className="split-row" key={row.label}>
+            <div className="row-between">
+              <span>{row.label}</span>
+              <span className="num">
+                {row.value} · {Math.round((row.value / total) * 100)}%
+              </span>
+            </div>
+            <div className="split-track">
+              <div className="split-fill" style={{ width: `${(row.value / total) * 100}%` }} />
+            </div>
+            {row.note && <p className="faint" style={{ margin: '2px 0 0' }}>{row.note}</p>}
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
+function FinanceLegend({ summary }) {
+  return (
+    <div className="card stats-finance-legend">
+      <div className="stats-finance-head">
+        <div>
+          <h2>Як рахуються гроші</h2>
+          <p className="faint">Проданим товар вважається тільки після CRM-статусу «Продаж»; отримані кошти рахуються окремо.</p>
+        </div>
+        <span className="chip">Період</span>
+      </div>
+      <div className="stats-finance-grid">
+        <div>
+          <span className="stats-finance-dot actual" />
+          <div><b>Фактично в CRM</b><small>{money(summary.actual_received_period)}</small></div>
+        </div>
+        <div>
+          <span className="stats-finance-dot calculated" />
+          <div><b>Картка · за правилом</b><small>{money(summary.calculated_received_period)}</small></div>
+        </div>
+        <div>
+          <span className="stats-finance-dot expected" />
+          <div><b>Очікуємо</b><small>{money(summary.expected_period)}</small></div>
+        </div>
+      </div>
+      <p className="faint stats-finance-note">
+        Для замовлення зі статусом «Продаж» карткову оплату вважаємо отриманою повністю. Для накладеного платежу враховуємо лише фактичний payedAmount із SalesDrive; решта лишається очікуваною.
+      </p>
+    </div>
+  )
+}
+
+function periodCaption(insights) {
+  const start = insights?.period?.from
+  const end = insights?.period?.to
+  if (!start || !end) return ''
+  const options = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: insights.timezone || undefined }
+  try {
+    return `${new Date(start).toLocaleDateString('uk-UA', options)} — ${new Date(new Date(end).getTime() - 1).toLocaleDateString('uk-UA', options)}`
+  } catch {
+    return ''
+  }
+}
+
+export default function Overview() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [months, setMonths] = useState([])
+  const [timezone, setTimezone] = useState('Europe/Kyiv')
+  const today = dateInZone(Date.now(), timezone)
+  const selection = useMemo(() => ({
+    period: searchParams.get('period') || 'month', month: searchParams.get('month') || undefined,
+    date_from: searchParams.get('date_from') || `${today.slice(0, 7)}-01`,
+    date_to: searchParams.get('date_to') || today,
+    compare: searchParams.get('compare') || 'previous',
+    compare_month: searchParams.get('compare_month') || today.slice(0, 7),
+    granularity: searchParams.get('granularity') || 'day',
+  }), [searchParams, today])
+  const period = selection.period
+  const snapshotMonth = searchParams.get('snapshot') || ''
+  const openSnapshot = (month) => {
+    const next = new URLSearchParams(searchParams)
+    if (month) next.set('snapshot', month)
+    else next.delete('snapshot')
+    setSearchParams(next, { replace: true })
+  }
+  const setSelection = (value) => setSearchParams(Object.fromEntries(Object.entries(value).filter(([, v]) => v != null && v !== '')), { replace: true })
+  const setPeriod = (value) => setSelection({ ...selection, period: value, month: undefined })
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const requestId = useRef(0)
+  useEffect(() => {
+    api.stats.months().then((value) => { setMonths(value.months); setTimezone(value.timezone) }).catch((e) => setError(e.message))
+    return () => { requestId.current++ }
+  }, [])
+  const load = useCallback(async ({ skeleton = false } = {}) => {
+    const seq = ++requestId.current
+    if (skeleton) setData(null)
+    setBusy(true); setError('')
+    try {
+      const result = snapshotMonth ? await api.stats.closedPeriod(snapshotMonth) : await api.stats.report(selection)
+      if (seq === requestId.current) setData(result)
+    } catch (err) {
+      if (seq === requestId.current) setError(err.message)
+    } finally {
+      if (seq === requestId.current) setBusy(false)
+    }
+  }, [selection, snapshotMonth])
+
+  useEffect(() => { load({ skeleton: true }) }, [load])
+  useVisiblePolling(load, 60000, { enabled: !snapshotMonth })
+
+  useEffect(() => {
+    let timer = null
+    const onOrderChanged = () => {
+      if (snapshotMonth) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => load(), 150)
+    }
+    window.addEventListener('elfar:orders:changed', onOrderChanged)
+    return () => {
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('elfar:orders:changed', onOrderChanged)
+    }
+  }, [load, snapshotMonth])
+
+  const activity = data?.insights?.activity || {}
+  const caption = snapshotMonth ? snapshotMonth : period === 'all' ? 'за весь час' : periodCaption(data?.insights)
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>Огляд</h1>
+          <p>{snapshotMonth ? `Збережений звіт за ${snapshotMonth}` : caption ? (period === 'all' ? 'Статистика за весь час' : `Статистика за ${caption}`) : 'Фінанси, замовлення й активність магазину'}</p>
+        </div>
+        {!snapshotMonth && <div className="row stats-periods">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              className={`btn small ${period === p.key && !selection.month ? '' : 'ghost'}`}
+              aria-pressed={period === p.key && !selection.month}
+              onClick={() => setPeriod(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>}
+      </div>
+
+      <ClosedPeriods timezone={timezone} selected={snapshotMonth} onOpen={openSnapshot} snapshot={data?.snapshot} />
+      {!snapshotMonth && <AnalyticsControls selection={selection} setSelection={setSelection} months={months} timezone={timezone} busy={busy} refresh={() => load()} />}
+      <ErrorBar error={error} />
+      {error && <button className="btn ghost" onClick={() => load()}>Повторити завантаження</button>}
+
+      {!data ? (
+        busy ? <Loading rows={4} /> : <p className="muted">Статистика недоступна для вибраного періоду.</p>
+      ) : (
+        <div className="stack">
+          <div className="stats-section-title"><div><h2>Фінансовий результат</h2><p className="faint">{data.window.partial ? 'Період ще триває. ' : ''}{data.window.previous_from ? `Порівняння: ${new Date(data.window.previous_from).toLocaleDateString('uk-UA', { timeZone: timezone })} — ${new Date(new Date(data.window.previous_to).getTime() - 1).toLocaleDateString('uk-UA', { timeZone: timezone })}` : 'Порівняння вимкнено'}</p></div></div>
+          <div className="grid k4 stats-primary-metrics">
+            <Metric
+              label="Отримано"
+              value={money(data.summary.revenue_period)}
+              change={data.insights?.revenue?.change}
+              sub={`Факт CRM ${money(data.summary.actual_received_period)} · картка за правилом ${money(data.summary.calculated_received_period)}`}
+              tone="accent"
+            />
+            <Metric
+              label="Виручка продажів"
+              value={money(data.summary.sales_period)}
+              change={data.insights?.turnover?.change}
+              sub={`${data.summary.sales_orders_period} замовлень зі статусом «Продаж»`}
+            />
+            <Metric
+              label="Очікуємо отримання"
+              value={money(data.summary.expected_period)}
+              sub="Продажі з сумою, яку SalesDrive ще не зафіксував як отриману"
+              tone={Number(data.summary.expected_period) > 0 ? 'warn' : ''}
+            />
+            <Metric
+              label="Відправлено"
+              value={money(data.summary.shipped_period)}
+              sub={`${data.summary.shipped_orders_period} замовлень уже дійшли до етапу відправки`}
+            />
+            <Metric
+              label="Середній чек"
+              value={money(data.summary.avg_check_period)}
+              change={data.insights?.avg_check?.change}
+              sub={`За весь час: ${money(data.summary.avg_check)}`}
+            />
+            <Metric
+              label="Активні користувачі"
+              value={data.summary.active_users_period}
+              sub={`${data.summary.active_users_24h} були активні за останні 24 години`}
+            />
+            <Metric
+              label="Нові користувачі"
+              value={data.summary.customers_period}
+              sub={`Усього клієнтів: ${data.summary.customers_total}`}
+            />
+            <Metric
+              label="Покупці за період"
+              value={data.summary.buyers_period}
+              sub={`${activity.buyer_share ?? 0}% від активних користувачів мають продаж у цьому періоді`}
+            />
+            <Metric
+              label="Нові замовлення зараз"
+              value={data.summary.orders_new}
+              sub={`Усього замовлень у базі: ${data.summary.orders_total}`}
+              tone={data.summary.orders_new > 0 ? 'warn' : ''}
+            />
+          </div>
+
+          <FinanceLegend summary={data.summary} />
+          <MarketingMetrics data={data} />
+          {!snapshotMonth && <SpendEditor selection={selection} timezone={timezone} onSaved={() => load()} />}
+
+          <div className="grid k2">
+            <Metric
+              label="Повторні покупки"
+              value={`${data.insights?.repeat?.share ?? 0}%`}
+              sub={`${data.insights?.repeat?.returning_orders ?? 0} повторних · ${data.insights?.repeat?.new_orders ?? 0} перших покупок`}
+              tone={(data.insights?.repeat?.share ?? 0) >= 30 ? 'accent' : ''}
+            />
+            <Metric
+              label="Відмови / повернення / видалення"
+              value={`${data.insights?.refusals?.orders ?? 0}`}
+              sub={`${data.insights?.refusals?.share ?? 0}% завершених результатів · потенційна сума ${money(data.insights?.refusals?.lost ?? 0)}`}
+              tone={(data.insights?.refusals?.share ?? 0) >= 15 ? 'warn' : ''}
+            />
+          </div>
+
+          {data.summary.low_stock > 0 && (
+            <div className="card" style={{ borderColor: 'rgba(242,179,71,0.35)' }}>
+              <div className="row">
+                <span className="chip warn">Залишки</span>
+                <span>{data.summary.low_stock} товарів мають менше 5 шт на складі — перевірте каталог.</span>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <div className="stats-section-title">
+              <div>
+                <h2>Виручка й отримані кошти: {data.window.granularity === 'month' ? 'по місяцях' : 'по днях'}</h2>
+                <p className="faint">Оборот містить тільки замовлення, що отримали CRM-статус «Продаж»; «отримано» показує лише вже зараховані за правилами оплати кошти.</p>
+              </div>
+            </div>
+            <Suspense fallback={<div className="skeleton" style={{ height: 260, marginTop: 14 }} />}>
+              <RevenueChart data={data.series} previous={data.previous?.series} />
+            </Suspense>
+            {data.series.length === 0 && (
+              <p className="muted" style={{ textAlign: 'center' }}>За цей період продажів ще не було.</p>
+            )}
+          </div>
+
+          <details className="card analytics-details"><summary>Таблиця динаміки · {data.window.granularity === 'month' ? 'місяці' : 'дні'}</summary>
+            <ManagedTable tableId="analytics-series" label="Динаміка"><table><thead><tr><th>Період</th><th className="num">Виручка</th><th className="num">Отримано</th><th className="num">Продажі</th><th className="num">Сер. чек</th><th className="num">Нові покупці</th><th className="num">Витрати</th><th className="num">CAC</th><th className="num">ROAS</th><th className="num">Візити</th><th className="num">Конверсія</th></tr></thead><tbody>{data.series.map((r) => <tr key={r.date}><td>{r.date}</td><td className="num">{money(r.sales)}</td><td className="num">{money(r.revenue)}</td><td className="num">{r.orders}</td><td className="num">{r.avg_check == null ? '—' : money(r.avg_check)}</td><td className="num">{r.new_customers}</td><td className="num">{money(r.spend)}</td><td className="num">{r.cac == null ? '—' : money(r.cac)}</td><td className="num">{r.roas == null ? '—' : `${r.roas}×`}</td><td className="num">{r.sessions}</td><td className="num">{r.conversion == null ? '—' : `${r.conversion}%`}</td></tr>)}</tbody></table></ManagedTable>
+          </details>
+          {!snapshotMonth && <AnalyticsOrders selection={selection} data={data} />}
+          <div className="grid k2">
+            <div className="card">
+              <h2>Топ товарів</h2>
+              <p className="faint">Тільки за замовленнями, що отримали CRM-статус «Продаж» у вибраному періоді.</p>
+              {data.top.length === 0 ? (
+                <p className="muted">Продажів за період ще немає.</p>
+              ) : (
+                <div className="table-wrap" style={{ marginTop: 12 }}>
+                  <table>
+                    <thead><tr><th>Товар</th><th className="num">Шт</th><th className="num">Оборот</th></tr></thead>
+                    <tbody>
+                      {data.top.map((p) => (
+                        <tr key={p.name}><td>{p.name}</td><td className="num">{p.qty}</td><td className="num">{money(p.revenue)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <h2>Замовлення за статусами</h2>
+              <p className="faint">Тільки замовлення вибраного періоду; CRM і legacy не змішуються.</p>
+              <div className="stack" style={{ marginTop: 14, gap: 10 }}>
+                {data.breakdown.map((row) => (
+                  <div className="row status-breakdown-row" key={`${row.source || 'legacy'}:${row.status}`}>
+                    <span style={{ flex: 1 }}>
+                      <StatusBadge
+                        source={row.source || 'legacy'}
+                        id={row.status}
+                        name={row.source === 'crm' ? (row.name || `Статус CRM #${row.status}`) : (STATUS_LABELS[row.status] || row.status)}
+                        compact
+                      />
+                    </span>
+                    <span className="mono">{row.count}</span>
+                  </div>
+                ))}
+                {data.breakdown.length === 0 && <p className="muted">Замовлень за період немає.</p>}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid k2">
+            <Split
+              title="Як платять"
+              hint="Оборот і отримані кошти показуються окремо: накладений платіж до фактичної оплати лишається очікуваним."
+              rows={[
+                {
+                  label: 'Переказ на картку',
+                  value: data.insights.payment.card.orders,
+                  note: `оборот ${money(data.insights.payment.card.revenue)} · отримано ${money(data.insights.payment.card.received)} · очікуємо ${money(data.insights.payment.card.expected)}`,
+                },
+                {
+                  label: 'Накладений платіж',
+                  value: data.insights.payment.cod.orders,
+                  note: `оборот ${money(data.insights.payment.cod.revenue)} · отримано ${money(data.insights.payment.cod.received)} · очікуємо ${money(data.insights.payment.cod.expected)}`,
+                },
+              ]}
+            />
+            <Split
+              title="Куди возимо"
+              hint="Розподіл лише фактичних продажів за вибраний період."
+              rows={[
+                { label: 'Відділення', value: data.insights.delivery.warehouse },
+                { label: 'Курʼєр на адресу', value: data.insights.delivery.courier },
+                { label: 'Не вказано', value: data.insights.delivery.unknown },
+              ]}
+            />
+          </div>
+
+          <div className="card stats-activity-card">
+            <div className="stats-section-title">
+              <div>
+                <h2>Активність користувачів</h2>
+                <p className="faint">Оперативний зріз last_seen у вітрині/боті. Для історичної конверсії використовуйте блок відвідувань вище: last_seen перезаписується після нового входу.</p>
+              </div>
+              <span className="chip">{data.insights.timezone || 'Europe/Kyiv'}</span>
+            </div>
+            <div className="stats-activity-grid">
+              <div><span>Активні за період</span><strong>{activity.active_users ?? 0}</strong></div>
+              <div><span>Активні 24 год</span><strong>{activity.active_24h ?? 0}</strong></div>
+              <div><span>Нові користувачі</span><strong>{activity.new_users ?? 0}</strong></div>
+              <div><span>Покупці</span><strong>{activity.buyers ?? 0}</strong></div>
+              <div><span>Покупці серед last_seen</span><strong>{activity.buyer_share ?? 0}%</strong></div>
+            </div>
+          </div>
+
+          <Bars
+            title="Коли замовляють: години доби"
+            hint={`Усі оформлені замовлення за фактичним часом створення (${data.insights.timezone || 'Europe/Kyiv'}). CRM-статус і час продажу на цей графік не впливають.`}
+            labels={Array.from({ length: 24 }, (_, h) => String(h))}
+            values={data.insights.by_hour}
+          />
+
+          <Bars
+            title="Коли замовляють: дні тижня"
+            hint="Усі оформлені замовлення за днем їх створення. Період визначається календарними межами: «Сьогодні» — від 00:00, «Цей місяць» — від першого числа."
+            labels={WEEKDAYS}
+            values={data.insights.by_weekday}
+          />
+
+          <div className="card">
+            <h2>Менеджери за період</h2>
+            <p className="faint">Оборот — тільки CRM-статус «Продаж»; отримано й очікуємо показані окремо.</p>
+            {data.operators.length === 0 ? (
+              <p className="muted">За цей період продажів немає.</p>
+            ) : (
+              <div className="table-wrap" style={{ marginTop: 12 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Менеджер</th>
+                      <th className="num">Замовлень</th>
+                      <th className="num">Оборот</th>
+                      <th className="num">Отримано</th>
+                      <th className="num">Очікуємо</th>
+                      <th className="num">Сер. чек</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.operators.map((o) => (
+                      <tr key={o.operator_name}>
+                        <td>{o.operator_name}</td>
+                        <td className="num">{o.orders}</td>
+                        <td className="num">{money(o.revenue)}</td>
+                        <td className="num">{money(o.received)}</td>
+                        <td className="num">{money(o.expected)}</td>
+                        <td className="num">{money(o.avg_check)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}

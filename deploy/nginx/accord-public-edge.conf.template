@@ -1,0 +1,70 @@
+# Add ONLY when existing TLS owner (ELFAR Nginx or host Nginx) has these certs.
+# NEVER expose dashboard through this public edge: Cloudflare Access + Tunnel ->
+# http://127.0.0.1:18082; direct origin access must remain blocked.
+# TLS cert must have SAN for accordniche.pp.ua + shop.accordniche.pp.ua.
+# If using dockerized ELFAR Nginx, loopback addresses below DO NOT work:
+# attach both stacks to an external Docker network, use Docker DNS names.
+server {
+    listen 80;
+    server_name accordniche.pp.ua shop.accordniche.pp.ua;
+    if ($host !~ ^(accordniche\.pp\.ua|shop\.accordniche\.pp\.ua)$) { return 444; }
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 308 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_tokens off;
+    http2 on;
+    server_name accordniche.pp.ua;
+    if ($host != accordniche.pp.ua) { return 444; }
+    ssl_certificate __ACCORD_CERT__;
+    ssl_certificate_key __ACCORD_KEY__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    client_max_body_size 1m;
+    location / {
+        proxy_pass http://127.0.0.1:18081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Connection '';
+        proxy_read_timeout 120s;
+    }
+}
+server {
+    listen 443 ssl;
+    server_tokens off;
+    http2 on;
+    server_name shop.accordniche.pp.ua;
+    if ($host != shop.accordniche.pp.ua) { return 444; }
+    ssl_certificate __ACCORD_CERT__;
+    ssl_certificate_key __ACCORD_KEY__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    client_max_body_size 1m;
+    # Never log the Telegram webhook secret embedded in its URL.
+    location ^~ /api/telegram/ {
+        access_log off;
+        client_max_body_size 256k;
+        proxy_pass http://127.0.0.1:18083;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Connection '';
+    }
+    location / {
+        proxy_pass http://127.0.0.1:18083;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Connection '';
+        proxy_read_timeout 370s;
+        proxy_buffering off;
+    }
+}

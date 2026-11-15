@@ -1,0 +1,426 @@
+"""НОВА ПОШТА: довідник населених пунктів і відділень.
+
+Живого API тут немає й бути не може: домен перевізника недоступний зі
+складального середовища, а ганяти чужий сервіс на кожному прогоні тестів
+означало б залежати від його доступності. Тому весь набір працює на
+підставних відповідях у тій формі, яку описує документація.
+
+Що це перевіряє: нашу логіку — кеш, сортування, відсів, обробку відмов,
+відрив ключа від вітрини. Чого не перевіряє: що ми правильно вгадали
+назви полів у відповіді. Це підтверджується лише справжнім ключем, і
+саме тому перше після розгортання — знайти в панелі своє місто.
+"""
+from qa_paths import qa_db_path, qa_db_url
+import asyncio
+import os
+import pathlib
+import sys
+import tempfile
+
+sys.path.insert(0, "/tmp")
+os.environ.update(BOT_TOKEN="777001:TESTTOKEN", JWT_SECRET="t" * 32,
+                  DASHBOARD_LOGIN="root", DASHBOARD_PASSWORD="Pa$$w0rd123",
+                  ELFAR_DATA_ROOT=tempfile.mkdtemp(prefix="qa_np_"),
+                  DATABASE_URL=qa_db_url('qa_np.db'))
+
+from qa_common import Report, boot, init_data                    # noqa: E402
+
+r = Report("НОВА ПОШТА")
+
+import httpx                                                     # noqa: E402
+from shop.services import novaposhta as np                       # noqa: E402
+
+app, Session, fake = boot(qa_db_path('qa_np.db'))
+
+KEY = "0123456789abcdef0123456789abcdef"
+
+# --------------------------------------------------------- підставні дані
+
+CITY_ROW = {
+    "TotalCount": "3",
+    "Addresses": [
+        {"Present": "м. Дніпро, Дніпропетровська обл.", "Warehouses": 180,
+         "MainDescription": "Дніпро", "Area": "Дніпропетровська", "Region": "",
+         "SettlementTypeCode": "м.",
+         "Ref": "settlement-dnipro", "DeliveryCity": "city-dnipro"},
+        # Село без жодного відділення: у переліку його бути не повинно —
+        # вибравши таке, людина впирається в порожній список відділень.
+        {"Present": "с. Дніпрове, Черкаська обл.", "Warehouses": 0,
+         "MainDescription": "Дніпрове", "Area": "Черкаська", "Region": "Золотоніський",
+         "Ref": "settlement-dniprove", "DeliveryCity": ""},
+        # Село з відділенням, але без свого CityRef — саме той випадок,
+        # заради якого тримаємо settlement_ref окремо.
+        {"Present": "с. Дніпряни, Херсонська обл.", "Warehouses": 1,
+         "MainDescription": "Дніпряни", "Area": "Херсонська", "Region": "Новокаховський",
+         "Ref": "settlement-dnipryany", "DeliveryCity": ""},
+    ],
+}
+
+WAREHOUSE_ROWS = [
+    {"Ref": "wh-100", "Number": "100", "Description": "Відділення №100: вул. Широка, 1",
+     "ShortAddress": "Дніпро, Широка, 1", "CategoryOfWarehouse": "Branch",
+     "CityRef": "city-dnipro"},
+    {"Ref": "wh-7", "Number": "7", "Description": "Відділення №7: вул. Січова, 12",
+     "ShortAddress": "Дніпро, Січова, 12", "CategoryOfWarehouse": "Branch",
+     "CityRef": "city-dnipro"},
+    {"Ref": "wh-pm3", "Number": "3", "Description": "Поштомат №3: вул. Січова, 20",
+     "ShortAddress": "Дніпро, Січова, 20", "CategoryOfWarehouse": "Postomat",
+     "CityRef": "city-dnipro"},
+]
+
+PRICE_ROWS = [{"AssessedCost": "1200", "Cost": "95", "CostRedelivery": "45"}]
+
+calls: list[dict] = []
+response_queue: list = []
+
+
+async def fake_post(payload):
+    """Підставний перевізник. Записує запити — щоб перевіряти не лише
+    результат, а й те, скільки разів ми пішли назовні."""
+    calls.append(payload)
+    if response_queue:
+        nxt = response_queue.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+    method = payload.get("calledMethod")
+    if method == "searchSettlements":
+        return {"success": True, "data": [CITY_ROW]}
+    if method == "getWarehouses":
+        return {"success": True, "data": WAREHOUSE_ROWS}
+    if method == "getDocumentPrice":
+        return {"success": True, "data": PRICE_ROWS}
+    return {"success": False, "errors": ["Невідомий метод"]}
+
+
+original_post = np._post
+np._post = fake_post
+
+
+def reset():
+    calls.clear()
+    response_queue.clear()
+    np.reset_cache()
+
+
+# ------------------------------------------------------------- сценарій
+
+
+async def scenario():
+    print("\n--- населені пункти ---")
+    reset()
+    found = await np.search_settlements(KEY, "Дніпро")
+    names = [s.name for s in found]
+    r.check(names == ["Дніпро", "Дніпряни"],
+            "пункти без жодного відділення відсіяні", names)
+    r.check(found[0].ref == "city-dnipro",
+            "CityRef береться з DeliveryCity", found[0].ref)
+    r.check(found[0].settlement_ref == "settlement-dnipro",
+            "код населеного пункту зберігається окремо", found[0].settlement_ref)
+    r.check(found[1].ref == "" and found[1].settlement_ref == "settlement-dnipryany",
+            "у села без CityRef лишається лише код населеного пункту")
+    r.check("Дніпро" in found[0].label and "обл" in found[0].label,
+            "підпис містить область — інакше однойменні села не розрізнити",
+            found[0].label)
+    r.check(found[0].warehouses == 180, "кількість відділень збережена",
+            found[0].warehouses)
+
+    print("\n--- запит іде з ключем і в правильний метод ---")
+    r.check(calls[0]["apiKey"] == KEY, "ключ підставляється в запит")
+    r.check(calls[0]["modelName"] == "Address"
+            and calls[0]["calledMethod"] == "searchSettlements",
+            "викликається searchSettlements", calls[0].get("calledMethod"))
+
+    print("\n--- короткий запит не турбує перевізника ---")
+    reset()
+    r.check(await np.search_settlements(KEY, "Д") == [],
+            "один символ — порожньо, без звернення")
+    r.check(not calls, "жодного запиту назовні", len(calls))
+
+    print("\n--- кеш ---")
+    reset()
+    await np.search_settlements(KEY, "Дніпро")
+    await np.search_settlements(KEY, "Дніпро")
+    await np.search_settlements(KEY, "дніпро")
+    r.check(len(calls) == 1,
+            "повторний набір того ж міста не йде до перевізника", len(calls))
+
+    print("\n--- відділення ---")
+    reset()
+    picked = await np.warehouses(KEY, "city-dnipro")
+    numbers = [w.number for w in picked]
+    r.check(numbers == [3, 7, 100],
+            "відділення сортуються за номером, а не за назвою", numbers)
+    r.check(picked[0].is_postomat and not picked[1].is_postomat,
+            "поштомат позначений окремо")
+    r.check(calls[0]["methodProperties"] == {"CityRef": "city-dnipro"},
+            "місто шукається за CityRef", calls[0]["methodProperties"])
+
+    print("\n--- село без CityRef ---")
+    reset()
+    await np.warehouses(KEY, "", "settlement-dnipryany")
+    r.check(calls[0]["methodProperties"] == {"SettlementRef": "settlement-dnipryany"},
+            "село шукається за SettlementRef", calls[0]["methodProperties"])
+    r.check("CityRef" not in calls[0]["methodProperties"],
+            "обидва ключі одразу не надсилаються — перевізник відповів би порожньо")
+
+    print("\n--- пошук усередині міста ---")
+    reset()
+    only7 = await np.warehouses(KEY, "city-dnipro", query="7")
+    r.check([w.number for w in only7] == [7], "фільтр за номером",
+            [w.number for w in only7])
+    by_street = await np.warehouses(KEY, "city-dnipro", query="широка")
+    r.check([w.number for w in by_street] == [100], "фільтр за вулицею",
+            [w.number for w in by_street])
+    r.check(len(calls) == 1,
+            "перелік міста тягнеться один раз, фільтр рахується в нас", len(calls))
+
+    print("\n--- зміна ключа знецінює кеш ---")
+    reset()
+    await np.warehouses(KEY, "city-dnipro")
+    np.reset_cache()
+    await np.warehouses(KEY, "city-dnipro")
+    r.check(len(calls) == 2, "після скидання кешу дані беруться заново", len(calls))
+
+    print("\n--- крайні випадки розрахунку ---")
+    reset()
+    # Нульова оголошена вартість: кошик спорожнили в іншій вкладці,
+    # знижка зʼїла суму. Перевізник такого запиту не приймає.
+    await np.document_price(KEY, "s", "c", to_door=False, declared=0, weight=1.0)
+    r.check(calls[0]["methodProperties"]["Cost"] == "1",
+            "нульова вартість замінюється одиницею — інакше відмова",
+            calls[0]["methodProperties"]["Cost"])
+
+    reset()
+    response_queue.append({"success": True, "data": []})
+    try:
+        await np.document_price(KEY, "s", "c", to_door=False, declared=100, weight=1.0)
+        r.check(False, "порожня відповідь на розрахунок помічена")
+    except np.NovaPoshtaError:
+        r.check(True, "порожня відповідь на розрахунок не стає нулем у ціні")
+
+    print("\n--- редиректи перевізника ---")
+    # Живий довідник на частину запитів відповідає «303 See Other» на ту
+    # саму адресу. Без follow_redirects httpx вважає це помилкою, і
+    # виглядало це так: міста знаходяться, а відділення — ні.
+    from unittest.mock import patch
+    real_client = httpx.AsyncClient
+    redirect_calls = []
+    def redirect_response(request):
+        redirect_calls.append(request)
+        if len(redirect_calls) == 1:
+            return httpx.Response(303, headers={'Location': '/v2.0/json/redirect'})
+        return httpx.Response(200, json={'success': True, 'data': []})
+    with patch('shop.services.novaposhta.httpx.AsyncClient', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(redirect_response), **kw)):
+        await original_post({'apiKey': KEY})
+    r.check(len(redirect_calls) == 2 and all(request.method == 'POST' for request in redirect_calls),
+            "клієнт обробляє редирект і зберігає метод POST")
+
+    print("\n--- відмови перевізника ---")
+    reset()
+    response_queue.append({"success": False, "errors": ["API key expired"]})
+    try:
+        await np.search_settlements(KEY, "Львів")
+        r.check(False, "відмова перевізника стає помилкою")
+    except np.NovaPoshtaError as exc:
+        r.check("API key expired" in str(exc),
+                "текст відмови зберігається — «ключ прострочено» і «ліміт» "
+                "вимагають різних дій", str(exc))
+
+    reset()
+    response_queue.append(httpx.ConnectError("мережа лягла"))
+    try:
+        await np.warehouses(KEY, "city-dnipro")
+        r.check(False, "мережева помилка стає зрозумілою")
+    except np.NovaPoshtaError as exc:
+        r.check("недоступний" in str(exc), "мережева помилка не витікає трейсбеком",
+                str(exc))
+
+    reset()
+    try:
+        await np.search_settlements("", "Львів")
+        r.check(False, "порожній ключ зупиняється до запиту")
+    except np.NovaPoshtaError as exc:
+        r.check(not calls, "без ключа запит назовні не йде")
+        r.check("Ключ" in str(exc), "сказано, чого бракує", str(exc))
+
+    print("\n--- розрахунок доставки ---")
+    reset()
+    price = await np.document_price(KEY, "city-sender", "city-dnipro",
+                                    to_door=False, declared=1200, weight=1.0)
+    r.check(price.cost == 95 and price.redelivery == 45,
+            "ціна й комісія за переказ розібрані", (price.cost, price.redelivery))
+    props = calls[0]["methodProperties"]
+    r.check(props["ServiceType"] == "WarehouseWarehouse",
+            "відділення → відділення", props["ServiceType"])
+    r.check(props["Cost"] == "1200",
+            "оголошена вартість = сума замовлення: від неї рахують страхування",
+            props["Cost"])
+    r.check("RedeliveryCalculate" not in props,
+            "без накладеного платежу комісію за переказ не питаємо")
+
+    reset()
+    await np.document_price(KEY, "city-sender", "city-dnipro",
+                            to_door=True, declared=1200, weight=1.0,
+                            cash_on_delivery=1200)
+    props = calls[0]["methodProperties"]
+    r.check(props["ServiceType"] == "WarehouseDoors", "курʼєр → до дверей")
+    r.check(props.get("RedeliveryCalculate", {}).get("Amount") == "1200",
+            "для накладеного платежу питаємо й комісію за переказ")
+
+    reset()
+    await np.document_price(KEY, "s", "c", to_door=False, declared=1200, weight=1.0)
+    await np.document_price(KEY, "s", "c", to_door=False, declared=1200, weight=1.0)
+    r.check(len(calls) == 1, "той самий розрахунок не питається двічі", len(calls))
+
+    print("\n--- точки вітрини ---")
+    reset()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        head = init_data(70701)
+        await client.post("/api/shop/age-confirm", headers=head)
+
+        # Ключа в налаштуваннях ще немає
+        resp = await client.get("/api/shop/delivery/cities?q=Дніпро", headers=head)
+        r.check(resp.status_code == 503,
+                "без ключа довідник відповідає 503, а не 500", resp.status_code)
+
+        cfg = (await client.get("/api/shop/config", headers=head)).json()
+        r.check(cfg.get("novaposhta_enabled") is False,
+                "вітрина знає, що вибору відділень немає", cfg.get("novaposhta_enabled"))
+
+        from api.auth import create_token
+        from shop.entities import OperatorRole
+
+        token = {"Authorization": f"Bearer {create_token('root', OperatorRole.SYSADMIN, 0, 'Root')}"}
+        saved = await client.put("/api/settings",
+                                 json={"novaposhta_api_key": KEY}, headers=token)
+        r.check(saved.status_code == 200, "ключ зберігається з панелі", saved.status_code)
+        r.check("novaposhta_api_key" not in saved.text,
+                "ключ не повертається у відповіді")
+        r.check(saved.json().get("novaposhta_connected") is True,
+                "панель бачить ознаку «підключено»")
+
+        cities = await client.get("/api/shop/delivery/cities?q=Дніпро", headers=head)
+        items = cities.json()["items"]
+        r.check(cities.status_code == 200 and len(items) == 2,
+                "вітрина отримує перелік міст", cities.status_code)
+        r.check(all("apiKey" not in str(i) for i in items),
+                "ключ не просочується у відповідь вітрині")
+
+        whs = await client.get(
+            "/api/shop/delivery/warehouses?city_ref=city-dnipro", headers=head)
+        r.check([w["number"] for w in whs.json()["items"]] == [3, 7, 100],
+                "вітрина отримує відділення по порядку")
+
+        # Розрахунок рахується від кошика на сервері, тож для перевірки
+        # там має щось лежати. Порожній кошик — окремий випадок нижче.
+        cat = (await client.post("/api/catalog/categories",
+                                 json={"name": "Одноразки"}, headers=token)).json()
+        prod = (await client.post("/api/catalog/products", json={
+            "category_id": cat["id"], "name": "Elf Bar 5000",
+            "price": "315", "stock": 10, "is_active": True,
+        }, headers=token)).json()
+        await client.post("/api/shop/cart",
+                          json={"product_id": prod["id"], "delta": 2}, headers=head)
+
+        # Розрахунок доставки: у налаштуваннях немає міста відправлення
+        priced = await client.get(
+            "/api/shop/delivery/price?city_ref=city-dnipro", headers=head)
+        body = priced.json()
+        r.check(priced.status_code == 200 and body["source"] == "settings",
+                "без міста відправлення вітрина отримує «від» із налаштувань",
+                body.get("source"))
+        r.check(body["approximate"] is True,
+                "розрахунок завжди позначений як приблизний")
+
+        await client.put("/api/settings",
+                         json={"novaposhta_sender_city": "Дніпро"}, headers=token)
+        priced = await client.get(
+            "/api/shop/delivery/price?city_ref=city-dnipro", headers=head)
+        body = priced.json()
+        r.check(body["source"] == "novaposhta" and body["cost"] == 95,
+                "з містом відправлення рахує перевізник", body)
+        r.check(body["approximate"] is True,
+                "навіть розрахунок перевізника лишається приблизним: "
+                "фактичну вагу знають лише на відділенні")
+
+        print("\n--- комісія рахується від того, що віддадуть ---")
+        # Знижка за обсяг зменшує суму, яку покупець платить на
+        # відділенні, — отже, і комісію за переказ. Раніше сюди йшла сума
+        # до знижки: людина бачила завищене число й відмовлялась від
+        # накладеного платежу.
+        await client.put("/api/settings", json={
+            "volume_discount_enabled": True,
+            "volume_discount_min": "100",
+            "volume_discount_percent": "10",
+        }, headers=token)
+        np.reset_cache()
+        reset()
+        await client.get(
+            "/api/shop/delivery/price?city_ref=city-dnipro&payment_method=cod",
+            headers=head)
+        cod_call = [c for c in calls
+                    if c["calledMethod"] == "getDocumentPrice"][-1]["methodProperties"]
+        r.check(cod_call["Cost"] == "630",
+                "оголошена вартість — сума товарів: везуть товар, а не гроші",
+                cod_call["Cost"])
+        r.check(cod_call["RedeliveryCalculate"]["Amount"] == "567",
+                "комісія — від суми зі знижкою, яку покупець реально віддасть",
+                cod_call["RedeliveryCalculate"]["Amount"])
+        await client.put("/api/settings",
+                         json={"volume_discount_enabled": False}, headers=token)
+
+        print("\n--- курʼєр на адресу ---")
+        cfg2 = (await client.get("/api/shop/config", headers=head)).json()
+        r.check(cfg2.get("courier_enabled") is False,
+                "за замовчуванням курʼєр вимкнений", cfg2.get("courier_enabled"))
+
+        refused = await client.post("/api/shop/checkout", json={
+            "contact_surname": "Ш", "contact_name": "Т",
+            "contact_phone": "+380671112233", "city": "Дніпро",
+            "address": "вул. Січова, 12", "payment_method": "card",
+            "delivery_method": "courier",
+        }, headers=head)
+        r.check(refused.status_code == 422,
+                "вимкнений курʼєр не приймається навіть із застарілої вкладки",
+                refused.status_code)
+
+        await client.put("/api/settings",
+                         json={"delivery_courier_enabled": True}, headers=token)
+        cfg2 = (await client.get("/api/shop/config", headers=head)).json()
+        r.check(cfg2.get("courier_enabled") is True,
+                "увімкнений курʼєр видно у вітрині")
+        await client.put("/api/settings",
+                         json={"delivery_courier_enabled": False}, headers=token)
+
+        # Порожній кошик: рахувати нема чого, але й падати не можна —
+        # екран оформлення могли лишити відкритим, а товар прибрати.
+        await client.post("/api/shop/cart",
+                          json={"product_id": prod["id"], "delta": -2}, headers=head)
+        empty = await client.get(
+            "/api/shop/delivery/price?city_ref=city-dnipro", headers=head)
+        r.check(empty.status_code == 200 and empty.json()["cost"] is None,
+                "порожній кошик не ламає розрахунок", empty.status_code)
+        await client.post("/api/shop/cart",
+                          json={"product_id": prod["id"], "delta": 2}, headers=head)
+
+        np.reset_cache()
+        response_queue.append({"success": False, "errors": ["Ліміт запитів"]})
+        broken_price = await client.get(
+            "/api/shop/delivery/price?city_ref=city-dnipro", headers=head)
+        r.check(broken_price.status_code == 200
+                and broken_price.json()["source"] == "settings",
+                "відмова перевізника не ламає оформлення — лишається «від»",
+                broken_price.status_code)
+
+        np.reset_cache()
+        response_queue.append({"success": False, "errors": ["Ліміт запитів"]})
+        np.reset_cache()
+        broken = await client.get("/api/shop/delivery/cities?q=Одеса", headers=head)
+        r.check(broken.status_code == 502,
+                "відмова перевізника не виглядає як наша поломка", broken.status_code)
+
+
+asyncio.run(scenario())
+sys.exit(1 if r.done() else 0)

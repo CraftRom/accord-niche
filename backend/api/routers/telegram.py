@@ -1,0 +1,261 @@
+"""Приймання апдейтів Telegram через вебхук.
+
+Потрібно для serverless: у Vercel немає процесу, який міг би тримати
+довгий polling. На власному сервері це теж робочий варіант — вмикається
+через WEBHOOK_SECRET + PUBLIC_URL.
+"""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+from pydantic import ValidationError
+import logging
+
+from aiogram import Bot
+from aiogram.types import Update
+from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi.security.utils import get_authorization_scheme_param
+
+from bot.factory import bot_id, build_bot, build_dispatcher, webhook_path
+from aiogram.types import BotCommand
+
+from shop import security_log as security
+from shop.config import canonical_public_url, settings
+from shop.telegram_menu import storefront_url, sync_menu
+from shop.repo.factory import open_repo
+from shop.services.shop_settings import get_shop_settings
+
+router = APIRouter()
+log = logging.getLogger("webhook")
+
+# У довгоживучому процесі збираємо один раз; у serverless модуль і так
+# створюється заново на кожен холодний старт.
+_bot = None
+_dp = None
+
+
+_bot_token = None
+
+
+def _instances():
+    """Бот і диспетчер. Перебудовуються, якщо токен змінився.
+
+    Без перевірки токена теплий інстанс продовжив би відповідати старим
+    ботом ще довго після заміни BOT_TOKEN.
+    """
+    global _bot, _dp, _bot_token
+    if _bot is None or _bot_token != settings.bot_token:
+        if _bot is not None:
+            # Старий бот лишався з відкритою сесією aiohttp до кінця життя
+            # процесу. Закрити його тут не можна — _instances() синхронна,
+            # — тож віддаємо сесію на закриття у фоні.
+            _abandon_session(_bot)
+        _bot = build_bot()
+        _dp = build_dispatcher()
+        _bot_token = settings.bot_token
+    return _bot, _dp
+
+
+def _abandon_session(bot: Bot) -> None:
+    """Закриває сесію бота, який більше не використовується."""
+    try:
+        asyncio.get_running_loop().create_task(bot.session.close())
+    except RuntimeError:
+        # Циклу немає — закривати нічого й нікому; сесія помре разом із процесом
+        pass
+
+
+async def close_bot() -> None:
+    """Закриває сесію поточного бота. Викликається при зупинці API.
+
+    Без цього aiohttp друкував «Unclosed client session» рівнем error на
+    кожному вимкненні контейнера, і кожен деплой породжував хибне
+    сповіщення про помилку.
+    """
+    global _bot, _dp, _bot_token
+    if _bot is None:
+        return
+    try:
+        await _bot.session.close()
+    except Exception:
+        log.warning("Не вдалося закрити сесію бота", exc_info=True)
+    _bot = _dp = _bot_token = None
+
+
+@router.post("/telegram/{secret}")
+async def legacy_webhook(secret: str):
+    """Стара адреса без ідентифікатора бота.
+
+    Приймати сюди апдейти небезпечно: на цю ж адресу шле і попередній бот,
+    якщо в нього лишився зареєстрований вебхук, а відповідали б ми поточним.
+    Тому відхиляємо й підказуємо, що робити.
+    """
+    log.warning(
+        "Апдейт на стару адресу вебхука. Виконайте /api/telegram-setup, "
+        "а старому боту зробіть deleteWebhook."
+    )
+    raise HTTPException(status.HTTP_410_GONE, "Адресу вебхука змінено — перезапустіть setup")
+
+
+def webhook_header_secret() -> str:
+    """Секрет для заголовка X-Telegram-Bot-Api-Secret-Token.
+
+    HMAC із серверним ключем: знання шляху не дає змоги обчислити заголовок. Telegram дозволяє тут 1–256 символів A-Z a-z 0-9 _ -.
+    """
+    material = f"telegram-webhook:{settings.webhook_secret}".encode()
+    return hmac.new(settings.jwt_secret.encode(), material, hashlib.sha256).hexdigest()
+
+
+@router.post("/telegram/{secret}/{hook_bot_id}")
+async def telegram_webhook(
+    secret: str,
+    hook_bot_id: str,
+    request: Request,
+    x_telegram_bot_api_secret_token: str = Header(default=""),
+):
+    if not settings.webhook_secret:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Вебхук не налаштовано")
+    # compare_digest, а не !=: звичайне порівняння рядків уривається на
+    # першому розбіжному байті, і за часом відповіді секрет підбирається
+    # посимвольно. Різниця мікроскопічна, але вебхук можна смикати скільки
+    # завгодно разів, а секрет тут один на все життя установки.
+    #
+    # Порівнюємо байти, а не рядки. З рядками compare_digest працює лише
+    # для ASCII і на будь-якому іншому символі кидає TypeError — тобто
+    # достатньо було вписати кирилицю в адресу, щоб замість «не знайдено»
+    # отримати падіння з трейсбеком і сповіщенням в канал.
+    if not hmac.compare_digest(
+        secret.encode("utf-8"), settings.webhook_secret.encode("utf-8")
+    ):
+        security.record("security.webhook.bad_secret", reason="секрет у шляху")
+        # Не уточнюємо причину — стороннім знати нічого не треба
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+
+    # Обовʼязковий незалежний заголовок Telegram; шлях сам по собі не авторизує.
+    if not hmac.compare_digest(
+        x_telegram_bot_api_secret_token.encode("utf-8"),
+        webhook_header_secret().encode("utf-8"),
+    ):
+        log.warning("Апдейт із чужим підписом заголовка — відхилено")
+        security.record("security.webhook.bad_secret", reason="підпис заголовка")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+
+    if hook_bot_id != bot_id():
+        # Апдейт від бота, який у нас більше не налаштований
+        log.warning(
+            "Апдейт від бота %s, а налаштований %s. У старого бота лишився "
+            "вебхук — зніміть його: /api/telegram-detach",
+            hook_bot_id, bot_id(),
+        )
+        security.record("security.webhook.foreign_bot",
+                        reason=f"{hook_bot_id} замість {bot_id()}")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Цей бот більше не обслуговується")
+
+    bot, dp = _instances()
+    try:
+        update = Update.model_validate(await request.json(), context={"bot": bot})
+    except (json.JSONDecodeError, ValidationError):
+        raise HTTPException(400, "Некоректний апдейт Telegram")
+    try:
+        await dp.feed_update(bot, update)
+    except Exception:
+        # Помилку логуємо, але віддаємо 200: інакше Telegram нескінченно
+        # ретраїтиме той самий апдейт і заблокує чергу.
+        log.exception("Помилка обробки апдейта")
+
+    return {"ok": True}
+
+
+def _require_cron_authorization(authorization: str) -> None:
+    scheme, token = get_authorization_scheme_param(authorization)
+    if (scheme or "").lower() != "bearer" or not settings.cron_secret or not hmac.compare_digest(
+        token.encode("utf-8"), settings.cron_secret.encode("utf-8")
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+
+
+@router.get("/telegram-detach")
+async def detach_old_bot(bot_token: str = "", authorization: str = Header(default="")):
+    """Знімає вебхук зі старого бота.
+
+    Потрібно після заміни BOT_TOKEN: у попереднього бота вебхук лишається
+    зареєстрованим, і Telegram далі шле його апдейти нам. Ми їх відхиляємо,
+    але користувач старого бота бачить мовчання замість пояснення, а в
+    логах накопичується шум.
+
+    Токен старого бота передається параметром і ніде не зберігається.
+    """
+    _require_cron_authorization(authorization)
+    if ":" not in bot_token:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Вкажіть bot_token старого бота")
+
+    old = Bot(token=bot_token)
+    try:
+        me = await old.get_me()
+        await old.delete_webhook(drop_pending_updates=True)
+        return {"detached": me.username, "bot_id": me.id}
+    except Exception as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Telegram відмовив: {exc}")
+    finally:
+        await old.session.close()
+
+
+@router.get("/telegram-setup")
+async def setup_webhook(authorization: str = Header(default="")):
+    """Одноразова реєстрація вебхука в Telegram.
+
+    Викликати після деплою з заголовком Authorization: Bearer <CRON_SECRET>.
+    """
+    # 404, а не 401: службовий маршрут не має підтверджувати своє існування
+    # тому, хто не знає токена
+    _require_cron_authorization(authorization)
+    # Адреса береться з налаштувань панелі, а не з оточення: інакше
+    # адміністратор змінює домен у панелі, запускає цей виклик — і вебхук
+    # мовчки реєструється на старий, а кнопка магазину веде не туди
+    async with open_repo() as repo:
+        shop = await get_shop_settings(repo)
+    public_url = canonical_public_url(shop.public_url or settings.public_url or "")
+    if not public_url or not settings.webhook_secret:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Задайте адресу сайту і WEBHOOK_SECRET")
+
+    bot, _ = _instances()
+    url = public_url + webhook_path()
+    # secret_token: Telegram підписує ним кожен апдейт у заголовку
+    # X-Telegram-Bot-Api-Secret-Token. Секрет у шляху лишається як був —
+    # він потрібен, щоб чужий запит не дійшов навіть до обробника, — але
+    # шлях видно всюди: у логах nginx, у Referer, у будь-якому проксі
+    # дорогою. Заголовок не видно ніде, і саме він доводить, що апдейт
+    # справді від Telegram, а не підкинутий тим, хто підгледів адресу.
+    await bot.set_webhook(
+        url,
+        drop_pending_updates=False,
+        secret_token=webhook_header_secret(),
+    )
+
+    # Синя кнопка біля поля вводу — головний вхід у вітрину.
+    # Telegram вимагає https, тож на локальному хості вона не зʼявиться.
+    shop_url = storefront_url(public_url)
+    menu_set = await sync_menu(bot, public_url)
+
+    me = await bot.get_me()
+    # Перелік команд у меню біля поля вводу. Без нього користувач не знає,
+    # що бот узагалі щось розуміє, крім /start.
+    await bot.set_my_commands([
+        BotCommand(command="shop", description="Відкрити магазин"),
+        BotCommand(command="orders", description="Мої замовлення"),
+        BotCommand(command="ask", description="Написати менеджеру / техпідтримці"),
+        BotCommand(command="done", description="Завершити звернення"),
+        BotCommand(command="help", description="Довідка"),
+    ])
+
+    info = await bot.get_webhook_info()
+    return {
+        "bot": f"@{me.username}",
+        "bot_id": me.id,
+        "webhook_url": url,
+        "pending_updates": info.pending_update_count,
+        "shop_url": shop_url,
+        "menu_button": "встановлено" if menu_set else "пропущено: потрібен https",
+    }

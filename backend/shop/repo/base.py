@@ -1,0 +1,708 @@
+"""Контракт доступу до даних.
+
+Обидві реалізації (SQL і Firestore) зобов'язані поводитись однаково — за цим
+стежить спільний набір тестів у tests_repo.py, який ганяє один і той самий
+сценарій через кожну з них.
+
+Правило: сюди потрапляють операції предметної області, а не запити.
+`top_spenders(min_total)` — так; `select(...).join(...)` — ні. Інакше SQL
+протече в інтерфейс і Firestore його не реалізує.
+"""
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from datetime import datetime
+from decimal import Decimal
+
+from shop.entities import (
+    Operator, OrderMessage, SupportMessage, SupportThread, Wishlist,
+    Broadcast, CartLine, Category, Order, OrderLine,
+    OrderStatus, Product, Promo, Stats, User,
+)
+
+
+class PromoCodeConflict(ValueError):
+    """A normalized promo code is already assigned to another promotion."""
+
+
+class Repository(ABC):
+    """Одна одиниця роботи. Створюється на запит, закривається після нього."""
+
+    # ------------------------------------------------------------ users
+
+    @abstractmethod
+    async def get_user_by_tg(self, tg_id: int) -> User | None: ...
+
+    @abstractmethod
+    async def get_user(self, user_id: int) -> User | None: ...
+
+    @abstractmethod
+    async def get_user_by_referral_code(self, code: str) -> User | None: ...
+
+    @abstractmethod
+    async def create_user(
+        self, tg_id: int, username: str | None, first_name: str | None, referrer_id: int | None
+    ) -> User: ...
+
+    @abstractmethod
+    async def touch_user(self, user: User, username: str | None, first_name: str | None) -> User:
+        """Оновлює last_seen_at та профільні поля."""
+
+    async def set_user_phone(self, user_id: int, phone: str | None) -> User | None:
+        """Зберігає підтверджений контакт користувача.
+
+        Реалізації без профільного сховища можуть лишити дефолтний no-op;
+        SQL реалізація перевизначає метод.
+        """
+        return await self.get_user(user_id)
+
+    @abstractmethod
+    async def set_user_referrer(self, user: User, referrer_id: int) -> None: ...
+
+    @abstractmethod
+    async def confirm_age(self, user: User) -> None: ...
+
+    @abstractmethod
+    async def set_blocked(self, user_id: int, blocked: bool) -> User | None: ...
+
+    @abstractmethod
+    async def add_bonus(
+        self, user_id: int, amount: Decimal, reason: str, order_id: int | None = None
+    ) -> None:
+        """Змінює баланс і пише запис в історію. amount може бути від'ємним."""
+
+    @abstractmethod
+    async def update_user_totals(
+        self, user_id: int, orders_delta: int, spent_delta: Decimal
+    ) -> None:
+        """Атомарно рухає денормалізовані лічильники покупок клієнта."""
+
+    @abstractmethod
+    async def set_order_business_state(
+        self, order_id: int, state: str, *, changed_at: datetime | None = None
+    ) -> Order | None:
+        """Атомарно змінює комерційний стан і customer totals."""
+
+    @abstractmethod
+    async def list_users(
+        self, search: str | None = None, blocked: bool | None = None,
+        limit: int = 100, offset: int = 0,
+    ) -> list[User]: ...
+
+    async def count_filtered_users(self, search=None, blocked=None) -> int:
+        raise NotImplementedError("Filtered counts require repository support")
+
+    async def count_filtered_orders(self, **filters) -> int:
+        raise NotImplementedError("Filtered counts require repository support")
+
+    # ---------------------------------------------------------- catalog
+
+    @abstractmethod
+    async def list_categories(self, only_active: bool = False) -> list[Category]: ...
+
+    @abstractmethod
+    async def get_category(self, category_id: int) -> Category | None: ...
+
+    @abstractmethod
+    async def create_category(self, data: dict) -> Category: ...
+
+    @abstractmethod
+    async def update_category(self, category_id: int, data: dict) -> Category | None: ...
+
+    @abstractmethod
+    async def purge_category(self, category_id: int) -> int:
+        """Стирає категорію і всі її товари НАЗАВЖДИ. Повертає кількість товарів.
+
+        Історія замовлень не страждає: позиції зберігають знімок назви й ціни,
+        а посилання на товар обнуляється.
+        """
+
+    @abstractmethod
+    async def purge_product(self, product_id: int) -> bool:
+        """Стирає товар назавжди. Прибирає його з кошиків і знеособлює в історії."""
+
+    @abstractmethod
+    async def purge_promo(self, promo_id: int) -> bool:
+        """Стирає промокод назавжди разом з історією його застосувань.
+
+        Замовлення, оформлені з ним, лишаються — у них обнуляється посилання.
+        """
+
+    @abstractmethod
+    async def delete_category(self, category_id: int) -> int:
+        """Ховає категорію разом із її товарами. Повертає кількість схованих товарів.
+
+        Семантика та сама, що в товарів і промокодів: запис лишається в базі,
+        але зникає з бота. Інакше історія замовлень посилалася б у порожнечу.
+        """
+
+    @abstractmethod
+    async def list_subcategories(self, category_id=None, only_active=False): ...
+
+    @abstractmethod
+    async def get_subcategory(self, subcategory_id): ...
+
+    @abstractmethod
+    async def create_subcategory(self, data): ...
+
+    @abstractmethod
+    async def update_subcategory(self, subcategory_id, data): ...
+
+    @abstractmethod
+    async def delete_subcategory(self, subcategory_id): ...
+
+    @abstractmethod
+    async def purge_subcategory(self, subcategory_id): ...
+
+    @abstractmethod
+    async def list_products(
+        self, category_id: int | None = None, search: str | None = None,
+        only_active: bool = False, limit: int = 500, offset: int = 0,
+        subcategory_id: int | None = None, is_new: bool | None = None,
+        is_sale: bool | None = None, uncategorized: bool = False,
+        perfume_only: bool = False,
+    ) -> list[Product]: ...
+
+    @abstractmethod
+    async def count_products(self, category_id=None, only_active: bool = True, **filters) -> int: ...
+
+    @abstractmethod
+    async def products_by_ids(self, ids: list[int]) -> list[Product]:
+        """Товари за переліком ідентифікаторів, одним запитом.
+
+        Потрібне там, де відомі саме ідентифікатори: списки бажаного,
+        позиції замовлення. Читати заради них увесь каталог означає
+        витягувати тисячі рядків, щоб узяти три.
+        """
+
+    @abstractmethod
+    async def get_product(self, product_id: int) -> Product | None: ...
+
+    @abstractmethod
+    async def get_product_by_sku(self, sku: str) -> Product | None: ...
+
+    @abstractmethod
+    async def get_product_by_external_sku(self, sku: str) -> Product | None: ...
+
+    @abstractmethod
+    async def create_product(self, data: dict) -> Product: ...
+
+    @abstractmethod
+    async def update_product(self, product_id: int, data: dict) -> Product | None: ...
+
+    @abstractmethod
+    async def adjust_stock(self, product_id: int, delta: int) -> Product | None:
+        """Зсув залишку. Атомарний — два замовлення одночасно не вийдуть у мінус."""
+
+    @abstractmethod
+    async def set_stock(self, product_id: int, stock: int) -> Product | None: ...
+
+    @abstractmethod
+    async def count_low_stock(self, threshold: int = 5) -> int: ...
+
+    # ------------------------------------------------------------- cart
+
+    @abstractmethod
+    async def get_cart(self, user_id: int) -> list[CartLine]: ...
+
+    @abstractmethod
+    async def set_cart_qty(self, user_id: int, product_id: int, qty: int) -> None: ...
+
+    @abstractmethod
+    async def clear_cart(self, user_id: int) -> None: ...
+
+    async def replace_cart(self, user_id: int, items: list[tuple[int, int]]) -> None:
+        """All-or-nothing web cart replacement with the checkout user lock.
+
+        Only supported by transactional repositories. Calling the website
+        checkout with a non-transactional repository must fail closed.
+        """
+        raise NotImplementedError('Atomic cart replacement is required')
+
+    # ----------------------------------------------------------- orders
+
+    @abstractmethod
+    async def create_order(self, order: Order, lines: list[OrderLine]) -> Order: ...
+
+    async def create_checkout_order_atomic(
+        self, order: Order, lines: list[OrderLine], *, promo_id: int | None = None,
+        bonus_used=0,
+    ):
+        """Опційний атомарний checkout для SQL-сховищ.
+
+        ``None`` означає, що реалізація не підтримує цю оптимізацію й
+        сервіс має використати сумісний поетапний fallback.
+        """
+        return None
+
+    @abstractmethod
+    async def get_order(self, order_id: int) -> Order | None: ...
+
+    async def get_order_by_checkout_key(self, checkout_key: str) -> Order | None:
+        """Повтор checkout. Старі/тестові репозиторії можуть не підтримувати."""
+        return None
+
+    @abstractmethod
+    async def list_orders(
+        self, status: OrderStatus | None = None, search: str | None = None,
+        user_id: int | None = None, date_from: str | None = None,
+        date_to: str | None = None, limit: int = 100, offset: int = 0,
+        crm_status_id: str | None = None, legacy_only: bool = False, active_only: bool = False,
+    ) -> list[Order]: ...
+
+    @abstractmethod
+    async def update_order(self, order_id: int, data: dict) -> Order | None: ...
+
+    async def transition_order_status_atomic(
+        self, order_id: int, expected_status: OrderStatus, target_status: OrderStatus,
+        patch: dict | None = None,
+    ):
+        """Опційний CAS-перехід статусу під lock рядка.
+
+        Повертає ``(order, previous_status, changed)``. ``None`` означає,
+        що repository не підтримує атомарний шлях і сервіс має використати
+        сумісний fallback. Очікуваний статус не дає stale webhook/UI затерти
+        уже новіший стан замовлення.
+        """
+        return None
+
+    async def cancel_order_atomic(
+        self, order_id: int, expected_status: OrderStatus, *, mark_crm_pending: bool = False,
+    ):
+        """Опційне атомарне скасування для SQL-сховищ.
+
+        Повертає ``(order, previous_status, changed)`` або ``None``, якщо
+        repository не підтримує транзакційний шлях.
+        """
+        return None
+
+    @abstractmethod
+    async def find_order_by_crm_id(self, crm_id: str) -> Order | None:
+        """Замовлення за номером заявки в SalesDrive — з ним приходить вебхук."""
+
+    @abstractmethod
+    async def orders_for_crm_sync(self, states, limit: int = 50) -> list[Order]:
+        """Замовлення, які чекають відправки в CRM або впали на ній."""
+
+    async def list_crm_refresh_candidates(
+        self, *, stale_before: datetime,
+        terminal_stale_before: datetime | None = None,
+        limit: int = 20,
+    ) -> list[Order]:
+        """Пов'язані CRM-заявки, read snapshot яких застарів.
+
+        Не abstract навмисно: тестові/legacy repository лишаються сумісними.
+        SQL реалізація має ефективний indexed query; fallback фільтрує невелику
+        порцію звичайного list_orders. Активні ``pending`` можна перечитувати
+        частіше за фінальні sale/refusal — історія не повинна з'їдати CRM quota.
+        """
+        terminal_cutoff = terminal_stale_before or stale_before
+        rows = await self.list_orders(limit=max(int(limit) * 5, 100))
+        picked = []
+        for order in rows:
+            if not getattr(order, "crm_id", None):
+                continue
+            fetched = getattr(order, "crm_fetched_at", None)
+            if fetched is not None and fetched.tzinfo is None and stale_before.tzinfo is not None:
+                fetched = fetched.replace(tzinfo=stale_before.tzinfo)
+            is_pending = str(getattr(order, "business_state", None) or "pending") == "pending"
+            cutoff = stale_before if is_pending else terminal_cutoff
+            if fetched is None or fetched < cutoff:
+                picked.append(order)
+            if len(picked) >= limit:
+                break
+        return picked
+
+    @abstractmethod
+    async def count_orders(self, status: OrderStatus | None = None) -> int: ...
+
+    async def count_display_new_orders(self, crm_new_status_id: str | None = None) -> int:
+        """Кількість замовлень, які UI має показувати як «Нові».
+
+        SQL реалізація враховує авторитетний статус CRM. Дефолт лишається
+        сумісним з простими test/legacy repository.
+        """
+        return await self.count_orders(OrderStatus.NEW)
+
+    @abstractmethod
+    async def status_breakdown(self) -> dict[str, int]: ...
+
+    @abstractmethod
+    async def display_status_breakdown(
+        self, *, since: datetime | None = None, until: datetime | None = None,
+    ) -> list[dict]:
+        """Статуси так, як їх бачить панель; за потреби — лише в межах періоду."""
+        ...
+
+    # ----------------------------------------------------------- promos
+
+    @abstractmethod
+    async def get_promo_by_code(self, code: str) -> Promo | None: ...
+
+    @abstractmethod
+    async def get_promo(self, promo_id: int) -> Promo | None: ...
+
+    @abstractmethod
+    async def list_promos(self) -> list[Promo]: ...
+
+    @abstractmethod
+    async def create_promo(self, data: dict) -> Promo: ...
+
+    @abstractmethod
+    async def update_promo(self, promo_id: int, data: dict) -> Promo | None: ...
+
+    @abstractmethod
+    async def promo_uses_by_user(self, promo_id: int, user_id: int) -> int: ...
+
+    @abstractmethod
+    async def register_promo_use(self, promo_id: int, user_id: int, order_id: int) -> None: ...
+
+    # ------------------------------------------------------- broadcasts
+
+    @abstractmethod
+    async def transition_broadcast(self, broadcast_id, statuses, data) -> bool: ...
+
+    @abstractmethod
+    async def claim_broadcast(self, broadcast_id, owner, lease_seconds=120) -> Broadcast | None: ...
+
+    @abstractmethod
+    async def heartbeat_broadcast(self, broadcast_id, owner, lease_seconds=120) -> bool: ...
+
+    @abstractmethod
+    async def begin_broadcast_delivery(self, broadcast_id, owner, user_id, tg_id) -> dict: ...
+
+    @abstractmethod
+    async def finish_broadcast_delivery(self, broadcast_id, owner, user_id, status, error=None, next_attempt_at=None) -> bool: ...
+
+    @abstractmethod
+    async def release_broadcast(self, broadcast_id, owner, *, cursor_id=None, finished=False, error=None, next_attempt_at=None) -> bool: ...
+
+    @abstractmethod
+    async def list_broadcast_deliveries(self, broadcast_id, after=0, limit=100) -> dict: ...
+
+    @abstractmethod
+    async def list_broadcasts(self) -> list[Broadcast]: ...
+
+    @abstractmethod
+    async def get_broadcast(self, broadcast_id: int) -> Broadcast | None: ...
+
+    async def get_broadcast_by_client_key(self, client_key: str) -> Broadcast | None:
+        return None
+
+    async def media_references(self, url: str) -> dict:
+        return {}
+
+    @abstractmethod
+    async def create_broadcast(self, data: dict) -> Broadcast: ...
+
+    @abstractmethod
+    async def update_broadcast(self, broadcast_id: int, data: dict) -> Broadcast | None: ...
+
+    @abstractmethod
+    async def delete_broadcast(self, broadcast_id: int) -> bool: ...
+
+    @abstractmethod
+    async def delete_order(self, order_id: int) -> bool:
+        """Стирає замовлення разом із позиціями й перепискою.
+
+        Незворотна дія, доступна лише системному адміністраторові.
+        Підсумки клієнта не перераховуються: замовлення, яке видаляють,
+        зазвичай було помилковим і в підсумки не потрапляло.
+        """
+
+    @abstractmethod
+    async def delete_all_orders(self) -> int:
+        """Стирає всі замовлення. Повертає кількість."""
+
+    @abstractmethod
+    async def next_pending_broadcast(self) -> Broadcast | None: ...
+
+    @abstractmethod
+    async def due_broadcasts(self, now: datetime) -> list[Broadcast]: ...
+
+    # --------------------------------------------------------- segments
+
+    @abstractmethod
+    async def count_segment(self, segment: dict) -> int: ...
+
+    @abstractmethod
+    async def segment_recipients(
+        self, segment: dict, cursor_id: int, limit: int
+    ) -> list[tuple[int, int]]:
+        """Наступна порція як (user_id, tg_id), впорядкована за user_id."""
+
+    # ------------------------------------------------------------ stats
+
+    @abstractmethod
+    async def stats_summary(
+        self, days: int, *, since: datetime | None = None, until: datetime | None = None,
+    ) -> Stats: ...
+
+    @abstractmethod
+    async def stats_series(
+        self, days: int, *, since: datetime | None = None, until: datetime | None = None, tz=None,
+    ) -> list[dict]:
+        """[{date, revenue(received), sales, expected, orders, shipped}, ...]."""
+
+    @abstractmethod
+    async def stats_top_products(
+        self, days: int, limit: int, *, since: datetime | None = None, until: datetime | None = None,
+    ) -> list[dict]: ...
+
+    async def stats_insights(
+        self, days: int, *, since: datetime | None = None, until: datetime | None = None,
+        previous_since: datetime | None = None, tz=None,
+    ) -> dict:
+        """Показники, які міняють рішення, а не просто описують минуле.
+
+        Зведення відповідає на «скільки», але не на «краще чи гірше»,
+        «хто саме купує» і «коли по нас приходять». Тут — порівняння з
+        попереднім таким самим періодом, частка повторних покупців,
+        відмови, розподіл оплати й доставки та розкладка продажів
+        по годинах і днях тижня.
+        """
+        ...
+
+    @abstractmethod
+    async def stats_by_operator(
+        self, days: int, *, since: datetime | None = None, until: datetime | None = None,
+    ) -> list[dict]:
+        """Продажі у розрізі менеджерів: тільки business_state=sale.
+
+        Замовлення без менеджера зводяться в окремий рядок, щоб сума розрізу
+        збігалася із загальним оборотом продажів.
+        """
+
+    # ---------------------------------------------------- списки бажаного
+
+    @abstractmethod
+    async def list_wishlists(self, user_id: int) -> list[Wishlist]: ...
+
+    @abstractmethod
+    async def get_wishlist(self, wishlist_id: int) -> Wishlist | None: ...
+
+    @abstractmethod
+    async def create_wishlist(self, user_id: int, name: str) -> Wishlist: ...
+
+    @abstractmethod
+    async def rename_wishlist(self, wishlist_id: int, name: str) -> Wishlist | None: ...
+
+    @abstractmethod
+    async def delete_wishlist(self, wishlist_id: int) -> bool: ...
+
+    @abstractmethod
+    async def set_wishlist_items(self, wishlist_id: int, product_ids: list[int]) -> Wishlist | None:
+        """Перезаписує склад списку. Додавання й вилучення робить сервіс."""
+
+    # -------------------------------------------------- чат замовлення
+
+    @abstractmethod
+    async def set_chat_order(self, user_id: int, order_id: int | None) -> None:
+        """Яке замовлення клієнт зараз обговорює в боті."""
+
+    @abstractmethod
+    async def save_order_receipt(self, order_id: int, user_id: int, attachment: dict,
+                                 *, tg_message_id: int, author: str, text: str) -> OrderMessage | None:
+        """Atomically persist the receipt and an incoming attachment in its order chat."""
+        ...
+
+    @abstractmethod
+    async def add_order_message(self, data: dict) -> OrderMessage: ...
+
+    @abstractmethod
+    async def list_order_messages(
+        self, order_id: int, limit: int = 200, after_id: int | None = None,
+        before_id: int | None = None,
+    ) -> list[OrderMessage]: ...
+
+    @abstractmethod
+    async def find_order_by_tg_message(self, tg_message_id: int, user_id: int | None = None) -> int | None:
+        """Замовлення, до якого належить повідомлення бота. Для розбору відповідей."""
+
+    @abstractmethod
+    async def mark_messages_read(self, order_id: int, message_ids: list[int] | None = None) -> int:
+        """Позначає тільки передані ID вхідних повідомлень. Порожній список — no-op."""
+
+    async def mark_client_read(self, order_id: int, message_ids: list[int]) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def archive_cold_messages(self, older_than_days: int = 180, batch: int = 50) -> dict:
+        """Стискає давно закриті чати у cold-tier без втрати історії."""
+        ...
+
+    @abstractmethod
+    async def prune_panel_notifications(self, older_than_days: int = 90) -> int:
+        """Прибирає старі оперативні сповіщення панелі."""
+        ...
+
+    async def forget_chat_files(self, older_than_days: int) -> int:
+        """Прибирає посилання на вкладення давно виконаних замовлень.
+
+        Самі файли лежать у Telegram, у нас — лише їхні коди. Але код
+        дає доступ до вмісту, тож зберігати його довше, ніж потрібно для
+        роботи, немає причин: квитанція за виконаним замовленням нікому
+        не знадобиться, а витік коду означав би витік чужих квитанцій.
+        """
+        ...
+
+    async def set_bot_reachable(self, tg_id: int, reachable: bool) -> None:
+        """Позначає, чи доходять до людини повідомлення бота."""
+        ...
+
+    async def unread_counts(self) -> dict[int, int]:
+        """Скільки непрочитаних у кожного замовлення: {order_id: кількість}."""
+
+    # ------------------------------------------------ загальна підтримка
+
+    @abstractmethod
+    async def ensure_support_thread(self, user_id: int) -> SupportThread:
+        """Повертає активне звернення або створює нове після закритого."""
+
+    @abstractmethod
+    async def get_support_thread(self, thread_id: int) -> SupportThread | None: ...
+
+    @abstractmethod
+    async def get_support_thread_for_user(self, user_id: int) -> SupportThread | None: ...
+
+    @abstractmethod
+    async def list_support_threads(self, status: str | None = None) -> list[SupportThread]: ...
+
+    @abstractmethod
+    async def close_support_thread(
+        self, thread_id: int, *, closed_by: str, closed_by_name: str = "", close_reason: str = ""
+    ) -> tuple[SupportThread | None, bool]:
+        """Закриває конкретну сесію один раз. Повертає (thread, changed).
+
+        Закриту сесію ніколи не відкриває повторно. `changed=False` означає,
+        що вона вже була закрита до цього виклику.
+        """
+
+    @abstractmethod
+    async def add_support_message(self, data: dict) -> SupportMessage: ...
+
+    @abstractmethod
+    async def add_support_message_if_open(self, data: dict) -> SupportMessage | None:
+        """Додає повідомлення лише якщо саме ця сесія ще відкрита.
+
+        Перевірка статусу й вставка мають бути однією транзакцією, щоб
+        паралельне закриття не створювало повідомлення у вже завершеній сесії.
+        """
+
+    @abstractmethod
+    async def list_support_messages(self, thread_id: int, limit: int = 300) -> list[SupportMessage]: ...
+
+    async def recent_support_messages(self, thread_id: int, limit: int = 24) -> list[SupportMessage]:
+        """Останні повідомлення для lightweight conversation context.
+
+        Реалізації з ефективним DESC-index query можуть перевизначити метод.
+        Дефолт потрібен для тестових/простих repository без нового контракту.
+        """
+        cap = max(1, min(int(limit or 24), 100))
+        items = await self.list_support_messages(thread_id, limit=max(cap, 300))
+        return list(items[-cap:])
+
+    async def get_support_message(self, thread_id, message_id):
+        raise NotImplementedError
+
+    async def list_user_support_threads(self, user_id, before_id=None, limit=20):
+        raise NotImplementedError
+
+    async def page_support_messages(self, thread_id, before_id=None, after_id=None, limit=200):
+        raise NotImplementedError
+
+    async def mark_support_message_ids_read(self, thread_id, message_ids):
+        raise NotImplementedError
+
+    async def add_support_client_message(self, thread_id, user, text, request_id):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def mark_support_read(self, thread_id: int) -> int: ...
+
+    @abstractmethod
+    async def support_unread_count(self) -> int: ...
+
+    @abstractmethod
+    async def support_stats(self) -> dict[str, int]: ...
+
+    @abstractmethod
+    async def delete_support_thread(self, thread_id: int) -> bool: ...
+
+    # ----------------------------------------------- центр сповіщень панелі
+
+    @abstractmethod
+    async def create_panel_notification(self, data: dict) -> dict:
+        """Створює одну глобальну подію для всіх працівників панелі."""
+
+    @abstractmethod
+    async def list_panel_notifications(
+        self, viewer_key: str, *, limit: int = 60, after_id: int | None = None
+    ) -> list[dict]:
+        """Події з персональною ознакою read для конкретного працівника."""
+
+    @abstractmethod
+    async def panel_notification_unread_count(self, viewer_key: str) -> int: ...
+
+    @abstractmethod
+    async def mark_panel_notification_read(self, notification_id: int, viewer_key: str) -> bool: ...
+
+    @abstractmethod
+    async def mark_all_panel_notifications_read(self, viewer_key: str) -> int: ...
+
+    @abstractmethod
+    async def create_dashboard_session(self, data: dict) -> None: ...
+
+    @abstractmethod
+    async def get_dashboard_session(self, digest: str) -> dict | None: ...
+
+    @abstractmethod
+    async def delete_dashboard_session(self, digest: str) -> None: ...
+
+    @abstractmethod
+    async def touch_dashboard_session(self, digest: str, now: datetime) -> None: ...
+
+    # ------------------------------------------------------ менеджери
+
+    @abstractmethod
+    async def create_operator(self, data: dict) -> Operator: ...
+
+    @abstractmethod
+    async def get_operator(self, operator_id: int) -> Operator | None: ...
+
+    @abstractmethod
+    async def get_operator_by_login(self, login: str) -> Operator | None:
+        """Разом із хешем пароля — потрібен для входу."""
+
+    @abstractmethod
+    async def list_operators(self) -> list[Operator]: ...
+
+    @abstractmethod
+    async def update_operator(self, operator_id: int, data: dict) -> Operator | None: ...
+
+    @abstractmethod
+    async def purge_operator(self, operator_id: int) -> bool:
+        """Стирає обліковий запис назавжди.
+
+        Замовлення зберігають імʼя менеджера рядком, тож історія лишається
+        читабельною; обнуляється лише посилання на видалений запис.
+        """
+
+    @abstractmethod
+    async def delete_operator(self, operator_id: int) -> bool:
+        """Вимикає доступ. Запис лишається: він потрібен історії дій."""
+
+    # --------------------------------------------------- налаштування
+
+    @abstractmethod
+    async def get_settings_map(self) -> dict[str, str]:
+        """Налаштування, збережені з панелі. Порожній dict — нічого не задано."""
+
+    @abstractmethod
+    async def save_settings_map(self, values: dict[str, str]) -> None:
+        """Перезаписує передані ключі, не чіпаючи решту."""
+
+    # ------------------------------------------------------ lifecycle
+
+    async def close(self) -> None:
+        """Звільнення ресурсів. За замовчуванням нічого не робить."""

@@ -1,0 +1,185 @@
+"""SECURITY: доступ, ін'єкції, токени, витік секретів."""
+from qa_paths import qa_db_path, qa_db_url
+import logging
+import sys, json, base64, time; sys.path.insert(0,"/tmp")
+from qa_common import boot, init_data, Report, TOKEN
+app, Session, fake = boot(qa_db_path('qa_sec.db'))
+from fastapi.testclient import TestClient
+import jwt as pyjwt
+c = TestClient(app, client=("127.0.0.1", 50000)); r = Report("SECURITY")
+
+A = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"admin","password":"secret"}).json()["access_token"]}
+c.post("/api/operators", json={"login":"olena","name":"Олена","password":"kvitka-sadok-2026"}, headers=A)
+O = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"olena","password":"kvitka-sadok-2026"}).json()["access_token"]}
+cat = c.post("/api/catalog/categories", json={"name":"К","sort_order":0,"is_active":True}, headers=A).json()
+pr = c.post("/api/catalog/products", json={"category_id":cat["id"],"name":"Т","price":"300","stock":9,"is_active":True}, headers=A).json()
+
+print("\n--- Broken Access Control ---")
+for path in ["/api/orders","/api/customers","/api/promos","/api/settings","/api/operators","/api/stats/summary"]:
+    r.check(c.get(path).status_code in (401,403), f"без токена закрито: {path}", c.get(path).status_code)
+r.check(c.get("/api/operators", headers=O).status_code == 403, "менеджер не бачить менеджерів")
+r.check(c.put("/api/settings", json={"seller_name":"Хтось"}, headers=O).status_code == 403, "менеджер не змінює реквізити продавця")
+
+print("\n--- JWT ---")
+raw = A["Authorization"].split()[1]
+head, payload, sig = raw.split(".")
+tampered = json.loads(base64.urlsafe_b64decode(payload + "=="))
+tampered["role"] = "admin"; tampered["sub"] = "hacker"
+forged = ".".join([head, base64.urlsafe_b64encode(json.dumps(tampered).encode()).decode().rstrip("="), sig])
+r.check(c.get("/api/orders", headers={"Authorization": f"Bearer {forged}"}).status_code == 401, "підміна payload відхилена")
+none_alg = pyjwt.encode({"sub":"x","role":"admin","exp":int(time.time())+999}, "", algorithm="none")
+r.check(c.get("/api/orders", headers={"Authorization": f"Bearer {none_alg}"}).status_code == 401, "alg=none відхилено")
+other = pyjwt.encode({"sub":"x","role":"admin","exp":int(time.time())+999}, "інший-ключ", algorithm="HS256")
+r.check(c.get("/api/orders", headers={"Authorization": f"Bearer {other}"}).status_code == 401, "чужий ключ відхилено")
+expired = pyjwt.encode({"sub":"admin","role":"admin","exp":int(time.time())-10}, "t"*32, algorithm="HS256")
+r.check(c.get("/api/orders", headers={"Authorization": f"Bearer {expired}"}).status_code == 401, "прострочений токен")
+# менеджер не може підвищити роль зміною свого ж токена
+opraw = O["Authorization"].split()[1]
+oh, op_, os_ = opraw.split(".")
+opay = json.loads(base64.urlsafe_b64decode(op_ + "==")); opay["role"]="admin"
+esc = ".".join([oh, base64.urlsafe_b64encode(json.dumps(opay).encode()).decode().rstrip("="), os_])
+r.check(c.get("/api/operators", headers={"Authorization": f"Bearer {esc}"}).status_code == 401, "менеджер не підвищить роль")
+
+print("\n--- initData ---")
+r.check(c.get("/api/shop/config").status_code == 401, "вітрина без підпису закрита")
+bad = init_data(1)["X-Telegram-Init-Data"].replace("hash=", "hash=deadbeef")
+r.check(c.get("/api/shop/config", headers={"X-Telegram-Init-Data": bad}).status_code == 401, "підроблений підпис")
+victim = init_data(7001); c.post("/api/shop/age-confirm", headers=victim)
+tampered_id = victim["X-Telegram-Init-Data"].replace("7001", "7002")
+r.check(c.get("/api/shop/config", headers={"X-Telegram-Init-Data": tampered_id}).status_code == 401, "підміна tg_id")
+r.check(c.get("/api/shop/config", headers=A).status_code == 401, "JWT панелі не працює у вітрині")
+
+print("\n--- ін'єкції ---")
+inj = "'; DROP TABLE orders; --"
+resp = c.get("/api/orders", params={"search": inj}, headers=A)
+r.check(resp.status_code == 200, "SQL-ін'єкція в пошуку не ламає", resp.status_code)
+r.check(c.get("/api/orders", headers=A).status_code == 200, "таблиця замовлень ціла")
+xss = "<script>alert(1)</script>"
+p = c.post("/api/catalog/products", json={"category_id":cat["id"],"name":xss,"price":"1","stock":1,"is_active":True}, headers=A).json()
+r.check(p["name"] == xss, "XSS зберігається як текст, не виконується на сервері")
+from shop.services.notifications import esc
+r.check("<script>" not in esc(xss) and "&lt;script&gt;" in esc(xss), "екранування для Telegram працює")
+
+print("\n--- витік секретів ---")
+body = c.get("/api/health").text + c.get("/api/shop/config", headers=victim).text
+# Шукаємо саме значення секретів, а не підрядки: "hook" збігається
+# зі словом webhook_configured і давав хибне спрацювання
+for secret in ["777001:TESTTOKEN", "t"*32, "cron", "hook"]:
+    import re as _re
+    leaked = _re.search(rf"(?<![\w-]){_re.escape(secret)}(?![\w-])", body)
+    r.check(not leaked, f"секрет не в публічній відповіді: {secret[:14]}", leaked and leaked.group(0))
+prod = c.get(f"/api/shop/products/{pr['id']}", headers=victim).json()
+r.check("photo_file_id" not in prod, "file_id не витікає у вітрину")
+ops = c.get("/api/operators", headers=A).json()
+r.check(all("password_hash" not in o for o in ops), "хеш пароля не віддається")
+
+print("\n--- службові точки ---")
+r.check(c.get("/api/telegram-setup").status_code == 404, "setup без секрета закритий")
+r.check(c.get("/api/telegram-detach?token=невірний").status_code == 404, "detach без секрета закритий")
+r.check(c.post("/api/telegram/невірний/777001", json={}).status_code == 404, "вебхук із чужим секретом")
+r.check(c.post("/api/telegram/hook/999999", json={}, headers={"X-Telegram-Bot-Api-Secret-Token": __import__("api.routers.telegram", fromlist=["webhook_header_secret"]).webhook_header_secret()}).status_code == 409, "вебхук чужого бота")
+
+print("\n--- перебір пароля ---")
+from shop.services import login_guard                          # noqa: E402
+
+login_guard.reset()
+limit = login_guard.max_attempts()
+
+# Кілька помилок поспіль — звичайна річ: переплутана розкладка, старий
+# пароль у менеджері. Такі спроби мають отримувати ту саму відмову, без
+# натяку на те, чи існує обліковий запис.
+codes = {c.post("/api/auth/login",
+                json={"login": "admin", "password": f"спроба{i}"}).status_code
+         for i in range(limit - 1)}
+r.check(codes == {401}, "перші невдалі спроби — стабільно 401", codes)
+r.check(c.post("/api/auth/login",
+               json={"login": "admin", "password": "secret"}).status_code == 200,
+        "правильний пароль після кількох помилок працює")
+
+# А от десяток поспіль — це вже не друкарська помилка. Успішний вхід вище
+# обнулив лічильник, тож рахунок починається заново.
+login_guard.reset()
+for i in range(limit):
+    c.post("/api/auth/login", json={"login": "admin", "password": f"підбір{i}"})
+r.check(c.post("/api/auth/login",
+               json={"login": "admin", "password": "спроба"}).status_code == 429,
+        "після межі вхід закривається")
+# Головне: під блокуванням не пускає навіть вірний пароль — інакше
+# обмеження обходилось би тим самим підбором.
+r.check(c.post("/api/auth/login",
+               json={"login": "admin", "password": "secret"}).status_code == 429,
+        "під блокуванням вірний пароль теж не пускає")
+login_guard.reset()
+
+print("\n--- контекст події безпеки ---")
+# У журналі за добу набралося 33 відхилення підпису Mini App — і в
+# жодному не було IP. Подія, заради якої журнал безпеки й існує, не
+# давала відповіді на перше ж питання: звідки це прийшло.
+_events = []
+
+
+class _Catch(logging.Handler):
+    def emit(self, record):
+        if getattr(record, "security", False):
+            _events.append(record.__dict__)
+
+
+_catcher = _Catch()
+logging.getLogger("security").addHandler(_catcher)
+c.get("/api/shop/config", headers={
+    "X-Telegram-Init-Data": "user=%7B%22id%22%3A1%7D&hash=deadbeef",
+    # Так запит виглядає після nginx: X-Real-IP перезаписаний справжньою
+    # адресою (nginx/cloudflare-realip.conf), а CF-Connecting-IP міг
+    # прийти від клієнта напряму на origin — підробленим.
+    "X-Real-IP": "203.0.113.7",
+    "CF-Connecting-IP": "198.51.100.66",
+    "CF-IPCountry": "PL",
+    "User-Agent": "qa-probe",
+})
+logging.getLogger("security").removeHandler(_catcher)
+
+_rejected = [e for e in _events if e.get("event") == "security.initdata.rejected"]
+r.check(_rejected, "підроблений підпис записаний у журнал безпеки")
+_last = _rejected[-1] if _rejected else {}
+# Раніше тут вимагали адресу з CF-Connecting-IP. Застосунок свідомо
+# перестав йому довіряти (його підробляє будь-хто, хто звернувся на origin
+# в обхід CDN), а набір цього не помітив: він падав ще на вході й
+# показувався «ok». Справжню адресу тепер ставить nginx у X-Real-IP.
+r.check(_last.get("ip") == "203.0.113.7",
+        "адреса є — з X-Real-IP, який перезаписує nginx, а не з підроблюваного заголовка",
+        _last.get("ip"))
+r.check(_last.get("country") == "PL",
+        "країна є: магазин возить лише по Україні, тож звернення з-за кордону "
+        "показове саме по собі", _last.get("country"))
+r.check(_last.get("path") == "/api/shop/config", "видно, куди саме стукали",
+        _last.get("path"))
+r.check(_last.get("userAgent") == "qa-probe", "і чим", _last.get("userAgent"))
+r.check(bool(_last.get("requestId")),
+        "подія звʼязана із запитом — по ньому знаходиться решта журналу")
+
+print("\n--- порожній підпис і підроблений — різні події ---")
+# Тривога, що спрацьовує на буденне, вчить не звертати на неї уваги.
+# Вітрину відкрили в браузері — це не напад; підпис не зійшовся — уже так.
+from shop import security_log as _sec                                # noqa: E402
+
+r.check("security.initdata.missing" in _sec.CATALOG,
+        "для звернення без підпису є окрема подія")
+r.check(_sec.describe("security.initdata.missing").severity == "info",
+        "і вона спокійного рівня",
+        _sec.describe("security.initdata.missing").severity)
+r.check(_sec.describe("security.initdata.rejected").severity == "notice",
+        "а підроблений підпис лишається вартим уваги",
+        _sec.describe("security.initdata.rejected").severity)
+r.check("security.initdata.expired" in _sec.CATALOG,
+        "прострочена валідна сесія має окрему подію")
+r.check(_sec.describe("security.initdata.expired").severity == "info",
+        "прострочення сесії не маскується під атаку",
+        _sec.describe("security.initdata.expired").severity)
+
+import pathlib                                                        # noqa: E402
+
+_auth = pathlib.Path("api/webapp_auth.py").read_text()
+r.check("security.initdata.missing" in _auth and "missing = not x_telegram_init_data" in _auth and "if missing:" in _auth,
+        "вибір події залежить від того, чи підпис узагалі був")
+
+sys.exit(1 if r.done() else 0)

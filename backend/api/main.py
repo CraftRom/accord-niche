@@ -1,0 +1,325 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
+
+from api.auth import authenticate, create_token, Principal, require_sysadmin, require_staff
+from api.routers import (
+    backups as backups_router, broadcasts, catalog, customers,
+    logs as logs_router, media as media_router,
+    integrations, orders, promos, support, shop_support, notifications, realtime,
+    settings as settings_router, operators, shop as shop_router, stats, telegram, landing_pages, public_catalog, website_shop,
+)
+from api.schemas import LoginIn, TokenOut
+from shop.config import settings
+from shop import security_log as security
+from shop.services import login_guard
+from shop.repo.factory import get_repo
+from shop.db import check_db
+
+from shop.build import BUILD as _BUILD
+
+from shop.logging_setup import setup as setup_logging
+
+setup_logging("api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    log = logging.getLogger("api")
+    settings.validate_production_security()
+
+    # Схему накочує сервіс migrate до старту API. Тут лише перевіряємо
+    # звʼязок, і це принципово: init_db() робить create_all, а він при
+    # кількох воркерах перегонить сам себе — обидва бачать, що таблиці
+    # немає, обидва створюють, другий падає з «table already exists».
+    # Воркер помирає, uvicorn піднімає новий, той падає так само. У логах
+    # видно лише «Child process died» без причини.
+    try:
+        await check_db()
+    except Exception as exc:
+        # Без цього блоку API просто падав у краш-цикл, nginx віддавав 502,
+        # а в панелі це виглядало як проблема з логіном.
+        log.error("=" * 70)
+        log.error("НЕ ВДАЛОСЯ ПІДКЛЮЧИТИСЬ ДО БАЗИ: %s", exc)
+        log.error("Перевірте, що сервіс migrate відпрацював, і POSTGRES_PASSWORD у .env.")
+        log.error(
+            "Якщо ви змінили пароль ПІСЛЯ першого запуску — Postgres його не підхопить: "
+            "пароль задається лише при створенні тому. Або поверніть старий пароль, "
+            "або перестворіть базу (УВАГА, це зітре дані): "
+            "docker compose down -v && docker compose up -d"
+        )
+        log.error("=" * 70)
+        raise
+
+    log.info("Дашборд очікує логін: %r", settings.dashboard_login)
+    if settings.dashboard_password == "admin":
+        log.warning(
+            "DASHBOARD_PASSWORD не змінено з дефолтного. "
+            "Задайте його в .env і перестворіть контейнер: docker compose up -d --force-recreate api"
+        )
+
+    # Другий незалежний safety-net для CRM read-side. Основний background
+    # worker лишається scheduler, але статуси не мають залежати від того, чи
+    # живий саме його контейнер. API watchdog використовує той самий Redis
+    # lease, тому два процеси ніколи не роблять один і той самий batch паралельно.
+    from shop.services.salesdrive_reconciler import api_watchdog_loop
+
+    crm_watchdog_stop = asyncio.Event()
+    crm_watchdog = asyncio.create_task(api_watchdog_loop(crm_watchdog_stop), name="salesdrive-api-watchdog")
+    try:
+        yield
+    finally:
+        crm_watchdog_stop.set()
+        crm_watchdog.cancel()
+        with suppress(asyncio.CancelledError):
+            await crm_watchdog
+
+    # Бот, яким API шле сповіщення, тримає власну сесію aiohttp. Ніхто її
+    # не закривав, тому кожне вимкнення контейнера давало в журналі
+    # «Unclosed client session» рівнем error — а на кожен error іде
+    # сповіщення в Telegram. Через це звичайний деплой виглядав як аварія,
+    # і справжні помилки губилися серед хибних тривог.
+    from api.routers.telegram import close_bot
+
+    await close_bot()
+
+
+# Документація закрита за замовчуванням.
+#
+# Відкритий /openapi.json — це готова карта атаки: усі адмінські маршрути,
+# назви полів і формати. Розробнику вона потрібна, тож вмикається явно
+# змінною ENABLE_API_DOCS=true, і тільки в неробочому середовищі.
+_docs_on = settings.enable_api_docs
+
+app = FastAPI(
+    title=f"{settings.shop_name} — Dashboard API",
+    # Версія API піднімається разом зі змінами read/write контракту.
+    # 1.10: актуальна нормалізація доставки SalesDrive order/list.
+    version="1.30.3",
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_on else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if _docs_on else None,
+)
+
+from api.request_log import RequestLogMiddleware, client_ip, current_request_id
+
+# Порядок важливий: журнал ставимо першим, щоб він бачив і ті запити,
+# які CORS відхилить, — саме вони найчастіше й спантеличують.
+app.add_middleware(RequestLogMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Telegram-Init-Data", "X-CSRF-Token", "X-Dashboard-Request", "X-Request-Id", "Idempotency-Key"],
+)
+
+from api.security_middleware import SecurityMiddleware, SiteHostMiddleware, DomainBoundaryMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from urllib.parse import urlsplit
+allowed_hosts = [h.strip() for h in settings.trusted_hosts.split(",") if h.strip()]
+if not allowed_hosts:
+    allowed_hosts = ["localhost", "127.0.0.1", "[::1]"]
+    for url in [settings.public_url, *settings.cors_list]:
+        host = urlsplit(url).hostname
+        if host:
+            allowed_hosts.append(host)
+app.add_middleware(SecurityMiddleware)
+if "*" in allowed_hosts:
+    raise ValueError("TRUSTED_HOSTS має містити конкретні дозволені хости")
+app.add_middleware(SiteHostMiddleware, allowed_hosts=allowed_hosts)
+app.add_middleware(DomainBoundaryMiddleware)
+
+
+async def _login_principal(request: Request, data: LoginIn, repo=Depends(get_repo)):
+    auth_log = logging.getLogger("api.auth")
+    context = {
+        "requestId": current_request_id.get(),
+        "login": data.login,
+        "ip": client_ip(request),
+        "userAgent": request.headers.get("user-agent", ""),
+    }
+
+    # Перевіряємо до звірки пароля: заблокованому не має значення, чи
+    # вгадав він цього разу. Заразом це не дає використати сам час
+    # відповіді як ознаку правильного пароля.
+    locked = login_guard.locked_for(data.login)
+    if locked:
+        security.record("security.login.blocked", **context,
+                        reason=f"вхід закрито ще на {locked} с")
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Забагато невдалих спроб. Спробуйте за кілька хвилин.",
+        )
+
+    principal = await authenticate(repo, data.login, data.password)
+    if principal is None:
+        # Пароль у журнал не потрапляє ніколи — лише його довжина. Цього
+        # досить, щоб відрізнити помилку набору від перебору, і замало,
+        # щоб журнал сам став витоком.
+        auth_log.warning(
+            "Невдалий вхід: %s", data.login,
+            extra={**context, "event": "auth.login.failed",
+                   "passwordLength": len(data.password)},
+        )
+        # Той самий факт у журнал безпеки. Не замість, а на додачу:
+        # у спільному журналі він видно поруч із рештою запитів тієї
+        # хвилини, а в журналі безпеки — поруч із іншими спробами входу
+        # за тиждень.
+        attempts = login_guard.note_failure(data.login)
+        existing = await repo.get_operator_by_login(data.login.strip())
+        security.record(
+            "security.login.disabled" if existing and not existing.is_active
+            else "security.login.failed",
+            **context, attempts=attempts,
+        )
+        # Про саме блокування повідомляємо окремою подією тієї ж миті,
+        # коли воно настало: інакше про нього дізналися б лише з наступної
+        # спроби, якої може й не бути.
+        if login_guard.locked_for(data.login):
+            security.record("security.login.blocked", **context,
+                            attempts=attempts,
+                            reason="перевищено кількість спроб поспіль")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Невірний логін або пароль")
+
+    auth_log.info(
+        "Вхід: %s", data.login,
+        extra={**context, "event": "auth.login.ok",
+               "role": principal.role.value, "operatorId": principal.operator_id},
+    )
+    login_guard.note_success(data.login)
+    security.record("security.login.ok", **context, role=principal.role.value)
+    return principal
+
+
+@app.post("/api/auth/login", response_model=TokenOut, tags=["auth"])
+async def login(request: Request, data: LoginIn, repo=Depends(get_repo)):
+    principal = await _login_principal(request, data, repo)
+    return TokenOut(access_token=create_token(principal.login, principal.role, principal.operator_id,
+        principal.name, auth_version=principal.auth_version), role=principal.role.value, name=principal.name)
+
+
+@app.post("/api/auth/browser-login", tags=["auth"])
+async def browser_login(request: Request, response: Response, data: LoginIn, repo=Depends(get_repo)):
+    from api.browser_sessions import check_browser_request, open_session
+    check_browser_request(request)
+    principal = await _login_principal(request, data, repo)
+    return await open_session(request, response, repo, principal)
+
+
+@app.get("/api/auth/session", tags=["auth"])
+async def browser_session(request: Request, who: Principal = Depends(require_staff)):
+    from api.browser_sessions import profile
+    row = getattr(request.state, "dashboard_session", None)
+    if not row:
+        raise HTTPException(401, "Потрібна браузерна сесія")
+    return profile(who, row["csrf_token"])
+
+
+@app.post("/api/auth/logout", status_code=204, tags=["auth"])
+async def browser_logout(request: Request, response: Response, repo=Depends(get_repo), who: Principal = Depends(require_staff)):
+    from api.browser_sessions import cookie_name, secure_cookie
+    row = getattr(request.state, "dashboard_session", None)
+    if not row:
+        raise HTTPException(400, "Цей вихід призначено для браузерної сесії")
+    await repo.delete_dashboard_session(row["id"])
+    response.delete_cookie(cookie_name(), path="/", secure=secure_cookie(), httponly=True, samesite="strict")
+
+
+@app.get("/api/health", tags=["service"])
+async def health():
+    """Публічна liveness-перевірка без версій, конфігурації та внутрішніх деталей."""
+    return {"status": "ok"}
+
+
+@app.get("/api/debug/database", tags=["service"])
+async def debug_database(_who: Principal = Depends(require_sysadmin)):
+    """Чи жива база просто зараз.
+
+    Лише для системного адміністратора: версія сервера бази — підказка для
+    атаки, тому публічним лишився тільки /api/health без жодних деталей.
+    Адреси й паролі не віддає — лише факт зʼєднання, версію сервера й час
+    найдешевшого запиту.
+    """
+    import time
+
+    from sqlalchemy import text
+
+    from shop.db import SessionMaker
+
+    started = time.monotonic()
+    try:
+        async with SessionMaker() as session:
+            version = (await session.execute(text("SELECT version()"))).scalar_one()
+            await session.execute(text("SELECT 1"))
+        return {
+            "build": _BUILD,
+            "ok": True,
+            "server": str(version)[:80],
+            "latency_ms": round((time.monotonic() - started) * 1000, 1),
+        }
+    except Exception as exc:
+        return {
+            "build": _BUILD,
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}"[:400],
+        }
+
+
+@app.get("/api/debug/routing", tags=["service"])
+async def debug_routing(request: Request, _who: Principal = Depends(require_sysadmin)):
+    """Показує, який шлях реально дійшов до застосунку.
+
+    Потрібно, коли платформа переписує URL: якщо сюди приходить не той шлях,
+    що в адресному рядку, значить проблема в маршрутизації, а не в коді.
+    """
+    return {
+        "path_received": request.url.path,
+        "root_path": request.scope.get("root_path", ""),
+        "expected": "/api/debug/routing",
+        "routing_ok": request.url.path.endswith("/api/debug/routing"),
+    }
+
+
+app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.include_router(logs_router.router)
+app.include_router(backups_router.router)
+app.include_router(media_router.router)
+app.include_router(catalog.router, prefix="/api/catalog", tags=["catalog"])
+app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
+app.include_router(support.router, prefix="/api/support", tags=["support"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+app.include_router(realtime.router, prefix="/api/realtime", tags=["realtime"])
+app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
+app.include_router(promos.router, prefix="/api/promos", tags=["promos"])
+app.include_router(landing_pages.router, prefix="/api/landing-pages", tags=["landing-pages"])
+app.include_router(broadcasts.router, prefix="/api/broadcasts", tags=["broadcasts"])
+app.include_router(operators.router, prefix="/api/operators", tags=["operators"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
+# Вебхук зовнішніх систем — без авторизації панелі (див. модуль), а
+# перевірка звʼязку — лише для системного адміністратора.
+app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])
+# Вітрина Mini App — окрема автентифікація (Telegram initData), не JWT панелі
+app.include_router(shop_router.router, prefix="/api/shop", tags=["shop"])
+app.include_router(public_catalog.router, prefix="/api/public", tags=["public-catalog"])
+app.include_router(website_shop.router, prefix="/api/web", tags=["website-shop"])
+app.include_router(shop_support.router, prefix="/api/shop/support", tags=["shop-support"])
+app.include_router(telegram.router, prefix="/api", tags=["telegram"])
+
+
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+        for error in exc.errors()
+    ]})

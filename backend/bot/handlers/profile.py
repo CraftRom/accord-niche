@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from shop.formatting import money as format_money
+from html import escape
+from shop.telegram_text import answer_html
+
+from aiogram import F, Router
+from aiogram.types import CallbackQuery, Message
+
+from bot import keyboards as kb
+from shop.links import app_link
+from shop.services.shop_settings import get_shop_settings
+from shop.entities import User
+from shop.services import order_business
+from shop.repo.base import Repository
+
+router = Router()
+
+
+def referral_link(code: str) -> str:
+    """Реферальний Named Mini App URL із підписаним Telegram startapp."""
+    return app_link(code)
+
+
+@router.message(F.text == "👤 Профіль")
+async def profile(message: Message, repo: Repository, user: User) -> None:
+    fresh = await repo.get_user(user.id) or user
+    link = referral_link(fresh.referral_code)
+
+    shop = await get_shop_settings(repo)
+
+    # Вимкнені модулі не згадуються взагалі: рядок «Бонусний рахунок: 0»
+    # породжує питання до підтримки там, де бонусів у магазині немає
+    parts = [
+        "<b>Ваш профіль</b>\n",
+        f"Замовлень: {fresh.orders_count}",
+        f"Витрачено: {format_money(fresh.total_spent)} {escape(shop.currency)}",
+    ]
+    if shop.bonus_enabled:
+        parts.append(
+            f"Бонусний рахунок: <b>{format_money(fresh.bonus_balance)} {escape(shop.currency)}</b>"
+        )
+    if shop.volume_discount_enabled and shop.volume_discount_min > 0:
+        parts.append(
+            f"\nЗнижка {format_money(shop.volume_discount_percent)}% на замовлення "
+            f"від {format_money(shop.volume_discount_min)} {escape(shop.currency)}"
+        )
+    if shop.referral_enabled:
+        parts += [
+            "\n<b>Реферальна програма</b>",
+            f"Запрошено друзів: {fresh.referrals_count}",
+            f"Ви отримуєте {format_money(shop.referral_percent)}% бонусами від кожного "
+            f"виконаного замовлення запрошеного друга.",
+            f"\nВаше посилання:\n<code>{escape(link)}</code>",
+        ]
+
+    await message.answer(
+        "\n".join(parts),
+        reply_markup=kb.profile(link) if shop.referral_enabled else None,
+    )
+
+
+@router.callback_query(F.data == "myorders")
+async def my_orders(callback: CallbackQuery, repo: Repository, user: User) -> None:
+    orders = await repo.list_orders(user_id=user.id, limit=10)
+    if not orders:
+        await callback.answer("У вас поки немає замовлень", show_alert=True)
+        return
+
+    shop = await get_shop_settings(repo)
+    lines = ["<b>Останні замовлення</b>\n"]
+    for order in orders:
+        items = ", ".join(f"{escape(ln.name)} ×{ln.qty}" for ln in order.items)
+        lines.append(
+            f"<b>№{order.id}</b> — {escape(order_business.display_status_label(order))}\n"
+            f"{order.created_at:%d.%m.%Y} · {format_money(order.total)} {escape(shop.currency)}\n"
+            f"<i>{items}</i>\n"
+        )
+    await answer_html(callback.message, "\n".join(lines))
+    await callback.answer()

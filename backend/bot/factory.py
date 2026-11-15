@@ -1,0 +1,109 @@
+"""Спільна збірка бота для обох режимів.
+
+Polling (`python -m bot`) і webhook (serverless) мають отримувати однаковий
+набір роутерів і middleware — інакше поведінка почне розходитись залежно від
+того, де розгорнуто проєкт.
+"""
+from __future__ import annotations
+
+import logging
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
+
+from shop.config import settings
+
+log = logging.getLogger("bot.factory")
+
+
+def build_bot() -> Bot:
+    return Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+
+def build_storage():
+    """Redis, якщо заданий — інакше стан оформлення губиться при рестарті."""
+    if settings.redis_url:
+        try:
+            from aiogram.fsm.storage.redis import RedisStorage
+
+            return RedisStorage.from_url(settings.redis_url)
+        except ImportError:
+            log.warning("REDIS_URL заданий, але пакет redis не встановлено — беремо пам'ять")
+    elif settings.serverless:
+        # У serverless пам'ять не переживає навіть сусідній запит:
+        # кожне повідомлення може потрапити в новий процес.
+        log.warning(
+            "Serverless без REDIS_URL: багатокрокове оформлення замовлення працюватиме "
+            "нестабільно. Підключіть Upstash Redis."
+        )
+    return MemoryStorage()
+
+
+def build_dispatcher() -> Dispatcher:
+    from bot.handlers import (
+        admin, cart, catalog, chat, checkout, group, profile, start,
+    )
+    from bot.middlewares import (
+        AgeGateMiddleware, BlockedUserMiddleware, PrivateOnlyMiddleware,
+        RepositoryMiddleware,
+    )
+
+    storage = build_storage()
+    create_isolation = getattr(storage, "create_isolation", None)
+    isolation = create_isolation(lock_kwargs={"timeout": 300}) \
+        if callable(create_isolation) else SimpleEventIsolation()
+    dp = Dispatcher(storage=storage, events_isolation=isolation)
+
+    for observer in (dp.message, dp.callback_query):
+        # PrivateOnlyMiddleware — найпершим: у публічному чаті апдейт не має
+        # доходити ні до бази, ні до хендлерів
+        # Ці два middleware мають працювати ДО фільтрів. requestContact()
+        # надсилає contact-повідомлення, для якого поза FSM може не бути
+        # жодного handler-а; inner middleware у такому разі взагалі не
+        # запускається і номер губиться.
+        observer.outer_middleware(PrivateOnlyMiddleware())
+        observer.outer_middleware(RepositoryMiddleware())
+        # Ці перевірки потрібні лише для подій, які реально підуть у handler.
+        observer.middleware(BlockedUserMiddleware())
+        observer.middleware(AgeGateMiddleware())
+
+    dp.include_router(group.router)      # групи й канали — окремо від магазину
+    dp.include_router(admin.router)      # адмінський роутер — першим
+    dp.include_router(start.router)
+    dp.include_router(catalog.router)
+    dp.include_router(cart.router)
+    dp.include_router(checkout.router)
+    dp.include_router(profile.router)
+    # Чат із менеджером — останнім: ловить лише те, що не розібрали інші
+    dp.include_router(chat.router)
+
+    return dp
+
+
+def bot_id() -> str:
+    """Числовий ідентифікатор бота — перша частина токена, до двокрапки.
+
+    Береться з самого токена, без звернення до Telegram: це дешево і
+    працює навіть коли мережі немає.
+    """
+    return (settings.bot_token or "").split(":", 1)[0] or "0"
+
+
+def webhook_path() -> str:
+    """Адреса вебхука: секрет плюс ідентифікатор бота.
+
+    Ідентифікатор потрібен через болючий сценарій зміни бота. Раніше адреса
+    залежала лише від секрета, тож старий бот, у якого вебхук лишався
+    зареєстрованим, слав апдейти на ту саму адресу — і ми відповідали на них
+    уже новим ботом. Виглядало так, ніби новий бот мовчить, а старий
+    «пересилає» відповіді в новий.
+
+    Тепер апдейти від чужого бота відсіюються за шляхом.
+    """
+    secret = settings.webhook_secret or "hook"
+    return f"/api/telegram/{secret}/{bot_id()}"

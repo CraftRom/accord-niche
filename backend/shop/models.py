@@ -1,0 +1,785 @@
+from __future__ import annotations
+
+import enum
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import (
+    JSON, BigInteger, Index, Boolean, Date, DateTime, Enum, ForeignKey, Integer, LargeBinary, Numeric,
+    String, Text, UniqueConstraint, func, text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# На Postgres — JSONB, на решті (тести на SQLite) — звичайний JSON.
+JsonType = JSON().with_variant(JSONB(), "postgresql")
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class OrderStatus(str, enum.Enum):
+    """УВАГА: перелік дублює shop.entities.OrderStatus.
+
+    Дві копії існують, щоб моделі не тягнули за собою шар сутностей. Але
+    розходження між ними мовчазне й дороге: колонка-перелік будується саме
+    з цієї, тож забутий тут статус валить запис у Postgres помилкою типу,
+    хоча решта коду про нього знає. Додаєте статус — додавайте в обидва.
+    """
+
+    NEW = "new"                # щойно оформлене
+    CONFIRMED = "confirmed"    # менеджер підтвердив
+    ACCEPTED = "accepted"      # менеджер узяв у роботу й назвався клієнту
+    PAID = "paid"              # оплата підтверджена
+    SHIPPED = "shipped"        # відправлено
+    DONE = "done"              # отримано, бонуси нараховані
+    CANCELLED = "cancelled"
+
+
+class PromoType(str, enum.Enum):
+    PERCENT = "percent"
+    FIXED = "fixed"
+
+
+class BroadcastStatus(str, enum.Enum):
+    DRAFT = "draft"
+    # Мусить збігатися з shop.entities.BroadcastStatus: тут — тип стовпця,
+    # там — доменна модель. Розходження не ловиться ні тестами моделі, ні
+    # тестами сервісу: воно виринає лише коли SQLAlchemy читає з бази рядок,
+    # якого немає в enum'і, і падає з LookupError уже в продакшені.
+    SCHEDULED = "scheduled"
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
+# ---------------------------------------------------------------- користувачі
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (Index("ix_users_search", "search_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    username: Mapped[str | None] = mapped_column(String(64))
+    first_name: Mapped[str | None] = mapped_column(String(128))
+    phone: Mapped[str | None] = mapped_column(String(32))
+    # Telegram verified own-contact proof. A typed checkout phone is NOT proof.
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    full_name: Mapped[str | None] = mapped_column(String(255))
+
+    age_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Замовлення, у контексті якого клієнт зараз пише в бот. Зберігається в
+    # базі, а не в FSM: у serverless стан між викликами не переживає
+    chat_order_id: Mapped[int | None] = mapped_column(Integer)
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Чи доходять до людини повідомлення бота.
+    #
+    # У Mini App можна зайти з групи, купити й жодного разу не натиснути
+    # «Старт» — приватного чату з ботом тоді просто немає, і Telegram
+    # відповідає «chat not found». Ззовні це виглядає як мовчазний
+    # магазин: статуси не приходять, реквізити не приходять, а людина
+    # думає, що про неї забули.
+    bot_reachable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+
+    referral_code: Mapped[str] = mapped_column(String(12), unique=True, index=True)
+    referrer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    bonus_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+
+    # Денормалізація: у SQL це рахувалось JOIN'ом на кожен показ списку клієнтів
+    # і кожну сегментацію. Тримаємо готові значення — Firestore інакше не вміє,
+    # а SQL від цього лише виграє.
+    orders_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_spent: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    referrals_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Готовий рядок для пошуку. Власна нормалізація замість lower() у запиті:
+    # SQLite не вміє знижувати регістр кирилиці, і поведінка розходилась із Firestore.
+    search_key: Mapped[str] = mapped_column(String(400), default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    referrer: Mapped[User | None] = relationship(remote_side=[id], back_populates="referrals")
+    referrals: Mapped[list[User]] = relationship(back_populates="referrer")
+    orders: Mapped[list[Order]] = relationship(back_populates="user")
+    cart_items: Mapped[list[CartItem]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    support_threads: Mapped[list[SupportThread]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+# ---------------------------------------------------------- website identities
+
+class WebsiteAccount(Base):
+    """Website identity is independent of Telegram IDs and staff credentials."""
+    __tablename__ = "website_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
+    email: Mapped[str | None] = mapped_column(String(255))
+    display_name: Mapped[str | None] = mapped_column(String(255))
+    verified_phone: Mapped[str | None] = mapped_column(String(32))
+    linked_telegram_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), unique=True)
+    phone_send_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    phone_window_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    phone_window_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebsiteAccountUser(Base):
+    """Proven browser identities belonging to a Google account.
+
+    Orders, bonuses and lifetime stats remain owned by their original user.
+    Reassigning just orders would corrupt purchase counters and ledgers.
+    """
+    __tablename__ = "website_account_users"
+    __table_args__ = (Index("ix_website_account_users_account", "account_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("website_accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebsiteTelegramLink(Base):
+    __tablename__ = "website_telegram_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tg_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebsiteSession(Base):
+    __tablename__ = "website_sessions"
+    __table_args__ = (Index("ix_website_sessions_account", "account_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("website_accounts.id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ------------------------------------------------------------------- каталог
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    products: Mapped[list[Product]] = relationship(back_populates="category", passive_deletes=True)
+    subcategories: Mapped[list[Subcategory]] = relationship(back_populates="category", passive_deletes=True)
+
+
+class Subcategory(Base):
+    __tablename__ = "subcategories"
+    __table_args__ = (Index("ix_subcategories_category_active", "category_id", "is_active", "sort_order"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    category: Mapped[Category | None] = relationship(back_populates="subcategories")
+    products: Mapped[list[Product]] = relationship(back_populates="subcategory", passive_deletes=True)
+
+
+class Product(Base):
+    __tablename__ = "products"
+    __table_args__ = (
+        # Каталог завжди читається як "активні товари категорії за порядком"
+        Index("ix_products_category_active", "category_id", "is_active", "sort_order"),
+        Index("ix_products_name_lower", "name_lower"),
+        Index("ix_products_subcategory_active", "subcategory_id", "is_active", "sort_order"),
+        Index("ux_products_sku", "sku", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
+    subcategory_id: Mapped[int | None] = mapped_column(ForeignKey("subcategories.id", ondelete="SET NULL"))
+    external_sku: Mapped[str | None] = mapped_column(String(255), index=True)
+    brand: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
+    gender: Mapped[str] = mapped_column(String(12), nullable=False, default="unisex", server_default="unisex")
+    volume_ml: Mapped[int | None] = mapped_column(Integer)
+    is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_new: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    is_sale: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    name: Mapped[str] = mapped_column(String(255))
+    sku: Mapped[str] = mapped_column(String(32), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    old_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    stock: Mapped[int] = mapped_column(Integer, default=0)
+    photo_file_id: Mapped[str | None] = mapped_column(String(255))  # file_id з Telegram
+    photo_url: Mapped[str | None] = mapped_column(String(512))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Готове поле для пошуку без урахування регістру (ILIKE не використовує індекс)
+    name_lower: Mapped[str] = mapped_column(String(255), default="")
+
+    category: Mapped[Category | None] = relationship(back_populates="products")
+    subcategory: Mapped[Subcategory | None] = relationship(back_populates="products")
+
+
+class CartItem(Base):
+    __tablename__ = "cart_items"
+    __table_args__ = (UniqueConstraint("user_id", "product_id", name="uq_cart_user_product"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"))
+    qty: Mapped[int] = mapped_column(Integer, default=1)
+
+    user: Mapped[User] = relationship(back_populates="cart_items")
+    product: Mapped[Product] = relationship(lazy="joined")
+
+
+# ---------------------------------------------------------------- замовлення
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        # Список замовлень: фільтр за статусом + сортування за датою
+        Index("ix_orders_status_created", "status", "created_at"),
+        Index("ix_orders_user_created", "user_id", "created_at"),
+        Index("ix_orders_search", "search_key"),
+        Index("ux_orders_checkout_key", "checkout_key", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.NEW, index=True)
+
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    bonus_used: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+
+    promo_code_id: Mapped[int | None] = mapped_column(ForeignKey("promo_codes.id"))
+    payment_method: Mapped[str | None] = mapped_column(String(32))   # card | cod
+    attribution: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
+    checkout_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    receipt_file_id: Mapped[str | None] = mapped_column(String(255))
+
+    # contact_name лишається повним ПІБ одним рядком — на нього спираються
+    # пошук, сповіщення й уся наявна історія. Складові зберігаємо окремо,
+    # бо служби доставки вимагають їх роздільно.
+    contact_name: Mapped[str | None] = mapped_column(String(255))
+    contact_surname: Mapped[str | None] = mapped_column(String(128))
+    contact_patronymic: Mapped[str | None] = mapped_column(String(128))
+    contact_phone: Mapped[str | None] = mapped_column(String(32))
+    delivery_city: Mapped[str | None] = mapped_column(String(255))
+    delivery_address: Mapped[str | None] = mapped_column(String(512))
+    # Спосіб доставки: warehouse (відділення чи поштомат) або courier.
+    # Порожньо — замовлення, оформлене до появи вибору.
+    delivery_method: Mapped[str | None] = mapped_column(String(16))
+    # Коди довідника Нової пошти. Зберігаються ПОРУЧ із текстом, а не
+    # замість нього: текст лишає замовлення читабельним і через рік, коли
+    # відділення закриють і код перестане щось означати, а код дає
+    # створити накладну без ручного пошуку. Порожньо — адресу вписали
+    # руками, і менеджер знайде відділення сам.
+    delivery_city_ref: Mapped[str | None] = mapped_column(String(64))
+    delivery_warehouse_ref: Mapped[str | None] = mapped_column(String(64))
+    comment: Mapped[str | None] = mapped_column(Text)
+    admin_note: Mapped[str | None] = mapped_column(Text)
+    tracking_number: Mapped[str | None] = mapped_column(String(64))
+    # Спільний облік накладної й синхронізації з SalesDrive — пояснення в
+    # міграції a7c3e1f5d2b9 і в shop/services/order_workflow.py.
+    waybill_ref: Mapped[str | None] = mapped_column(String(64))
+    waybill_source: Mapped[str | None] = mapped_column(String(16))
+    waybill_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    crm_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    # Авторитетний статус заявки SalesDrive. Локальний status лишається лише
+    # внутрішнім станом для складського/бонусного обліку та legacy-замовлень.
+    crm_status_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    crm_status_name: Mapped[str | None] = mapped_column(String(128))
+    crm_state: Mapped[str] = mapped_column(String(16), default="", server_default="", index=True)
+    crm_error: Mapped[str | None] = mapped_column(String(512))
+    crm_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    crm_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Останній прочитаний стан заявки SalesDrive. Це snapshot CRM, а не джерело цін каталогу.
+    crm_snapshot: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
+    crm_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # Канонічний комерційний результат. Це джерело істини для статистики:
+    # CRM «Продаж» -> sale, CRM «Відмова» -> refusal. Local workflow не
+    # підміняє продаж для CRM-пов'язаного замовлення.
+    business_state: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending", index=True
+    )
+    business_state_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # Хто веде замовлення — показується клієнту після «Прийнято»
+    operator_id: Mapped[int | None] = mapped_column(Integer)
+    operator_name: Mapped[str] = mapped_column(String(128), default="")
+
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    referral_paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    search_key: Mapped[str] = mapped_column(String(320), default="")   # ім'я + телефон, нижній регістр
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship(back_populates="orders")
+    items: Mapped[list[OrderItem]] = relationship(back_populates="order", cascade="all, delete-orphan", lazy="selectin")
+    promo_code: Mapped[PromoCode | None] = relationship()
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(String(255))     # знімок на момент покупки
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    qty: Mapped[int] = mapped_column(Integer)
+
+    order: Mapped[Order] = relationship(back_populates="items")
+
+
+# ------------------------------------------------------------------ промокоди
+
+class PromoCode(Base):
+    __tablename__ = "promo_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    type: Mapped[PromoType] = mapped_column(Enum(PromoType), default=PromoType.PERCENT)
+    value: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    min_order: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    max_uses: Mapped[int | None] = mapped_column(Integer)       # None = без ліміту
+    per_user_limit: Mapped[int] = mapped_column(Integer, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    category_ids: Mapped[list] = mapped_column(JsonType, nullable=False, default=list, server_default=text("'[]'"))
+
+
+class PromoUsage(Base):
+    __tablename__ = "promo_usages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    promo_id: Mapped[int] = mapped_column(ForeignKey("promo_codes.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BonusTx(Base):
+    """Історія руху бонусів — щоб баланс завжди можна було перерахувати."""
+    __tablename__ = "bonus_tx"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))   # + нарахування, − списання
+    reason: Mapped[str] = mapped_column(String(64))           # referral | spend | manual
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# -------------------------------------------------------------------- розсилки
+
+class Broadcast(Base):
+    __tablename__ = "broadcasts"
+    __table_args__ = (Index("ix_broadcasts_due", "status", "scheduled_at"),
+                      Index("ix_broadcasts_recovery", "status", "lease_until"),
+                      Index('uq_broadcasts_client_key', 'client_key', unique=True))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(255))
+    text: Mapped[str] = mapped_column(Text)
+    text_format: Mapped[str] = mapped_column(String(8), nullable=False, default='html', server_default='html')
+    client_key: Mapped[str | None] = mapped_column(String(64))
+    photo_url: Mapped[str | None] = mapped_column(String(512))
+    button_text: Mapped[str | None] = mapped_column(String(64))
+    button_url: Mapped[str | None] = mapped_column(String(512))
+    segment: Mapped[dict] = mapped_column(JsonType, default=dict)
+    status: Mapped[BroadcastStatus] = mapped_column(Enum(BroadcastStatus), default=BroadcastStatus.DRAFT)
+    # Скільки вже пройдено: id останнього обробленого користувача. Дозволяє
+    # надсилати порціями і продовжувати з того ж місця після паузи або таймауту.
+    cursor_id: Mapped[int] = mapped_column(Integer, default=0)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Індекс саме по (status, scheduled_at): планувальник щогодини питає
+    # «що вже дозріло», і без індексу це був би повний скан таблиці розсилок
+    # на кожен тік.
+    unknown_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BroadcastDelivery(Base):
+    """Durable attempt/result; user ID is retained even if the customer is deleted."""
+    __tablename__ = "broadcast_deliveries"
+    broadcast_id: Mapped[int] = mapped_column(ForeignKey("broadcasts.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(16))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+
+
+class Operator(Base):
+    """Менеджери панелі. Адміністратор із .env тут не зберігається."""
+
+    __tablename__ = "operators"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    login: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    password_hash: Mapped[str] = mapped_column(String(255))
+    auth_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    role: Mapped[str] = mapped_column(String(16), default="operator")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrderMessage(Base):
+    """Листування менеджера з клієнтом у межах одного замовлення.
+
+    Прив'язка саме до замовлення, а не до клієнта: у людини може бути кілька
+    відкритих замовлень одночасно, і змішувати їх в одну стрічку означало б
+    плутанину і для менеджера, і для клієнта.
+    """
+
+    __tablename__ = "order_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # "out" — від менеджера клієнту, "in" — від клієнта
+    direction: Mapped[str] = mapped_column(String(4))
+    author: Mapped[str] = mapped_column(String(128), default="")
+    text: Mapped[str] = mapped_column(Text)
+    # id повідомлення в Telegram: за ним відповідь клієнта зіставляється
+    # із замовленням, коли їх у нього кілька
+    tg_message_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    # Вкладення лишаємо як file_id Telegram: сам файл не зберігаємо,
+    # панель тягне його через бекенд лише коли менеджер відкриває стрічку
+    file_id: Mapped[str | None] = mapped_column(String(255))
+    file_kind: Mapped[str | None] = mapped_column(String(16))   # photo, document, video, voice
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Для вихідних реплік окремо зберігаємо факт доставки. is_read не може
+    # виконувати цю роль: недоставлене повідомлення раніше записувалося як
+    # прочитане, і після reload панель показувала неправдиве «✓✓ Прочитано».
+    # None — вхідне повідомлення клієнта / старий запис до міграції.
+    delivered: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    delivery_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+Index("ix_order_messages_order_created", OrderMessage.order_id, OrderMessage.created_at)
+Index("ix_order_messages_order_id_id", OrderMessage.order_id, OrderMessage.id)
+
+
+
+
+class MessageArchive(Base):
+    """Стиснений cold-tier для давно закритих діалогів.
+
+    Один gzip-json chunk замінює сотні/тисячі рядків + їхні індекси.
+    Архів лишається в тій самій транзакційній PostgreSQL-базі, тому pg_dump
+    залишається атомарним і для відновлення не потрібне друге сховище.
+    Гарячі таблиці ``order_messages`` / ``support_messages`` містять лише
+    активну історію; старі діалоги прозоро дочитуються з цього cold-tier.
+    """
+
+    __tablename__ = "message_archives"
+    __table_args__ = (
+        # UNIQUE already creates the B-tree needed by (kind, entity_id).
+        # Do not duplicate it with a second identical index.
+        UniqueConstraint("kind", "entity_id", name="uq_message_archive_entity"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))  # order | support
+    entity_id: Mapped[int] = mapped_column(Integer)
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    raw_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    min_message_id: Mapped[int | None] = mapped_column(Integer)
+    max_message_id: Mapped[int | None] = mapped_column(Integer)
+    first_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    codec: Mapped[str] = mapped_column(String(24), default="gzip-json-v1")
+    payload: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SupportThread(Base):
+    """Окрема сесія загальної підтримки через /ask.
+
+    Закриті сесії незмінні: новий /ask створює новий рядок. Частковий
+    унікальний індекс фізично не дозволяє дві відкриті сесії одному клієнту.
+    """
+
+    __tablename__ = "support_threads"
+    __table_args__ = (
+        Index(
+            "uq_support_threads_one_open_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+            sqlite_where=text("status = 'open'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
+    )
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    closed_by: Mapped[str | None] = mapped_column(String(16))
+    closed_by_name: Mapped[str | None] = mapped_column(String(128))
+    close_reason: Mapped[str | None] = mapped_column(String(32))
+
+    user: Mapped[User] = relationship(back_populates="support_threads")
+    messages: Mapped[list[SupportMessage]] = relationship(
+        back_populates="thread", cascade="all, delete-orphan"
+    )
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+    __table_args__ = (Index("uq_support_messages_client_request", "thread_id", "client_request_id", unique=True),)
+
+    client_request_id: Mapped[str | None] = mapped_column(String(64))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    thread_id: Mapped[int] = mapped_column(
+        ForeignKey("support_threads.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    direction: Mapped[str] = mapped_column(String(4))
+    author: Mapped[str] = mapped_column(String(128), default="")
+    text: Mapped[str] = mapped_column(Text)
+    tg_message_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    file_id: Mapped[str | None] = mapped_column(String(255))
+    file_kind: Mapped[str | None] = mapped_column(String(16))
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Службова ознака лише для панелі. Клієнту її ніколи не рендеримо: вона
+    # потрібна менеджеру, щоб відрізняти відповідь людини від FAQ-автоматики.
+    is_automatic: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    thread: Mapped[SupportThread] = relationship(back_populates="messages")
+
+
+Index("ix_support_messages_thread_created", SupportMessage.thread_id, SupportMessage.created_at)
+Index("ix_support_messages_thread_id_id", SupportMessage.thread_id, SupportMessage.id)
+
+
+class PanelNotification(Base):
+    """Подія для центру сповіщень панелі.
+
+    Подія одна на всіх менеджерів, а стан прочитання зберігається окремо
+    в PanelNotificationRead. Так один менеджер не гасить дзвіночок іншому.
+    """
+
+    __tablename__ = "panel_notifications"
+    __table_args__ = (
+        Index("ix_panel_notifications_created", "created_at"),
+        Index("ix_panel_notifications_kind_created", "kind", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(180))
+    body: Mapped[str] = mapped_column(Text, default="")
+    href: Mapped[str | None] = mapped_column(String(512))
+    entity_id: Mapped[int | None] = mapped_column(Integer)
+    actor: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    reads: Mapped[list[PanelNotificationRead]] = relationship(
+        back_populates="notification", cascade="all, delete-orphan"
+    )
+
+
+class PanelNotificationRead(Base):
+    __tablename__ = "panel_notification_reads"
+    __table_args__ = (
+        UniqueConstraint("notification_id", "viewer_key", name="uq_panel_notification_read"),
+        Index("ix_panel_notification_reads_viewer", "viewer_key", "notification_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    notification_id: Mapped[int] = mapped_column(
+        ForeignKey("panel_notifications.id", ondelete="CASCADE"), index=True
+    )
+    viewer_key: Mapped[str] = mapped_column(String(64))
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    notification: Mapped[PanelNotification] = relationship(back_populates="reads")
+
+
+
+
+
+
+class ArchivedMessageRef(Base):
+    """Мінімальний індекс Telegram reply -> archived order.
+
+    ``message_id`` Telegram унікальний лише всередині конкретного чату,
+    тому ключ обов'язково містить user_id. Сам текст тут не дублюється.
+    """
+
+    __tablename__ = "archived_message_refs"
+    __table_args__ = (
+        # UNIQUE doubles as the lookup index; a duplicate non-unique index
+        # would only increase write cost and database size.
+        UniqueConstraint("kind", "user_id", "tg_message_id", name="uq_archived_message_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    entity_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    tg_message_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PanelNotificationCursor(Base):
+    """Компактний read-cursor для центру сповіщень.
+
+    ``read-all`` більше не створює N рядків ``panel_notification_reads``.
+    Один запис означає: усе до ``through_id`` включно вже прочитано.
+    Окремі read-рядки лишаються лише для точкових прочитань після курсора.
+    """
+
+    __tablename__ = "panel_notification_cursors"
+
+    viewer_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    through_id: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Wishlist(Base):
+    __tablename__ = "wishlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    # Масив id товарів. Окрема таблиця звʼязків тут нічого не дала б:
+    # список завжди читається й пишеться цілком.
+    product_ids: Mapped[list] = mapped_column(JsonType, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+# --------------------------------------------------------- промо-сторінки
+
+class PromoLandingPage(Base):
+    """Керована промо-сторінка з фіксованим шаблоном.
+
+    draft_config редагується в панелі. published_config — незмінний snapshot
+    останньої публікації, тому незбережена/невдала правка не ламає живий сайт.
+    CSS/JS тут принципово немає: редактор змінює лише дані шаблону.
+    """
+    __tablename__ = "promo_landing_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    domain: Mapped[str] = mapped_column(String(253), unique=True, index=True)
+    draft_config: Mapped[dict] = mapped_column(JsonType, default=dict)
+    published_config: Mapped[dict | None] = mapped_column(JsonType)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PromoLandingDailyStat(Base):
+    """Агрегована статистика без IP/cookie/event rows — база не росте від кожного кліку."""
+    __tablename__ = "promo_landing_daily_stats"
+    __table_args__ = (
+        UniqueConstraint("page_id", "day", name="uq_promo_landing_stat_day"),
+        Index("ix_promo_landing_stats_page_day", "page_id", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    page_id: Mapped[int] = mapped_column(ForeignKey("promo_landing_pages.id", ondelete="CASCADE"))
+    day: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD, UTC; portable SQLite/Postgres
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DashboardSession(Base):
+    """Only a digest of the opaque browser cookie is persisted."""
+    __tablename__ = "dashboard_sessions"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    operator_id: Mapped[int] = mapped_column(Integer, index=True)
+    login: Mapped[str] = mapped_column(String(64))
+    csrf_token: Mapped[str] = mapped_column(String(64))
+    auth_version: Mapped[int] = mapped_column(Integer)
+    owner_fingerprint: Mapped[str] = mapped_column(String(16), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AnalyticsSession(Base):
+    __tablename__ = "analytics_sessions"
+    __table_args__ = (UniqueConstraint("user_id", "session_id", name="uq_analytics_user_session"),
+                      Index("ix_analytics_sessions_started", "started_at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    session_id: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attribution: Mapped[dict | None] = mapped_column(JsonType)
+
+
+class MarketingSpend(Base):
+    __tablename__ = "marketing_spend"
+    __table_args__ = (UniqueConstraint("day", "source", "campaign", name="uq_marketing_spend_key"),
+                      Index("ix_marketing_spend_day", "day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    campaign: Mapped[str] = mapped_column(String(160), nullable=False, default="", server_default="")
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinancialPeriod(Base):
+    """An immutable saved monthly report; operational orders remain editable."""
+    __tablename__ = "financial_periods"
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JsonType, nullable=False)

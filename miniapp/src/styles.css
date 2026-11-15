@@ -1,0 +1,2202 @@
+/* Вітрина — DESIGN 2.12.0, палітра Shop 2.21.0.
+ * Єдине джерело токенів: фіолетовий — навігація та дії,
+ * м’ятний — наявність, бурштиновий — низький залишок.
+ * Telegram визначає світлу/темну схему; кольори — системні кольори Shop.
+ * Поля, картки та діалоги використовують ті самі токени.
+ */
+
+:root {
+  /* Темна системна палітра, узгоджена з панеллю керування. */
+  --tg-bg: #0A0A0A;
+  --tg-text: #F5F1EB;
+  --tg-hint: #B6ACA0;
+  --tg-link: var(--accent);
+  --tg-button: var(--accent);
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #1C1B19;
+
+  /* Поверхні. Темна тема: сторінка — основне тло, картки — вторинне.
+     Світла — навпаки, як у налаштуваннях самого Telegram: сірувата
+     сторінка й білі картки. Поле в картці («колодязь») — протилежне
+     картці, щоб межу поля було видно без товстої рамки. */
+  --page: var(--tg-bg);
+  --card: var(--tg-secondary-bg);
+  --well: var(--tg-bg);
+  --plate: #F5F1EB;
+
+  --accent: #D9C8AE;
+  --mint: #A8C0A8;
+  --amber: #E4C698;
+  --accent-soft: rgba(217, 200, 174, 0.14);
+  --accent-press: rgba(217, 200, 174, 0.24);
+  --on-accent: #0A0A0A;
+  --warn: #f2607e;
+  --warn-soft: rgba(240, 122, 142, 0.14);
+
+  /* Лінії й тональні заливки. Запасні значення — для WebView без
+     color-mix(); сучасні рахують їх від кольору тексту теми нижче. */
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --fill: rgba(255, 255, 255, 0.06);
+  --fill-strong: rgba(255, 255, 255, 0.11);
+
+  /* Відступи — крок 4px. Бічне поле сторінки одне на весь застосунок. */
+  --page-x: 16px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* Радіуси за ієрархією: чим більший блок, тим більший радіус. */
+  --radius-sheet: 20px;
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-xs: 8px;
+
+  /* Висоти елементів керування. 48 — головні дії та поля, 40 — дії в
+     картці товару, 32 — дрібні перемикачі. Нижче 32 палець не влучає. */
+  --h-lg: 48px;
+  --h-md: 40px;
+  --h-sm: 32px;
+
+  --bar-height: 72px;
+  --content-max: 720px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Каже браузеру, що палітра темна. Без цього iOS малює власні елементи —
+     автозаповнення, календар, випадні списки — за світлою схемою: чорний
+     текст на нашій темній підкладці, тобто невидимий. */
+  color-scheme: dark;
+}
+
+:root[data-scheme='light'] {
+  color-scheme: light;
+
+  /* Світлі відповідники основних кольорів. Якщо Telegram не надіслав
+     теми (старі клієнти цього не роблять), застосунок не має лишитись із
+     темною палітрою на світлому тлі клієнта. */
+  --tg-bg: #ffffff;
+  --tg-text: #111111;
+  --tg-hint: #69645D;
+  --tg-secondary-bg: #F5F1EB;
+
+  --page: var(--tg-secondary-bg);
+  --card: var(--tg-bg);
+  --well: var(--tg-secondary-bg);
+  /* Біла, а не сіра: на сірій сторінці сіра підкладка зникала, а знімки
+     на білому тлі мали видимий «шов» по краю. */
+  --plate: #F5F1EB;
+
+  /* Темніші фірмові відтінки для читабельності на світлих поверхнях. */
+  --accent: #111111;
+  --mint: #426F56;
+  --amber: #916E34;
+  --accent-soft: rgba(17, 17, 17, 0.075);
+  --accent-press: rgba(17, 17, 17, 0.14);
+  --on-accent: #ffffff;
+  --warn: #cc3355;
+  --warn-soft: rgba(204, 51, 85, 0.09);
+
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.14);
+  --fill: rgba(0, 0, 0, 0.045);
+  --fill-strong: rgba(0, 0, 0, 0.08);
+}
+
+/* Лінії та заливки від системного тексту, із запасом для старих WebView. */
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  :root,
+  :root[data-scheme='light'] {
+    --line: color-mix(in srgb, var(--tg-text) 9%, transparent);
+    --line-strong: color-mix(in srgb, var(--tg-text) 15%, transparent);
+    --fill: color-mix(in srgb, var(--tg-text) 6%, transparent);
+    --fill-strong: color-mix(in srgb, var(--tg-text) 11%, transparent);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { min-height: 100%; min-width: 0; }
+html { overflow-y: auto; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--tg-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+
+h1, h2, h3, p { margin: 0; }
+
+/* Ціни й кількості — табличні цифри, щоб колонки не стрибали */
+.num { font-variant-numeric: tabular-nums; }
+
+.hint { color: var(--tg-hint); font-size: 13px; }
+
+/* Приписка всередині підпису поля — «— не обовʼязково» в оформленні.
+   Без окремого класу вона малювалась тим самим кольором і вагою, що й
+   підпис: покупець читав її як частину назви поля й заповнював по
+   батькові як обовʼязкове. Успадковує розмір, бо стоїть у рядку. */
+.faint { color: var(--tg-hint); font-weight: 400; }
+
+.grow { flex: 1; min-width: 0; }
+
+/* Опис у два рядки й трикрапка. Клас окремий: той самий прийом потрібен
+   у кількох місцях, а прив'язка до одного означала, що в іншому опис
+   розпирав рядок. */
+.clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ============================================================ ПОЛЯ ВВОДУ
+ *
+ * Цей розділ свідомо стоїть першим після токенів і лишається простим.
+ * Попередня версія полів була нашаруванням із семи спроб полагодити
+ * невидимий під час набору текст: дублювання кольору через
+ * -webkit-text-fill-color, перефарбування у фокусі з !important,
+ * закріплення підкладки, шар компонування на активному полі. Жодна не
+ * допомогла, а разом вони зробили поле неможливим для розбору.
+ *
+ * Лишилось те, без чого поле не працює. Кольори беруться з теми Telegram
+ * один раз, у звичайному стані. Фокус міняє рамку — і тільки її.
+ * !important немає ніде. Підкладку в картці міняють окремі правила
+ * нижче, статично, а не в момент фокусу.
+ */
+.input {
+  width: 100%;
+  min-height: var(--h-lg);
+  box-sizing: border-box;
+  padding: 11px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
+  /* Поля не успадковують шрифт сторінки самі — беруть системний шрифт
+     елементів керування. */
+  font: inherit;
+  /* Менше 16px — і мобільний браузер зумить сторінку при фокусі. */
+  font-size: 16px;
+  line-height: 1.35;
+  /* Прибирає власне оформлення поля від системи: тіні, градієнти й
+     власні кольори, які на темній темі дають чорне на чорному. */
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+}
+
+.input::placeholder { color: var(--tg-hint); opacity: 1; }
+
+/* Поле, значення якого малює блок над ним. Див. fields.jsx — там
+   пояснено, чому: цей WebView не малює гліфи саме в полі введення, тоді
+   як у звичайному блоці той самий рядок тим самим кольором читається. */
+.field-paint { position: relative; }
+
+.input.ghost {
+  /* Поле лишається робочим: приймає введення, тримає каретку, віддає
+     значення. Не показує тільки свій текст — його показує блок нижче. */
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--tg-text);
+}
+
+/* Підказку малює саме поле: доки значення немає, малювати блоку нічого,
+   а порожня підказка з двох джерел двоїлася б. */
+.input.ghost::placeholder {
+  color: var(--tg-hint);
+  -webkit-text-fill-color: var(--tg-hint);
+}
+
+.echo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 11px 13px;
+  /* Прозора рамка тієї ж товщини, що в поля: без неї текст у блоці
+     стояв на піксель лівіше й вище за каретку. */
+  border: 1px solid transparent;
+  /* Ті самі метрики, що й у поля: інакше рядок поїде відносно каретки. */
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--tg-text);
+  /* Пробіли зберігаються, перенесення немає — як у однорядковому полі. */
+  white-space: pre;
+  overflow: hidden;
+  /* Дотики проходять крізь блок до поля під ним. */
+  pointer-events: none;
+}
+
+.echo-multiline {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.input:focus { border-color: var(--accent); }
+
+.input.bad { border-color: var(--warn); background: var(--warn-soft); }
+
+textarea.input { min-height: 88px; resize: vertical; }
+
+/* Автозаповнення — єдине місце, де без -webkit-text-fill-color не
+   обійтись: браузер підмінює і колір тексту, і тло власними, і звичайним
+   оголошенням color це не перекривається. */
+input:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--tg-text);
+  box-shadow: 0 0 0 1000px var(--tg-secondary-bg) inset;
+}
+
+/* Поля без класу .input — ті самі правила, коротко. */
+input, textarea, select {
+  color: var(--tg-text);
+  font-family: inherit;
+}
+
+/* Підкладка поля за місцем, де воно лежить. На сторінці поле — колір
+   картки, у картці — «колодязь». Інакше в темній темі поле в картці
+   зливалося з нею, а у світлій пошук на сірій сторінці був сірим на
+   сірому. Правила статичні: у фокусі нічого не перераховується. */
+.catalog-search .input { background: var(--card); }
+
+.form-section .input,
+.sheet .input,
+.wl .input { background: var(--well); }
+
+.form-section .input.bad { background: var(--warn-soft); }
+
+/* ------------------------------------------------------------- форма */
+
+.field { margin-bottom: var(--s3); padding: 0 var(--page-x); }
+
+.field label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--tg-hint);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Повідомлення під полем із помилкою. Підсвічуємо саме поле, а не
+   показуємо загальний рядок унизу форми: людині треба знати, куди
+   дивитись, а не що «щось не так». */
+.field-error {
+  margin: 6px 0 0;
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.field-note { margin: 6px 0 0; font-size: 13px; }
+.field-note.ok { color: var(--accent); }
+.field-note.bad { color: var(--warn); }
+
+/* Поле з кнопкою в один рядок: промокод, назва нового списку. */
+.inline-field { display: flex; gap: var(--s2); align-items: stretch; }
+.inline-field .field-paint,
+.inline-field > .input { flex: 1; min-width: 0; }
+.inline-field > button { flex: none; width: auto; padding: 0 var(--s4); }
+
+/* Розділ форми — картка з заголовком. Без overflow: hidden навмисно:
+   підказки Нової пошти лежать накладкою й мають виходити за межі картки. */
+.form-section {
+  margin: 0 var(--page-x) var(--s3);
+  padding: var(--s4) var(--s4) var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.form-section-title {
+  margin: 0 0 var(--s3);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.form-section .field,
+.form-section .choice,
+.form-section .toggle,
+.form-section .banner {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.form-section .toggle { margin-bottom: 0; padding: var(--s1) 0 var(--s3); }
+
+.phone-pull { margin-bottom: var(--s2); }
+
+/* Вибір з двох: спосіб доставки, спосіб оплати. Вибране — рамка й
+   тональна заливка. Товщина рамки не міняється, а додається внутрішньою
+   тінню: інакше текст зсувався б на піксель при перемиканні. */
+.choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+  padding: 0 var(--page-x) var(--s3);
+}
+
+.choice button {
+  min-height: var(--h-lg);
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tg-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.choice button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: 0 var(--page-x) var(--s3);
+  padding: var(--s3) 0;
+}
+
+.toggle input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.toggle span { flex: 1; font-size: 15px; line-height: 1.35; }
+.toggle .hint { font-size: 13px; }
+
+/* ------------------------------------------------ довідник Нової пошти
+ *
+ * Список підказок — накладкою поверх форми, а не вставкою в потік.
+ *
+ * Так було спершу, і це повертало стару поломку: під час набору тексту
+ * в полі не видно, поки не перейдеш в інше. Список зʼявлявся й зникав
+ * просто під активним полем: кожна натиснута літера рухала розмітку, а
+ * поруч виникав новий шар прокрутки. WebView Telegram у такій ситуації
+ * перестає перемальовувати поле у фокусі.
+ *
+ * Накладка не рухає нічого: форма лишається на місці, а список лежить
+ * над нею. Заразом кнопка підтвердження не стрибає вниз на пів екрана.
+ */
+.combo { position: relative; }
+
+.combo-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  /* Понад тисячу відділень у великому місті не вміщаються нікуди —
+     показуємо перші й прокручуємо, а звужує перелік поле пошуку.
+     Плавної прокрутки з окремим шаром тут навмисно немає: саме вона
+     піднімала список над формою, через що сусіднє поле переставало
+     перемальовуватись. */
+  max-height: min(240px, max(96px, calc(var(--viewport-height, 100dvh) - 200px)));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.combo-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--tg-text);
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.combo-item:last-child { border-bottom: 0; }
+.combo-item:active { background: var(--fill); }
+
+.combo-note { flex: none; color: var(--tg-hint); font-size: 12px; }
+
+.combo-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.combo-empty {
+  padding: 12px 14px;
+  color: var(--tg-hint);
+  font-size: 13px;
+}
+
+.combo-picked {
+  margin: 6px 0 0;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------- каркас */
+
+.app {
+  width: 100%;
+  max-width: var(--content-max);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+}
+
+.screen { padding: var(--s3) var(--page-x) 0; }
+
+.head { padding: var(--s4) var(--page-x) var(--s3); }
+
+.head h1 {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.head p { margin-top: var(--s1); color: var(--tg-hint); font-size: 14px; }
+
+/* Заголовок розділу всередині екрана — другий рівень: помітно дрібніший
+   за назву сторінки й з більшим повітрям зверху, щоб розділи читались
+   окремими блоками, а не продовженням попереднього. */
+.section-head { padding: var(--s5) var(--page-x) var(--s2); }
+
+.section-head h2 { font-size: 18px; font-weight: 600; line-height: 1.3; }
+
+.section-head p {
+  margin-top: var(--s1);
+  color: var(--tg-hint);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* ------------------------------------------------------ шапка магазину */
+
+.store-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: 48px;
+  padding: calc(var(--s1) + env(safe-area-inset-top, 0px)) var(--page-x) 0;
+  background: var(--tg-bg);
+}
+
+.store-name {
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Вікова позначка — довідка, а не попередження: контур без заливки. */
+.store-age {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--tg-hint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ вкладки
+ *
+ * Вкладки з підкресленням — як папки чатів у самому Telegram. Попередня
+ * «таблетка в картці» виглядала як віджет із чужого застосунку й займала
+ * на 20px більше висоти.
+ */
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  padding: 0 var(--s2);
+  background: var(--tg-bg);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+.tab {
+  position: relative;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 46px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--tg-hint);
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tab[aria-selected='true'] { color: var(--tg-text); }
+
+.tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+}
+
+.tab .count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------- кнопки
+ *
+ * Чотири види на весь застосунок, не більше:
+ *  .primary   — головна дія екрана, залита акцентом;
+ *  .secondary — звичайна дія, тональна заливка;
+ *  .ghost-btn — стримана дія з наслідками (очистити, видалити);
+ *  .add       — дія в картці товару, тональна м'ята (див. розділ карток).
+ * Кнопка без класу в розмітці — помилка, а не «типова кнопка».
+ */
+.primary,
+.secondary,
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  width: 100%;
+  min-height: var(--h-lg);
+  padding: 0 var(--s5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  transition: background-color 0.12s ease, opacity 0.12s ease;
+}
+
+.primary { background: var(--accent); color: var(--on-accent); }
+.primary:active:not(:disabled) { opacity: 0.86; }
+
+.secondary { background: var(--fill); color: var(--tg-text); }
+.secondary:active:not(:disabled) { background: var(--fill-strong); }
+
+.ghost-btn {
+  min-height: var(--h-md);
+  padding: 0 var(--s3);
+  background: transparent;
+  color: var(--tg-hint);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ghost-btn:active { background: var(--fill); }
+
+.primary:disabled,
+.secondary:disabled,
+.ghost-btn:disabled {
+  background: var(--fill);
+  color: var(--tg-hint);
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 360px;
+  margin: var(--s5) auto 0;
+}
+
+/* Повернення назад — завжди один і той самий елемент зі стрілкою, а не
+   «чіпа з ← у тексті»: стрілку в підписі читач екрана вимовляв уголос. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 14px 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--tg-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.back::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15 5l-7 7 7 7' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15 5l-7 7 7 7' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.back:active { background: var(--fill-strong); }
+
+/* -------------------------------------------------------------- чіпи */
+
+.chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--tg-text);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.chip:active { background: var(--fill-strong); }
+
+/* Вибрана категорія — інверсія тексту й тла. Не м'ята: зелений у цьому
+   застосунку означає дію або гроші, а тут лише стан перемикача. */
+.chip[aria-pressed='true'] {
+  border-color: var(--tg-text);
+  background: var(--tg-text);
+  color: var(--tg-bg);
+}
+
+/* ------------------------------------------------ рейки категорій і порядку */
+
+.rail {
+  display: flex;
+  gap: var(--s2);
+  margin: 0 0 var(--s2);
+  padding: 2px var(--page-x);
+  /* Прокрутка, а не перенос: категорій буває півтора десятка. */
+  overflow-x: auto;
+  scroll-padding-inline: var(--page-x);
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tg-hint) transparent;
+  min-width: 0;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rail::-webkit-scrollbar { height: 6px; }
+.rail::-webkit-scrollbar-thumb { background: var(--tg-hint); border-radius: 8px; }
+.rail:focus-visible { outline-offset: -2px; }
+
+.rail > .chip { scroll-snap-align: start; }
+
+/* Правий відступ у прокручуваному flex-контейнері частина WebView
+   ігнорує — остання чіпа тоді впиралась у край. Порожній хвіст
+   гарантує той самий відступ, що й зліва. */
+.rail::after { content: ''; flex: 0 0 calc(var(--page-x) - var(--s2)); }
+
+/* Порядок і фільтр — тихіший ряд під категоріями: це уточнення, а не
+   навігація, тож без рамок і дрібніше. */
+.rail-sort { margin-bottom: var(--s1); }
+
+.rail-sort .chip {
+  height: var(--h-sm);
+  padding: 0 12px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--tg-hint);
+  font-size: 13.5px;
+}
+
+.rail-sort .chip[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--fill-strong);
+  color: var(--tg-text);
+  font-weight: 600;
+}
+
+/* Пошук: іконка лупи всередині поля, хрестик праворуч. */
+.search { position: relative; }
+
+.catalog-search { margin: var(--s3) 0; }
+
+.catalog-search .field-paint::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  background: var(--tg-hint);
+  pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='black' stroke-width='2.2'/%3E%3Cpath d='M16.5 16.5L21 21' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='black' stroke-width='2.2'/%3E%3Cpath d='M16.5 16.5L21 21' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Поле й блок, що малює значення, зсуваються однаково — інакше текст
+   поїде відносно каретки. */
+.catalog-search .input,
+.catalog-search .echo {
+  padding-left: 42px;
+  padding-right: 46px;
+}
+
+.search-clear {
+  position: absolute;
+  top: 4px;
+  right: calc(var(--page-x) + 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tg-hint);
+  font-size: 15px;
+}
+
+.search-clear:active { background: var(--fill); }
+
+/* ------------------------------------------------------- стани, банери */
+
+.banner {
+  margin: 0 var(--page-x) var(--s3);
+  padding: var(--s3) 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.banner.warn { background: var(--warn-soft); color: var(--warn); }
+.banner.ok { background: var(--accent-soft); color: var(--accent); }
+.banner b { display: block; }
+.banner p { margin-top: 6px; }
+.banner .actions { max-width: none; margin: var(--s3) 0 0; }
+
+.empty {
+  padding: 56px var(--s5) var(--s6);
+  text-align: center;
+}
+
+.empty h2 { margin-bottom: var(--s2); font-size: 18px; font-weight: 600; }
+
+.empty p {
+  max-width: 34ch;
+  margin: 0 auto;
+  color: var(--tg-hint);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.empty p + p { margin-top: var(--s2); }
+
+/* Деталі для підтримки на екрані помилки — технічний текст, тож дрібно
+   й окремим блоком, щоб не змішувався з поясненням для людини. */
+.support-details {
+  max-width: 520px;
+  margin: var(--s5) auto 0;
+  text-align: left;
+}
+
+.support-details summary { cursor: pointer; }
+
+.support-details pre {
+  margin: var(--s2) 0 0;
+  padding: var(--s3);
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Скелет повторює висоту картки товару: інакше список смикається в мить,
+   коли приходять справжні дані. Анімація — лише прозорість: жодних
+   зсувів і окремих шарів поруч із полем пошуку, яке саме в цю мить у
+   фокусі (див. розділ полів). */
+.skeleton {
+  height: 152px;
+  border-radius: var(--radius);
+  background: var(--card);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-line { height: 48px; }
+
+.list-loading { padding-top: var(--s4); }
+
+@keyframes pulse { 50% { opacity: 0.5; } }
+
+/* ------------------------------------------------- документи та підвал */
+
+.footer {
+  /* Нижній відступ більший за висоту панелі кошика: вона зафіксована
+     внизу екрана й інакше перекривала б посилання на документи саме
+     тоді, коли в кошику щось є — тобто перед покупкою. */
+  margin-top: var(--s5);
+  padding: var(--s4) var(--page-x) calc(var(--bar-height) + var(--s5) + var(--safe-bottom));
+  text-align: center;
+}
+
+.app-form .footer { padding-bottom: calc(var(--s5) + var(--safe-bottom)); }
+
+.footer-link {
+  display: inline-block;
+  margin-bottom: var(--s1);
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.footer .hint { font-size: 12px; }
+
+/* Посилання всередині абзацу: кнопка, бо відкриває екран, а не адресу */
+.inline-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal { padding-bottom: var(--s6); }
+
+.legal-title {
+  margin: var(--s4) 0 var(--s1);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.legal .banner { margin: var(--s3) 0; }
+
+.legal-h { margin: var(--s5) 0 6px; font-size: 16px; font-weight: 600; }
+
+/* Переноси зберігаємо: у документах є переліки з маркерами й реквізити
+   стовпчиком, які без цього злиплися б в один абзац */
+.legal-p {
+  max-width: 68ch;
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.legal-contact { margin-top: var(--s5); }
+
+/* Перелік документів — одна згрупована картка з рядками, як меню
+   налаштувань Telegram, а не п'ять окремих плашок. */
+.legal-list { display: flex; flex-direction: column; }
+
+.legal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--s4);
+  border: 1px solid var(--line);
+  border-top-width: 0;
+  background: var(--card);
+  color: var(--tg-text);
+  font-size: 15px;
+  text-align: left;
+}
+
+.legal-row:first-child {
+  border-top-width: 1px;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.legal-row:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.legal-row:only-child { border-radius: var(--radius); }
+.legal-row:active { background: var(--fill); }
+.legal-row .hint { font-size: 20px; line-height: 1; }
+
+.head .back { margin-bottom: var(--s3); }
+
+/* ======================================================== СПИСОК ТОВАРІВ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 var(--page-x) var(--s4);
+}
+
+/* Скільки знайшлося — підпис над списком, у тому ж полі, що й картки. */
+.found {
+  margin: var(--s2) 0 2px;
+  color: var(--tg-hint);
+  font-size: 13px;
+}
+
+/* Картка товару.
+ *
+ * Дві колонки: ліворуч те, що читають (назва, ціна, склад, наявність),
+ * праворуч фото й дія — щоб великий палець не мандрував через увесь
+ * екран між «подивитись» і «купити». Права колонка фіксованої ширини:
+ * інакше фото стрибає від картки до картки.
+ */
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.item-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.item-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+/* Назва — найбільший текст рядка й без обрізання: у назвах рідин смак і
+   міцність стоять у кінці («… 30 мл 50 мг»), і трикрапка забрала б саме
+   те, за чим обирають. */
+.item-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+/* Ціна одразу під назвою — у списку її шукають першою. */
+.item-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--s2);
+  margin-top: 6px;
+}
+
+.item-price-now { font-size: 17px; font-weight: 700; white-space: nowrap; }
+
+/* Стара ціна. Приглушена й дрібніша за нову: погляд має чіплятися за
+   те, скільки платити, а перекреслене лише пояснює, чому це вигідно. */
+.old-price {
+  color: var(--tg-hint);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+/* Наскільки дешевше. Цифра відсотка працює краще за слово «акція».
+   Колір теплий: знижка — сигнал вигоди, а не ще одна зелена дія. */
+.discount-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Короткий опис — два рядки, далі трикрапка. */
+.item-note {
+  margin-top: 6px;
+  color: var(--tg-hint);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+/* Нижній рядок картки: наявність і «відкласти». Притиснутий донизу, щоб
+   стояти на одній лінії з кнопкою в правій колонці. */
+.item-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-height: var(--h-sm);
+  margin-top: auto;
+  padding-top: var(--s2);
+}
+
+.item-meta { min-width: 0; }
+
+/* Наявність підписом, а не крапкою: «залишилось 3» — це вже сигнал купувати */
+.stock { color: var(--tg-hint); font-size: 12.5px; font-weight: 500; }
+.stock.low { color: var(--warn); font-weight: 600; }
+.stock.out { color: var(--tg-hint); }
+
+.item-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--s2);
+}
+
+/* Фото на світлій підкладці й з полем усередині: товар не торкається
+   країв, а знімок на білому тлі не виглядає вирізаним прямокутником. */
+.item-photo {
+  display: block;
+  width: 112px;
+  height: 112px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--plate);
+  /* Не обрізаємо: на фото сам товар, і зрізаний край може забрати назву
+     смаку чи мітку міцності. */
+  object-fit: contain;
+  /* Контур поверх зображення: у світлій темі біла підкладка на білій
+     картці інакше зникає, і фото «висить» без меж. */
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+
+.item-photo.skeleton { height: 112px; padding: 0; background: var(--fill); }
+
+.item.is-out .item-photo { opacity: 0.55; }
+
+/* Кнопка в картці — тональна, а не залита.
+ *
+ * На екрані таких кнопок одночасно п'ять-шість, і залиті вони починають
+ * конкурувати з фотографіями й цінами замість того, щоб просто бути під
+ * рукою. Тональна м'ята лишає кнопку помітною, але тихою.
+ */
+.add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--h-md);
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.12s ease;
+}
+
+.add:active:not(:disabled) { background: var(--accent-press); }
+
+.add:disabled { background: var(--fill); color: var(--tg-hint); cursor: not-allowed; }
+
+/* Лічильник стає на місце кнопки додавання, тож повторює її форму,
+   висоту й заливку: інакше рядок сіпався б, щойно товар потрапляє в кошик. */
+.stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--h-md);
+  padding: 0 var(--s1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+.stepper button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.stepper button:active:not(:disabled) { background: var(--accent-press); }
+.stepper button:disabled { color: var(--tg-hint); opacity: 0.6; cursor: not-allowed; }
+.stepper .qty { min-width: 22px; font-size: 15px; font-weight: 700; text-align: center; }
+
+/* «Відкласти». Сама іконка в круглій цілі: у рядку списку її розуміють і
+   так. Відкладене — теплим кольором, а не акцентним: м'ята в картці вже
+   зайнята кнопкою, і два однакові кольори поруч сперечалися б. */
+.heart {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-lg);
+  height: var(--h-lg);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  color: var(--tg-hint);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.heart.small {
+  width: var(--h-sm);
+  height: var(--h-sm);
+  margin-right: -6px;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 19px;
+}
+
+.heart:active { background: var(--fill-strong); }
+
+.heart.on { background: var(--warn-soft); color: var(--warn); }
+
+/* У «Збереженому» замість серця підпис «Прибрати» — тоді це плашка. */
+.heart.small.labeled {
+  width: auto;
+  margin-right: 0;
+  padding: 0 var(--s3);
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--tg-hint);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------- нижня панель кошика
+ *
+ * Завжди видно, скільки набрано і на яку суму. Нативна MainButton Telegram
+ * показує лише один рядок — а тут важливі і склад кошика, і сума.
+ */
+.bar {
+  position: fixed;
+  left: max(0px, calc((100vw - var(--content-max)) / 2));
+  right: max(0px, calc((100vw - var(--content-max)) / 2));
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: calc(var(--bar-height) + var(--safe-bottom));
+  padding: 10px var(--page-x) calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--card);
+  transform: translateY(0);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.bar[hidden] { display: flex; transform: translateY(110%); }
+
+.bar-info { flex: 1; min-width: 0; }
+
+.bar-info strong { display: block; font-size: 18px; font-weight: 700; line-height: 1.25; }
+
+.bar-info span { color: var(--tg-hint); font-size: 13px; }
+
+.bar button {
+  flex: none;
+  min-width: 140px;
+  height: var(--h-lg);
+  padding: 0 var(--s5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.bar button:active { opacity: 0.86; }
+
+/* --------------------------------------------------------- сторінка товару */
+
+.product-page { padding-bottom: var(--s3); }
+
+/* Рядок із кнопкою «назад» над вмістом сторінки: товар, список бажаного. */
+.page-back { padding: var(--s3) var(--page-x); }
+
+.page-back + .head { padding-top: var(--s1); }
+
+.product-photo-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 var(--page-x);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+  background: var(--plate);
+}
+
+.product-photo {
+  display: block;
+  width: 100%;
+  /* Висота за пропорцією самого зображення, а не фіксована: рамка
+     повторює форму знімка, тож немає ні обрізання, ні порожніх полів.
+     Стеля потрібна, щоб висока картинка не займала весь екран і назва з
+     ціною лишались видимими без прокрутки. */
+  height: auto;
+  max-height: 340px;
+  object-fit: contain;
+}
+
+/* Заглушка до завантаження. Тут висота потрібна фіксована: поки
+   зображення не прийшло, його пропорції невідомі, а без висоти сторінка
+   смикнеться в момент появи. */
+.product-photo.skeleton {
+  height: 280px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.product-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s4) var(--page-x) 0;
+}
+
+.product-layout .banner { margin: 0; }
+
+.product-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+
+.product-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--tg-hint);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.stock-pill { background: var(--accent-soft); color: var(--accent); }
+.stock-pill.low { background: var(--warn-soft); color: var(--warn); }
+.stock-pill.out { background: var(--fill); color: var(--tg-hint); }
+
+.product-title {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.product-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin-top: var(--s3);
+}
+
+/* Специфічніший за базовий .price із розділу кошика: той стоїть нижче в
+   каскаді й інакше робив головну ціну сторінки дрібнішою за назву. */
+.product-price-row .product-price-main { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
+
+.product-price-row .product-price-main small { color: var(--tg-hint); font-size: 16px; font-weight: 500; }
+
+.product-discount-group { display: inline-flex; align-items: center; gap: var(--s2); }
+
+.product-discount-group .old-price { font-size: 15px; }
+
+.product-copy-card {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.product-copy-card h2 { margin-bottom: var(--s2); font-size: 16px; font-weight: 600; }
+
+.product-description {
+  font-size: 15px;
+  line-height: 1.55;
+  /* Переноси зберігаємо: менеджер часто вписує характеристики списком */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Дія притиснута донизу: рішення «додати» приймають після опису,
+   і кнопка має бути під великим пальцем, а не десь угорі */
+.product-action {
+  position: fixed;
+  left: max(0px, calc((100vw - var(--content-max)) / 2));
+  right: max(0px, calc((100vw - var(--content-max)) / 2));
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 10px var(--page-x) calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+
+.product-action .primary { flex: 1; width: auto; }
+
+.product-action .stepper { flex: none; width: 132px; height: var(--h-lg); }
+
+.product-action .stepper button { width: 40px; height: 40px; }
+
+/* ------------------------------------------------------------- кошик */
+
+.cart-list { padding-top: var(--s1); }
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.card-body { flex: 1; min-width: 0; }
+
+/* Назва в кошику теж не обрізається: два товари з різною міцністю
+   інакше виглядали б однаково. */
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.card-note { margin-top: 2px; color: var(--tg-hint); font-size: 13px; }
+
+.price { margin-top: var(--s1); font-size: 17px; font-weight: 700; }
+
+.price small { color: var(--tg-hint); font-size: 13px; font-weight: 500; }
+
+.cart-stepper { flex: none; width: 116px; }
+
+.cart-tools { display: flex; justify-content: center; padding: 0 var(--page-x); }
+
+.cart-tools .ghost-btn { width: auto; }
+
+/* ----------------------------------------------------------- підсумок */
+
+.summary {
+  margin: 0 var(--page-x) var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.row-between {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: 6px 0;
+  font-size: 15px;
+}
+
+.row-between.total {
+  margin-top: 6px;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.summary-premium .row-between.total { margin-top: 0; padding-top: 6px; border-top: 0; }
+
+.discount { color: var(--accent); }
+
+.summary-note { margin: var(--s1) 0 6px; color: var(--tg-hint); font-size: 13px; line-height: 1.45; }
+
+/* Попередня доставка. Відділена рискою від підсумку: це не частина «до
+   сплати», а окреме число, яке покупець віддасть перевізникові. */
+.shipping {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.shipping-note { margin: 6px 0 var(--s1); color: var(--tg-hint); font-size: 12.5px; line-height: 1.45; }
+
+.legal-consent {
+  margin: 0;
+  padding: var(--s1) var(--page-x) var(--s3);
+  line-height: 1.5;
+}
+
+.checkout-submit { padding: 0 var(--page-x) var(--s4); }
+
+/* --------------------------------------------------------------- профіль */
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 var(--page-x);
+}
+
+.stat {
+  padding: 14px var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.stat b { display: block; font-size: 20px; font-weight: 700; line-height: 1.25; }
+
+.stat span { display: block; margin-top: 2px; color: var(--tg-hint); font-size: 13px; }
+
+.link-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 var(--page-x);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.link-box code {
+  display: block;
+  overflow: hidden;
+  padding: 10px var(--s3);
+  border-radius: 10px;
+  background: var(--well);
+  font-family: inherit;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-box-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+
+.link-box-actions button { min-height: 44px; padding: 0 var(--s3); font-size: 15px; }
+
+.order {
+  display: block;
+  margin: 0 var(--page-x) 10px;
+  padding: 14px var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--tg-text);
+}
+
+.order-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.order-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: var(--s2);
+}
+
+/* Статус — плашка, а колір лише підказує стадію: нове (м'ята), у дорозі
+   (посилання теми), закрите (приглушене), скасоване (тепле). */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--s2);
+  border-radius: 6px;
+  background: var(--fill);
+  color: var(--tg-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-new { background: var(--accent-soft); color: var(--accent); }
+.status-accepted,
+.status-confirmed,
+.status-paid,
+.status-shipped { color: var(--tg-link); }
+.status-done { color: var(--tg-hint); }
+.status-cancelled { background: var(--warn-soft); color: var(--warn); }
+
+.order-items {
+  margin: var(--s3) 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  color: var(--tg-hint);
+  font-size: 14px;
+  list-style: none;
+}
+
+.order-items li { padding: 2px 0; }
+
+/* Скасування замовлення покупцем. Кнопка навмисно стримана: це дія
+   з наслідками, але не небезпечна — товар повертається на склад,
+   бонуси на рахунок. Червона кнопка на видноті лякала б більше, ніж
+   вартує. */
+.order-cancel {
+  width: 100%;
+  min-height: var(--h-md);
+  margin-top: var(--s3);
+  padding: 0 var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tg-hint);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.order-cancel:active { background: var(--fill); }
+.order-cancel:disabled { opacity: 0.5; }
+
+/* ------------------------------------------------------ списки бажаного */
+
+.wl {
+  margin: 0 var(--page-x) 10px;
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.wl-head { display: flex; align-items: center; gap: var(--s2); min-height: 36px; }
+
+.wl-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tg-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.wl-size {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--tg-hint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wl-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: 10px; }
+
+.wl-actions button {
+  flex: none;
+  width: auto;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.wl-actions .ghost-btn { margin-left: auto; }
+
+.wl-empty { margin-top: var(--s2); }
+
+/* Шторка знизу: вибір списку — коротка дія, заради неї не варто
+   забирати весь екран і втрачати контекст товару */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.sheet {
+  width: 100%;
+  max-width: var(--content-max);
+  max-height: 80vh;
+  max-height: min(80dvh, calc(var(--viewport-height, 100dvh) - 24px));
+  margin: 0 auto;
+  min-height: 0;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  overflow-y: auto;
+  padding: var(--s2) var(--page-x) calc(var(--s4) + var(--safe-bottom));
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  background: var(--card);
+}
+
+/* Смужка-хват: так шторку впізнають як тимчасову, а не новий екран. */
+.sheet::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto var(--s3);
+  border-radius: 2px;
+  background: var(--fill-strong);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.sheet-head { position: sticky; top: -8px; z-index: 1; background: var(--card); padding: 8px 0; }
+.sheet-head strong { font-size: 18px; font-weight: 600; }
+
+.sheet-sub { margin: 2px 0 var(--s3); }
+
+.sheet .banner { margin: 0 0 var(--s3); }
+
+.sheet-list { display: flex; flex-direction: column; gap: 6px; }
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--well);
+  color: var(--tg-text);
+  font-size: 15px;
+  text-align: left;
+}
+
+.sheet-row.on { border-color: var(--accent); background: var(--accent-soft); }
+
+.sheet-row .mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--fill-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sheet-row.on .mark { background: var(--accent); color: var(--on-accent); }
+
+.sheet-create { margin-top: var(--s3); }
+
+/* ------------------------------------------------------ чат з оператором */
+
+.chat-pick {
+  width: calc(100% - 2 * var(--page-x));
+  font: inherit;
+  text-align: left;
+}
+
+.chat-pick:active { background: var(--fill); }
+
+.chat-screen {
+  display: flex;
+  flex-direction: column;
+  /* Поле вводу тримається внизу, стрічка гортається окремо */
+  min-height: calc(100vh - 100px);
+  min-height: calc(100dvh - 100px);
+}
+
+.chat-head h1 { font-size: 20px; }
+
+.chat-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s1) var(--page-x) var(--s3);
+  overflow-y: auto;
+}
+
+.chat-empty { margin: var(--s2) 0; }
+
+.chat-log .bubble {
+  max-width: 84%;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) var(--radius) 6px;
+  background: var(--card);
+}
+
+/* Репліки клієнта праворуч — звична логіка месенджера */
+.chat-log .bubble.mine {
+  align-self: flex-end;
+  border-color: transparent;
+  border-radius: var(--radius) var(--radius) 6px var(--radius);
+  background: var(--accent-soft);
+}
+
+.chat-log .bubble-head { margin-bottom: 2px; color: var(--tg-hint); font-size: 12px; }
+
+.chat-log .bubble-text { font-size: 15px; white-space: pre-wrap; word-break: break-word; }
+
+.chat-compose {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  /* По нижньому краю, а не по центру: коли поле виростає під довгий
+     текст, скріпка й «Надіслати» мають лишатись на одній лінії з
+     останнім рядком, а не поїхати вгору разом із ним. */
+  align-items: flex-end;
+  gap: var(--s2);
+  padding: var(--s2) var(--page-x) calc(var(--s2) + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+
+/* Поле займає всю вільну ширину. Правило вказує на обгортку, а не на
+   саме поле: значення в ньому малює блок над полем, тож у рядку стоїть
+   обгортка, і flex треба саме їй. */
+.chat-compose .input { min-height: 44px; background: var(--well); }
+
+.chat-compose .field-paint {
+  flex: 1;
+  /* Без min-width довгий рядок без пробілів розпирає гнучкий елемент і
+     виштовхує кнопку за екран. */
+  min-width: 0;
+}
+
+/* Скріпка й «надіслати» — квадрати рівно у висоту поля: коли всі три
+   елементи однієї висоти, рядок читається як один блок, а 44px — нижня
+   межа зручного дотику. */
+.attach,
+.send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attach { border: 0; background: var(--fill); color: var(--tg-hint); }
+
+.attach:active { background: var(--fill-strong); }
+
+/* Головна дія рядка — залита акцентом. У чаті вона одна, конкурувати
+   їй нема з чим, на відміну від списку товарів. */
+.send {
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+/* Порожнє поле — кнопка є, але не кличе. Ховати її не можна: рядок
+   стрибав би на кожну літеру. */
+.send:disabled { background: var(--fill); color: var(--tg-hint); }
+
+.send:active:not(:disabled) { opacity: 0.85; }
+
+/* --------------------------------------------------- вкладення у стрічці
+ *
+ * Мініатюра, а не назва файлу: для квитанції важливо бачити, що саме
+ * надіслали.
+ */
+.thumb {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: var(--radius-sm);
+  /* Обрізаємо, а не вписуємо: у стрічці мініатюра має тримати рівний
+     прямокутник, інакше довгий знімок екрана розтягне бульбашку на
+     півекрана. Ціле фото людина побачить за дотиком. */
+  object-fit: cover;
+}
+
+.thumb-open {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.skeleton.thumb { height: 140px; max-width: 220px; margin-top: 6px; }
+
+/* Перегляд на весь екран. Поверх усього, включно з панеллю кошика:
+   дивитись квитанцію крізь чужі кнопки незручно. */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s4);
+  background: rgba(0, 0, 0, 0.92);
+}
+
+.viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  /* Тут навпаки — вписуємо: у переглядачі важливо бачити все фото
+     цілком, а не рівний прямокутник. */
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------------- підтвердження віку */
+
+.gate {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 440px;
+  min-height: calc(100vh - 120px);
+  min-height: calc(100dvh - 120px);
+  margin: 0 auto;
+  padding: var(--s6) var(--s5) var(--s4);
+  text-align: center;
+}
+
+.gate-mark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto var(--s5);
+  border: 2px solid var(--warn);
+  border-radius: 50%;
+  color: var(--warn);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.gate h1 { margin-bottom: var(--s3); font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+
+.gate p { margin: 0 0 10px; color: var(--tg-hint); font-size: 15px; line-height: 1.5; }
+
+.gate .banner { margin: var(--s3) 0 0; }
+
+.gate .actions { max-width: none; margin-top: var(--s5); }
+
+.gate .secondary { background: transparent; color: var(--tg-hint); font-size: 15px; font-weight: 500; }
+
+/* ======================================== 4-секундний перехід із legacy-host
+ *
+ * Поки вітрина чекає на initData перед переходом на канонічний домен,
+ * людина бачить пояснення й прогрес, а не порожній документ.
+ */
+.prepare-screen {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: calc(28px + env(safe-area-inset-top, 0px)) 18px calc(28px + var(--safe-bottom));
+  background: var(--page);
+}
+
+.prepare-card {
+  width: min(100%, 420px);
+  padding: 28px var(--s5) 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+  background: var(--card);
+  text-align: center;
+}
+
+.prepare-workshop {
+  position: relative;
+  width: 92px;
+  height: 76px;
+  margin: 0 auto 18px;
+}
+
+.prepare-gear {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 900;
+  animation: prep-spin 2.1s linear infinite;
+}
+
+.gear-a { left: 8px; top: 11px; width: 52px; height: 52px; font-size: 26px; }
+.gear-b { right: 5px; top: 2px; width: 38px; height: 38px; font-size: 18px; animation-direction: reverse; animation-duration: 1.55s; }
+
+.prepare-hammer {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  color: var(--tg-hint);
+  font-size: 29px;
+  font-weight: 900;
+  transform: rotate(-26deg);
+  animation: prep-tap 0.72s ease-in-out infinite alternate;
+}
+
+.prepare-kicker { color: var(--accent); font-size: 13px; font-weight: 600; }
+
+.prepare-card h1 { margin: 6px 0 10px; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
+
+.prepare-card p { color: var(--tg-hint); font-size: 14px; line-height: 1.55; }
+
+.prepare-progress {
+  height: 6px;
+  margin: 22px 0 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--fill-strong);
+}
+
+.prepare-progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left;
+  animation: prepare-fill 4s cubic-bezier(.22,.7,.18,1) forwards;
+}
+
+.prepare-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+
+.prepare-steps span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--tg-hint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.prepare-steps i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  animation: prepare-dot 1.2s ease-in-out infinite;
+}
+
+.prepare-steps span:nth-child(2) i { animation-delay: .22s; }
+.prepare-steps span:nth-child(3) i { animation-delay: .44s; }
+
+@keyframes prepare-fill { from { transform: scaleX(.04); } to { transform: scaleX(1); } }
+@keyframes prepare-dot { 50% { background: var(--accent); } }
+@keyframes prep-spin { to { transform: rotate(360deg); } }
+@keyframes prep-tap { to { transform: rotate(-8deg) translateY(-3px); } }
+
+/* ------------------------------------------------- діагностика полів
+ *
+ * Службовий екран FieldDiag: вмикається вручну для розбору проблем із
+ * полями на конкретному пристрої. Оформлення мінімальне — лише щоб
+ * значення читались рядками.
+ */
+.diag { padding: 0 var(--page-x); }
+.diag-list { margin: var(--s2) 0 0; padding: 0; list-style: none; }
+.diag-list li { display: flex; justify-content: space-between; gap: var(--s3); padding: 6px 0; border-bottom: 1px solid var(--line); }
+.diag-key { color: var(--tg-hint); font-size: 13px; }
+.diag-value { font-size: 13px; text-align: right; word-break: break-all; }
+.diag-mirror { margin-top: var(--s2); padding: 11px 13px; border-radius: var(--radius-sm); background: var(--fill); white-space: pre-wrap; }
+
+/* -------------------------------------------------------- рух в інтерфейсі
+ *
+ * Анімацій рівно стільки, скільки пояснюють, що сталося. Нове
+ * повідомлення в стрічці зʼявляється з ледь помітним підйомом.
+ */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.bubble { animation: rise 0.16s ease-out; }
+
+/* Стрічка догортується плавно — стрибок на кінець читається як
+   перезавантаження екрана. */
+.chat-log { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after { animation: none !important; transition: none !important; }
+  .chat-log { scroll-behavior: auto; }
+  .prepare-progress span { transform: scaleX(.66); }
+}
+
+/* -------------------------------------------------------- ширші екрани */
+
+@media (min-width: 620px) {
+  :root { --page-x: 20px; }
+
+  .list:has(.item) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .found { grid-column: 1 / -1; }
+
+  .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Вузькі телефони: права колонка картки й фото трохи менші, щоб назва
+   не ламалась по слову на рядок. */
+@media (max-width: 360px) {
+  :root { --page-x: 12px; }
+
+  .item { grid-template-columns: minmax(0, 1fr) 96px; gap: 10px; }
+  .item-photo { width: 96px; height: 96px; }
+  .item-photo.skeleton { height: 96px; }
+  .tab { font-size: 14px; }
+  .bar button { min-width: 120px; padding: 0 var(--s4); }
+}
+
+/* 2.14.0 — checkout: обовʼязкові/необовʼязкові поля видно до помилки. */
+.checkout-required-legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.field-requirement{display:inline-flex;align-items:center;gap:3px;width:max-content;white-space:nowrap;padding:2px 6px;border:1px solid var(--line);border-radius:999px;font-size:10px;font-weight:600;line-height:1.3;letter-spacing:.01em;text-transform:none}
+.field-requirement.required{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line));background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.field-requirement.required>span{font-size:13px;line-height:10px}
+.field-requirement.optional{color:var(--tg-hint);background:var(--well)}
+.form-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.form-section-title .field-requirement{font-size:9px;font-weight:600}
+.form-section .field>label{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.form-section .field>label>span:first-child{min-width:0}
+@media (max-width:420px){
+  .field-requirement{font-size:9px;padding:2px 5px}
+  .form-section-title .field-requirement{display:none}
+}
+.checkout-head{padding-bottom:var(--s2)}
+
+/* Conversation uses its own scroll viewport to preserve older-message anchors. */
+.chat-screen { height: calc(100dvh - 140px); min-height: 320px; overflow: hidden; }
+.chat-log { min-height: 0; overflow-anchor: none; scroll-behavior: auto; }
+.chat-history { flex: none; align-self: center; margin: 8px 0; }
+.chat-policy { margin: 0 var(--page-x) 8px; }
+.chat-log .bubble { flex: none; }
+
+.chat-screen .chat-compose { position: relative; bottom: auto; flex: none; }
+.chat-screen > .head, .chat-screen > .banner, .chat-screen > .chat-policy { flex: none; }
+
+/* General support shares bounded chat log and the existing mobile composer. */
+.support-entry { margin-bottom: 16px; width: 100%; }
+.support-center > .primary { margin-bottom: 16px; }
+.support-center .chat-pick { width: 100%; }
+
+.cart-list .cart-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px}
+.cart-row-actions{grid-column:1/-1;display:flex;justify-content:flex-end;border-top:1px solid var(--line);padding-top:8px}
+.cart-remove{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:124px;min-height:44px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--fill);color:var(--tg-text);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation;white-space:normal;overflow-wrap:anywhere}
+.cart-remove:hover:not(:disabled){background:var(--fill-strong)}
+.cart-remove:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.cart-remove:disabled{opacity:.65;cursor:wait}
+.cart-remove svg{flex-shrink:0}
+.cart-row-error{grid-column:1/-1;display:grid;gap:8px;padding:10px;border-radius:var(--radius-sm);background:var(--fill);overflow-wrap:anywhere;font-size:14px}
+.cart-row-error .secondary{min-height:44px;width:auto;justify-self:start;font-size:14px}
+.cart-feedback{padding:0 var(--page-x);margin-bottom:12px;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+.cart-feedback:empty{display:none}
+.cart-clear-confirm{width:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cart-clear-confirm p{flex-basis:100%;margin:0 0 4px}
+@media(max-width:480px){
+  .cart-list .cart-card{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .cart-card .card-body{grid-column:1/-1}
+  .cart-card .cart-stepper{grid-column:1;grid-row:2;align-self:center;max-width:100%}
+  .cart-card .cart-row-actions{grid-column:2;grid-row:2;border-top:0;padding-top:0}
+  .cart-card .cart-remove{width:100%;min-width:0}
+}
+
+.cart-availability{margin:6px 0 4px;padding:6px 8px;border-left:3px solid var(--accent);border-radius:4px;background:var(--accent-soft);font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+
+.cart-quantity-state{grid-column:1/-1;margin:0;color:var(--tg-hint);font-size:13px;line-height:1.4;overflow-wrap:anywhere}

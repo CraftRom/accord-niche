@@ -1,0 +1,1005 @@
+
+/** Український номер у єдиному вигляді.
+ *
+ *  Люди вводять по-різному: 0671112233, 380671112233, +38 (067) 111-22-33.
+ *  Нормалізуємо все до +380XXXXXXXXX, а не сваримось за формат — виправити
+ *  за людину дешевше, ніж пояснювати їй правило.
+ */
+export function normalizePhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (!digits) return ''
+
+  let body = digits
+  if (body.startsWith('380')) body = body.slice(3)
+  else if (body.startsWith('80')) body = body.slice(2)
+  else if (body.startsWith('0')) body = body.slice(1)
+
+  return '+380' + body.slice(0, 9)
+}
+
+/** Текст помилки або порожньо, якщо все гаразд. */
+export function phoneError(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return 'Вкажіть номер телефону'
+  const body = digits.startsWith('380') ? digits.slice(3) : digits
+  if (body.length < 9) return `Бракує цифр: ${9 - body.length}`
+  if (body.length > 9) return 'Забагато цифр — в українському номері їх дев\u2019ять'
+  // Українські мобільні коди починаються з 3–9 (039, 050, 063, 066…).
+  // Нуль чи одиниця на цьому місці означає, що людина набрала зайвий
+  // префікс — краще сказати про це одразу, ніж отримати недзвінкий номер.
+  if (!/^[3-9]/.test(body)) return 'Схоже на помилку в коді оператора'
+  return ''
+}
+
+import { useEffect, useRef, useState } from 'react'
+
+import { api } from '../api'
+import { acquisition, trackVisit } from '../attribution'
+import { clientLog } from '../logger'
+import { money } from '../money'
+import { cartLineProblem } from '../cartAvailability'
+import { Field } from '../fields'
+import {
+  canRequestContact, haptic, notify, requestContact,
+} from '../telegram'
+
+export function Cart({ config, cart, onCartChange, quantityPending = {}, quantityInFlight = new Set(), quantityErrors = {}, onQuantityRefresh, checkoutPending = false, onBrowse }) {
+  const [error, setError] = useState('')
+  const [rowErrors, setRowErrors] = useState({})
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [pending, setPending] = useState(new Set())
+  const [notice, setNotice] = useState('')
+  const [refreshingQty,setRefreshingQty] = useState(new Set())
+  const refreshingRef = useRef(new Set())
+  const actions = useRef(new Set())
+  const listRef = useRef(null), clearRef = useRef(null), emptyRef = useRef(null)
+  const restoreFocus = useRef(false)
+  const lines = cart?.lines || []
+  const totalQty = lines.reduce((sum, line) => sum + line.qty, 0)
+  const busy = pending.size > 0
+  const clearing = pending.has('all')
+  const outsideErrors = Object.entries(rowErrors).filter(([id]) => !lines.some(line => String(line.product_id) === id))
+
+  useEffect(() => {
+    if (!restoreFocus.current) return
+    restoreFocus.current = false
+    if (document.activeElement !== document.body) return
+    const target = listRef.current?.querySelector('[data-cart-remove]:not(:disabled)') || clearRef.current || emptyRef.current
+    target?.focus({preventScroll:true})
+  }, [cart, pending])
+
+  const change = async (productId, delta) => {
+    if (checkoutPending || actions.current.has(productId) || actions.current.has('all')) return
+    haptic('light')
+    setNotice('');setError('')
+    try { await onCartChange(productId, delta) }
+    catch (err) { setError(err.message) }
+  }
+
+  const remove = async (productId = null, name = '') => {
+    const key = productId ?? 'all'
+    if (checkoutPending || actions.current.has(key) || actions.current.has('all') || (productId == null && actions.current.size)) return
+    actions.current.add(key);setPending(new Set(actions.current))
+    setNotice('')
+    if (productId == null) setError('')
+    else setRowErrors(prev => {const next={...prev};delete next[productId];return next})
+    const origin = document.activeElement
+    try {
+      const ok = await onCartChange(productId, 0, productId == null ? {clear:true} : {remove:true})
+      if (ok === false) throw new Error('Не вдалося змінити кошик. Перевірте з’єднання та повторіть.')
+      setConfirmClear(false)
+      setNotice(productId == null ? 'Кошик очищено.' : `«${name || 'Товар'}» видалено з кошика.`)
+      restoreFocus.current = document.activeElement === origin || document.activeElement === document.body
+      haptic('light')
+    } catch (err) {
+      const message = err.message || 'Не вдалося видалити товар. Спробуйте ще раз.'
+      if (productId == null) setError(message)
+      else setRowErrors(prev => ({...prev,[productId]:message}))
+    } finally {
+      actions.current.delete(key);setPending(new Set(actions.current))
+    }
+  }
+
+  const recheckQuantity = async id => {
+    if (refreshingRef.current.has(id)) return
+    refreshingRef.current.add(id);setRefreshingQty(new Set(refreshingRef.current))
+    try { await onQuantityRefresh?.(id);setError('') }
+    catch(err){setError(err.message || 'Не вдалося оновити кошик')}
+    finally{refreshingRef.current.delete(id);setRefreshingQty(new Set(refreshingRef.current))}
+  }
+
+  const feedback = <>
+    <div className="cart-feedback" role="status" aria-live="polite" aria-atomic="true">{notice || (busy ? (clearing ? 'Очищаємо кошик…' : 'Видаляємо вибрані позиції…') : '')}</div>
+    {error && <div className="banner warn" role="alert">{error}</div>}
+    {outsideErrors.map(([id,message]) => <div key={id} className="banner warn" role="alert">{message} Перевірте поточний вміст кошика.</div>)}
+  </>
+
+  if (lines.length === 0) return <>
+    {feedback}
+    <div className="empty">
+      <h2 ref={emptyRef} tabIndex={-1}>Кошик поки порожній</h2>
+      <p>Додайте товари з каталогу — тут одразу з’являться позиції, сума й кнопка оформлення.</p>
+      {onBrowse && <button className="secondary" onClick={onBrowse}>До каталогу</button>}
+    </div>
+  </>
+
+  return <>
+    <div className="head">
+      <h1>Кошик</h1>
+      <p className="num">{totalQty} {totalQty % 10 === 1 && totalQty % 100 !== 11 ? 'товар'
+        : [2,3,4].includes(totalQty % 10) && ![12,13,14].includes(totalQty % 100) ? 'товари' : 'товарів'}</p>
+    </div>
+    {feedback}
+    {cart.problems?.length > 0 && <div className="banner warn">Змінилася наявність:
+      {cart.problems.map(p => <div key={p}>• {p}</div>)}
+    </div>}
+    <div className="list cart-list" ref={listRef}>
+      {lines.map(l => {
+        const removing = pending.has(l.product_id)
+        const locked = removing || clearing || checkoutPending
+        const displayQty = Math.max(0,l.qty+Number(quantityPending[l.product_id]||0))
+        const savingQty = Boolean(quantityPending[l.product_id] || quantityInFlight.has(l.product_id))
+        const availability = cartLineProblem({...l,qty:displayQty})
+        return <div className="card cart-card" key={l.product_id} aria-busy={removing}>
+          <div className="card-body">
+            <p className="card-title">{l.name}</p>
+            {availability && <p className="cart-availability" id={`cart-availability-${l.product_id}`}>{availability}</p>}
+            <p className="card-note num">{money(l.price)} {config.currency} × {l.qty}</p>
+            <div className="price num">{money(l.line_total)} <small>{config.currency}</small></div>
+          </div>
+          <div className="stepper cart-stepper" role="group" aria-label={`Кількість: ${l.name}`} aria-describedby={availability ? `cart-availability-${l.product_id}` : undefined}>
+            <button onClick={()=>change(l.product_id,-1)} disabled={locked || displayQty <= 0} aria-label="Прибрати одну">−</button>
+            <span className="qty num" data-cart-quantity={l.product_id}>{displayQty}</span>
+            <button onClick={()=>change(l.product_id,1)} disabled={locked || displayQty >= l.stock || l.is_available === false} aria-label="Додати одну">+</button>
+          </div>
+          {savingQty && <p className="cart-quantity-state" role="status">Зберігаємо кількість… Сума оновиться після збереження.</p>}
+          {quantityErrors[l.product_id] && <div className="cart-row-error" role="alert">
+            <span>{quantityErrors[l.product_id]} Перевірте фактичну кількість.</span>
+            {onQuantityRefresh && <button className="secondary" disabled={locked || savingQty || refreshingQty.has(l.product_id)} onClick={()=>recheckQuantity(l.product_id)}>{refreshingQty.has(l.product_id) ? 'Оновлюємо…' : 'Оновити кількість'}</button>}
+          </div>}
+          <div className="cart-row-actions">
+            <button className="cart-remove" data-cart-remove={l.product_id} disabled={locked}
+              onClick={()=>remove(l.product_id,l.name)} aria-label={`Видалити ${l.name} з кошика`}
+              aria-describedby={rowErrors[l.product_id] ? `cart-error-${l.product_id}` : undefined}>
+              <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/>
+              </svg>
+              {removing ? 'Видаляємо…' : 'Видалити'}
+            </button>
+          </div>
+          {rowErrors[l.product_id] && <div className="cart-row-error" id={`cart-error-${l.product_id}`} role="alert">
+            <span>{rowErrors[l.product_id]}</span>
+            <button className="secondary" disabled={locked} onClick={()=>remove(l.product_id,l.name)}>Повторити видалення</button>
+          </div>}
+        </div>
+      })}
+    </div>
+    <div className="summary summary-premium">
+      <div className="row-between total num"><span>Разом</span><span>{money(cart.subtotal)} {config.currency}</span></div>
+      <p className="summary-note">Знижки, промокод і бонуси врахуємо на наступному кроці. Доставка оплачується окремо.</p>
+    </div>
+    <div className="cart-tools">
+      {confirmClear ? <div className="cart-clear-confirm" role="group" aria-label="Підтвердження очищення кошика">
+        <p>Прибрати всі товари з кошика?</p>
+        <button className="secondary" disabled={busy || checkoutPending} onClick={()=>remove()}>Так, очистити</button>
+        <button className="ghost-btn" disabled={busy || checkoutPending} onClick={()=>setConfirmClear(false)}>Залишити товари</button>
+      </div> : <button ref={clearRef} className="ghost-btn" disabled={busy || checkoutPending} onClick={()=>setConfirmClear(true)}>Очистити кошик</button>}
+    </div>
+  </>
+}
+
+const EMPTY_FORM = {
+  contact_surname: '',
+  contact_name: '',
+  contact_patronymic: '',
+  contact_phone: '',
+  // Спосіб доставки. За замовчуванням відділення: ним користується
+  // переважна більшість, і курʼєр доступний не всюди.
+  delivery_method: 'warehouse',
+  // Текст лишається головним: саме його читає менеджер і саме він
+  // залишиться осмисленим, коли відділення закриють. Коди — поруч,
+  // щоб накладну можна було створити без ручного пошуку.
+  city: '',
+  delivery_city_ref: '',
+  address: '',
+  delivery_warehouse_ref: '',
+  payment_method: 'card',
+  comment: '',
+  promo_code: '',
+  use_bonus: false,
+}
+
+function Requirement({ optional = false }) {
+  return optional
+    ? <span className="field-requirement optional">Необовʼязково</span>
+    : <span className="field-requirement required"><span aria-hidden="true">*</span> Обовʼязково</span>
+}
+
+export function Checkout({ config, cart, profile, onDone, onLegal }) {
+  const submittingRef = useRef(false)
+  const pendingPayload = useRef(null)
+  const [replayPending, setReplayPending] = useState(false)
+  const checkoutKey = useRef(
+    globalThis.crypto?.randomUUID?.().replace(/-/g, '')
+      || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`,
+  )
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [promo, setPromo] = useState(null)
+  const [checking, setChecking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [phoneBusy, setPhoneBusy] = useState(false)
+  // Помилку показуємо лише після того, як поле покинули: підсвічувати
+  // порожній номер, поки людина його ще набирає, — це причіпка, а не поміч.
+  const [touched, setTouched] = useState({})
+  const [error, setError] = useState('')
+  const [quoteState, setQuoteState] = useState({ data: null, input: '', error: '' })
+  const [quoteRetry, setQuoteRetry] = useState(0)
+  const promoCode = promo?.ok ? form.promo_code.trim() : null
+  const quoteInput = JSON.stringify({
+    lines: cart?.lines?.map((line) => [line.product_id, line.qty, line.price, line.stock]),
+    promo: promoCode, use_bonus: form.use_bonus,
+    balance: profile?.bonus_balance,
+    volume: [config.volume_discount_enabled, config.volume_discount_min, config.volume_discount_percent],
+    bonus: [config.bonus_enabled, config.bonus_max_percent],
+  })
+  useEffect(() => {
+    let alive = true
+    setQuoteState((previous) => ({ ...previous, input: '', error: '' }))
+    api.checkoutQuote({ promo_code: promoCode, use_bonus: form.use_bonus })
+      .then((data) => {
+        if (alive) setQuoteState({ data, input: quoteInput, error: '' })
+      })
+      .catch((err) => {
+        if (alive) setQuoteState((previous) => ({ ...previous, input: '', error: err.message }))
+      })
+    return () => { alive = false }
+  }, [quoteInput, quoteRetry])
+  const quoteReady = quoteState.input === quoteInput && Boolean(quoteState.data?.quote_token)
+
+  // Довідник Нової пошти. Обраний пункт тримаємо окремо від форми: щоб
+  // спитати відділення, потрібні обидва коди — CityRef для міст і
+  // SettlementRef для сіл, у яких свого CityRef немає.
+  const [cityPick, setCityPick] = useState(null)
+  const [cityHits, setCityHits] = useState([])
+  const [cityOpen, setCityOpen] = useState(false)
+  const [cityBusy, setCityBusy] = useState(false)
+  const [points, setPoints] = useState([])
+  const [pointsOpen, setPointsOpen] = useState(false)
+  const [pointsBusy, setPointsBusy] = useState(false)
+  // Довідник відвалився вже після завантаження вітрини. Не показуємо
+  // порожній список і не блокуємо оформлення: повертаємось до ручного
+  // вводу мовчки. Прийняти замовлення й уточнити адресу в чаті дешевше,
+  // ніж втратити покупця через чужу недоступність.
+  const [directoryDown, setDirectoryDown] = useState(false)
+  // Попередній розрахунок доставки. Живе окремо від суми замовлення й
+  // ніколи в неї не входить: платять його перевізникові, а не нам.
+  const [shipping, setShipping] = useState(null)
+  const directory = Boolean(config.novaposhta_enabled) && !directoryDown
+  // Курʼєр вимкнений — вибору немає взагалі. Один варіант краще подати
+  // як даність, ніж як вибір із одного: зайва кнопка змушує зупинитись
+  // і подумати там, де думати нема над чим.
+  const courier = Boolean(config.courier_enabled)
+  const toWarehouse = form.delivery_method === 'warehouse' || !courier
+
+  useEffect(() => {
+    if (profile?.first_name || profile?.phone) {
+      setForm((f) => ({
+        ...f,
+        contact_name: f.contact_name || (String(profile?.first_name || '').includes('@') ? '' : profile?.first_name) || '',
+        contact_phone: f.contact_phone || normalizePhone(profile?.phone || ''),
+      }))
+    }
+  }, [profile])
+
+  // Пауза перед запитом. Без неї «Дніпро» — це шість звернень до
+  // перевізника, по одному на кожну натиснуту літеру.
+  useEffect(() => {
+    if (!directory || cityPick || !cityOpen) return undefined
+    const query = form.city.trim()
+    if (query.length < 2) {
+      setCityHits([])
+      return undefined
+    }
+    let alive = true
+    const timer = setTimeout(async () => {
+      setCityBusy(true)
+      try {
+        const { items } = await api.delivery.cities(query)
+        if (alive) setCityHits(items || [])
+      } catch (err) {
+        if (!alive) return
+        setCityHits([])
+        // 503 — ключа немає зовсім; питати далі немає сенсу
+        if (err.status === 503) setDirectoryDown(true)
+      } finally {
+        if (alive) setCityBusy(false)
+      }
+    }, 350)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [form.city, cityOpen, cityPick, directory])
+
+  // Відділення обраного пункту. Фільтр іде тим же запитом: у великому
+  // місті їх понад тисячу, і віддавати всі на телефон немає сенсу.
+  const pointQuery = form.delivery_warehouse_ref ? '' : form.address.trim()
+  useEffect(() => {
+    if (!directory || !cityPick || !toWarehouse) {
+      setPoints([])
+      return undefined
+    }
+    let alive = true
+    const timer = setTimeout(async () => {
+      setPointsBusy(true)
+      try {
+        const { items } = await api.delivery.warehouses(
+          cityPick.ref, cityPick.settlement_ref, pointQuery,
+        )
+        if (alive) setPoints(items || [])
+      } catch (err) {
+        if (!alive) return
+        setPoints([])
+        if (err.status === 503) setDirectoryDown(true)
+      } finally {
+        if (alive) setPointsBusy(false)
+      }
+    }, 300)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [cityPick, toWarehouse, pointQuery, directory])
+
+  // Рахуємо, щойно відомо куди. Місто — найбільший множник у тарифі,
+  // спосіб доставки й накладений платіж міняють суму помітно, тож на
+  // кожну зміну питаємо заново.
+  // Місто вписали руками — це теж привід показати «від N грн». Раніше
+  // розрахунок вимагав вибору з довідника, тож без ключа Нової пошти
+  // покупець не бачив узагалі нічого про вартість доставки.
+  const hasCity = Boolean(cityPick) || form.city.trim().length > 1
+  useEffect(() => {
+    if (!hasCity) {
+      setShipping(null)
+      return undefined
+    }
+    let alive = true
+    const timer = setTimeout(async () => {
+      try {
+        const data = await api.delivery.price(
+          cityPick?.ref || '', cityPick?.settlement_ref || '',
+          form.delivery_method, form.payment_method,
+        )
+        if (alive) setShipping(data)
+      } catch {
+        // Не порахували — не показуємо нічого. Оформлення це не чіпає.
+        if (alive) setShipping(null)
+      }
+    }, 300)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [cityPick, hasCity, form.delivery_method, form.payment_method])
+
+  /** Номер із Telegram замість набору руками. */
+  const pullPhone = async () => {
+    if (phoneBusy) return
+    haptic('light')
+    setPhoneBusy(true)
+    setError('')
+    clientLog('storefront.contact.request.started', { message: 'Запит номера Telegram' })
+    try {
+      const granted = await requestContact()
+      clientLog(
+        granted ? 'storefront.contact.request.granted' : 'storefront.contact.request.not_granted',
+        { message: granted ? 'Telegram підтвердив передачу номера' : 'Telegram не підтвердив передачу номера' },
+      )
+
+      // Навіть якщо callback повернув false, кілька разів перевіряємо сервер:
+      // деякі клієнти надсилають contact update раніше/пізніше JS callback.
+      // Після підтвердженого sent чекаємо довше — update проходить окремим
+      // маршрутом через Bot API і при навантаженні може доїхати не миттєво.
+      const attempts = granted ? 60 : 10
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          const fresh = await api.contactPhone()
+          const phone = normalizePhone(fresh?.phone || '')
+          if (phone && !phoneError(phone)) {
+            setForm((f) => ({ ...f, contact_phone: phone }))
+            setTouched((t) => ({ ...t, contact_phone: true }))
+            clientLog('storefront.contact.synced', {
+              message: 'Номер Telegram синхронізовано з профілем',
+              attempt: attempt + 1,
+            })
+            notify('success')
+            return
+          }
+        } catch {
+          // Наступна спроба: контакт міг бути ще в черзі Telegram/Bot API.
+        }
+        const pause = attempt < 10 ? 350 : attempt < 30 ? 500 : 750
+        await new Promise((resolve) => setTimeout(resolve, pause))
+      }
+
+      if (!granted) {
+        // Користувач міг просто скасувати popup — це не помилка checkout.
+        return
+      }
+      clientLog('storefront.contact.sync_timeout', {
+        level: 'warning',
+        message: 'Telegram підтвердив номер, але backend не побачив contact update вчасно',
+      })
+      setError('Telegram прийняв номер, але магазин його ще не отримав. Спробуйте ще раз або введіть номер вручну.')
+    } finally {
+      setPhoneBusy(false)
+    }
+  }
+
+  const set = (key) => (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  // Зміна міста скидає вибране відділення — і в тексті, і в коді. Без
+  // цього посилка поїхала б у старе місто з кодом, який там нічого не
+  // означає, а помітили б це аж на відправці.
+  const changeCity = (value) => {
+    setCityPick(null)
+    setCityOpen(true)
+    setForm((f) => ({
+      ...f, city: value, delivery_city_ref: '',
+      address: '', delivery_warehouse_ref: '',
+    }))
+  }
+
+  const pickCity = (item) => {
+    setCityPick({ ref: item.ref, settlement_ref: item.settlement_ref })
+    setCityOpen(false)
+    setForm((f) => ({
+      ...f,
+      city: item.label || item.name,
+      // Для села CityRef порожній — тоді в замовлення йде код
+      // населеного пункту: за ним відділення так само знаходиться.
+      delivery_city_ref: item.ref || item.settlement_ref,
+      address: '',
+      delivery_warehouse_ref: '',
+    }))
+  }
+
+  const changeAddress = (value) => {
+    setPointsOpen(true)
+    setForm((f) => ({ ...f, address: value, delivery_warehouse_ref: '' }))
+  }
+
+  const pickPoint = (point) => {
+    setPointsOpen(false)
+    setForm((f) => ({ ...f, address: point.label, delivery_warehouse_ref: point.ref }))
+  }
+
+  const pickMethod = (method) => {
+    // Адреса курʼєру й номер відділення — різні речі; лишити попереднє
+    // означало б відправити «Відділення №7» як вулицю.
+    setPointsOpen(false)
+    setForm((f) => ({
+      ...f, delivery_method: method, address: '', delivery_warehouse_ref: '',
+    }))
+  }
+
+  const chosenPoint = points.find((p) => p.ref === form.delivery_warehouse_ref)
+
+  const applyPromo = async () => {
+    const code = form.promo_code.trim()
+    if (!code) return
+    setChecking(true)
+    try {
+      setPromo(await api.checkPromo(code))
+    } catch (err) {
+      setPromo({ ok: false, error: err.message })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const quote = quoteState.data
+  const subtotal = quote?.subtotal
+  const discount = quote?.discount
+  const byVolume = quote?.discount_source === 'volume'
+  const bonus = quote?.bonus_used
+  const total = quote?.total
+  const checkoutCurrency = quote?.currency || config.currency
+
+  // Порядок збігається з порядком полів на екрані: за ним ведемо людину
+  // до першого незаповненого, а не до випадкового.
+  const REQUIRED = [
+    ['contact_surname', 'surname', 'Вкажіть прізвище'],
+    ['contact_name', 'name', 'Вкажіть імʼя'],
+    ['contact_phone', 'phone', 'Вкажіть телефон'],
+    ['city', 'city', 'Вкажіть місто'],
+    ['address', 'address', 'Вкажіть відділення або адресу'],
+  ]
+  const missing = REQUIRED.filter(([key]) => !form[key].trim())
+  const filled = missing.length === 0
+
+  const submit = async () => {
+    // disabled оновлюється після render, тому два дуже швидкі click можуть
+    // потрапити сюди до того, як кнопка стане неактивною. Сервер має
+    // ідемпотентність, але локальний guard прибирає зайвий запит зовсім.
+    if (submittingRef.current) return
+    if (!quoteReady && !replayPending) {
+      setError('Дочекайтеся розрахунку суми або повторіть його завантаження.')
+      return
+    }
+    if (!replayPending && !filled) {
+      // Раніше тут був один банер з переліком усіх пʼяти полів, а
+      // підсвічувався лише телефон. Людина читала речення й сама шукала
+      // очима, яке саме поле пропустила — на телефоні, де на екран
+      // вміщається два поля з семи. Тепер помічаємо всі порожні одразу
+      // і прокручуємо до першого.
+      setTouched((t) => ({
+        ...t, ...Object.fromEntries(REQUIRED.map(([key]) => [key, true])),
+      }))
+      setError('')
+      const [, id] = missing[0]
+      const node = document.getElementById(id)
+      if (node) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // Фокус після прокрутки: інакше Telegram піднімає клавіатуру
+        // й гасить саму прокрутку на півдорозі.
+        setTimeout(() => node.focus({ preventScroll: true }), 300)
+      }
+      notify('error')
+      return
+    }
+    const phoneProblem = phoneError(form.contact_phone)
+    if (!replayPending && phoneProblem) {
+      setTouched((t) => ({ ...t, contact_phone: true }))
+      setError(`Телефон: ${phoneProblem.toLowerCase()}`)
+      const node = document.getElementById('phone')
+      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    // Накладений платіж у поштомат не приймають. Дізнатися про це при
+    // спробі забрати посилку — це зіпсоване замовлення й повернення.
+    if (!replayPending && chosenPoint?.is_postomat && form.payment_method === 'cod') {
+      notify('error')
+      setError('У поштоматі накладений платіж не приймають — оберіть '
+               + 'відділення або оплату на картку.')
+      return
+    }
+    // Ref ставимо синхронно: state busy оновиться тільки після render і
+    // не блокує другий click у тому самому кадрі.
+    submittingRef.current = true
+    setBusy(true)
+    setError('')
+    let completed = false
+    try {
+      // Record this session before linking it; failed telemetry never rejects checkout.
+      await Promise.race([trackVisit(api), new Promise((resolve) => setTimeout(resolve, 600))])
+      const payload = replayPending ? pendingPayload.current : {
+        attribution: acquisition(),
+        ...form,
+        checkout_key: checkoutKey.current,
+        quote_token: quote.quote_token,
+        // Курʼєра могли вимкнути, поки вкладка була відкрита. Шлемо те,
+        // що покупець реально бачив на екрані, інакше замовлення
+        // відхилиться з приводу, якого людина не розуміє.
+        delivery_method: toWarehouse ? 'warehouse' : 'courier',
+        comment: form.comment.trim() || null,
+        promo_code: promoCode,
+      }
+      pendingPayload.current = payload
+      const order = await api.checkout(payload)
+      completed = true
+      pendingPayload.current = null
+      setReplayPending(false)
+      notify('success')
+      // Реквізити тут не показуємо: їх надсилає менеджер у чат під
+      // конкретне замовлення. Номер картки, розісланий усім наперед,
+      // застаріває швидше, ніж встигають правити налаштування.
+      submittingRef.current = false
+      setBusy(false)
+      onDone({ ...order, currency: checkoutCurrency })
+    } catch (err) {
+      if (completed) return
+      submittingRef.current = false
+      notify('error')
+      setError(err.message)
+      setBusy(false)
+      const uncertain = !err.status || err.status >= 500
+      setReplayPending(uncertain)
+      if (!uncertain) {
+        pendingPayload.current = null
+        setQuoteRetry((value) => value + 1)
+      }
+    }
+  }
+
+  // Обовʼязкове поле, яке лишили порожнім. Один помічник на всі — інакше
+  // підсвітка з часом розійдеться: у телефона вона була, у решти ні.
+  const blank = (key) => touched[key] && !form[key].trim()
+  const cls = (key) => `input ${blank(key) ? 'bad' : ''}`
+  const hint = (key) => {
+    const found = REQUIRED.find(([k]) => k === key)
+    return blank(key) && found ? <div className="field-error">{found[2]}</div> : null
+  }
+
+  return (
+    <>
+      <div className="head checkout-head">
+        <h1>Оформлення</h1>
+        <p>Куди доставити й на кого оформити</p>
+        <div className="checkout-required-legend" aria-label="Позначення полів">
+          <Requirement />
+          <span className="faint">Інші поля можна пропустити</span>
+        </div>
+      </div>
+
+      {error && <div className="banner warn">{error}</div>}
+
+      {/* Форма поділена на розділи за тим, як про замовлення думає
+          покупець: хто отримує, куди везти, як платити. Суцільна стрічка з
+          дванадцяти полів читалась як анкета, і пропущене поле губилось. */}
+      <section className="form-section" aria-labelledby="sec-recipient">
+        <h2 className="form-section-title" id="sec-recipient"><span>Отримувач</span><Requirement /></h2>
+
+      {/* Перевізники вимагають повне ПІБ, тож питаємо трьома полями:
+          одним рядком люди вписують його в довільному порядку */}
+      <div className="field">
+        <label htmlFor="surname"><span>Прізвище</span><Requirement /></label>
+        <Field id="surname" className={cls('contact_surname')} required aria-required="true"
+               value={form.contact_surname}
+               onChange={set('contact_surname')} autoComplete="family-name" />
+        {hint('contact_surname')}
+      </div>
+
+      <div className="field">
+        <label htmlFor="name"><span>Імʼя</span><Requirement /></label>
+        <Field id="name" className={cls('contact_name')} required aria-required="true" value={form.contact_name}
+               onChange={set('contact_name')} autoComplete="given-name" />
+        {hint('contact_name')}
+      </div>
+
+      <div className="field">
+        <label htmlFor="patronymic">
+          <span>По батькові</span><Requirement optional />
+        </label>
+        <Field id="patronymic" value={form.contact_patronymic}
+               onChange={set('contact_patronymic')} autoComplete="additional-name" />
+      </div>
+
+      <div className="field">
+        <label htmlFor="phone"><span>Телефон</span><Requirement /></label>
+        {/* Єдине поле, яке Telegram уміє заповнити сам. Кнопку ставимо
+            перед полем: набирати тринадцять цифр із помилкою в одній —
+            найдорожча дія у формі, а тут вона зводиться до підтвердження
+            у вікні застосунку. Поле лишається поруч: у старих клієнтах
+            методу немає, а хтось замовляє не на свій номер. */}
+        {canRequestContact() && (
+          <button className="secondary phone-pull" onClick={pullPhone} disabled={phoneBusy}>
+            {phoneBusy ? 'Отримуємо номер…' : 'Взяти номер із Telegram'}
+          </button>
+        )}
+        <Field
+          id="phone"
+          className={`input ${
+            touched.contact_phone
+            && (blank('contact_phone') || phoneError(form.contact_phone)) ? 'bad' : ''
+          }`}
+          type="tel"
+          required
+          aria-required="true"
+          inputMode="tel"
+          placeholder="+380XXXXXXXXX"
+          value={form.contact_phone}
+          onFocus={() => {
+            // Підставляємо префікс одразу: так видно, що чекають
+            // український номер, і людина не почне з нуля чи вісімки.
+            if (!form.contact_phone) setForm((f) => ({ ...f, contact_phone: '+380' }))
+          }}
+          onChange={(e) => setForm((f) => ({
+            ...f, contact_phone: normalizePhone(e.target.value),
+          }))}
+          onBlur={() => setTouched((t) => ({ ...t, contact_phone: true }))}
+        />
+        {hint('contact_phone')}
+        {touched.contact_phone && !blank('contact_phone')
+          && phoneError(form.contact_phone) && (
+          <div className="field-error">{phoneError(form.contact_phone)}</div>
+        )}
+      </div>
+      </section>
+
+      <section className="form-section" aria-labelledby="sec-delivery">
+        <h2 className="form-section-title" id="sec-delivery"><span>Доставка</span><Requirement /></h2>
+
+      {courier && (
+        <>
+          <div className="choice" role="group" aria-label="Спосіб доставки">
+            <button
+              aria-pressed={toWarehouse}
+              onClick={() => pickMethod('warehouse')}
+            >
+              Відділення
+            </button>
+            <button
+              aria-pressed={!toWarehouse}
+              onClick={() => pickMethod('courier')}
+            >
+              Курʼєр на адресу
+            </button>
+          </div>
+        </>
+      )}
+
+      <div className="field combo">
+        <label htmlFor="city"><span>Населений пункт</span><Requirement /></label>
+        <Field
+          id="city"
+          required
+          aria-required="true"
+          className={cls('city')}
+          value={form.city}
+          onChange={(e) => changeCity(e.target.value)}
+          onFocus={() => setCityOpen(true)}
+          onBlur={() => setTouched((t) => ({ ...t, city: true }))}
+          autoComplete="off"
+          placeholder={directory ? 'Почніть набирати назву' : 'Місто або село'}
+        />
+        {hint('city')}
+        {directory && cityOpen && !cityPick && form.city.trim().length >= 2 && (
+          <div className="combo-list">
+            {cityBusy && <div className="combo-empty">Шукаємо…</div>}
+            {!cityBusy && cityHits.length === 0 && (
+              <div className="combo-empty">
+                Нічого не знайшлося. Можна вписати руками — менеджер уточнить.
+              </div>
+            )}
+            {cityHits.map((item) => (
+              <button
+                className="combo-item"
+                key={item.settlement_ref || item.ref}
+                onClick={() => pickCity(item)}
+              >
+                <span>{item.label}</span>
+                {/* Скільки там відділень — підказка, який із однойменних
+                    пунктів потрібен: у міста їх сотні, у села одне */}
+                <span className="combo-note num">{item.warehouses}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="field combo">
+        <label htmlFor="address">
+          <span>{toWarehouse ? 'Відділення або поштомат' : 'Адреса доставки'}</span><Requirement />
+        </label>
+        <Field
+          id="address"
+          required
+          aria-required="true"
+          className={cls('address')}
+          value={form.address}
+          onChange={(e) => changeAddress(e.target.value)}
+          onFocus={() => setPointsOpen(true)}
+          onBlur={() => setTouched((t) => ({ ...t, address: true }))}
+          autoComplete="off"
+          placeholder={
+            toWarehouse ? 'Номер відділення або вулиця' : 'Вулиця, будинок, квартира'
+          }
+        />
+        {hint('address')}
+        {toWarehouse && directory && !cityPick && form.city.trim().length > 0 && (
+          <p className="hint">
+            Оберіть населений пункт зі списку — тоді зʼявиться перелік відділень.
+          </p>
+        )}
+        {toWarehouse && directory && cityPick && pointsOpen
+          && !form.delivery_warehouse_ref && (
+          <div className="combo-list">
+            {pointsBusy && <div className="combo-empty">Завантажуємо відділення…</div>}
+            {!pointsBusy && points.length === 0 && (
+              <div className="combo-empty">
+                Такого відділення немає. Перевірте номер або введіть адресу вручну.
+              </div>
+            )}
+            {points.map((point) => (
+              <button className="combo-item" key={point.ref} onClick={() => pickPoint(point)}>
+                <span>{point.label}</span>
+                {point.is_postomat && <span className="combo-tag">поштомат</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {chosenPoint && (
+          <p className="combo-picked">
+            Обрано: {chosenPoint.short || chosenPoint.label}
+          </p>
+        )}
+        {/* Поштомат не приймає накладений платіж — про це краще сказати
+            тут, ніж дізнатися при спробі забрати посилку */}
+        {chosenPoint?.is_postomat && form.payment_method === 'cod' && (
+          <p className="field-error">
+            У поштоматі накладений платіж не приймають. Оберіть відділення
+            або оплату на картку.
+          </p>
+        )}
+      </div>
+      </section>
+
+      <section className="form-section" aria-labelledby="sec-payment">
+        <h2 className="form-section-title" id="sec-payment"><span>Оплата</span><Requirement /></h2>
+
+      <div className="choice" role="group" aria-label="Спосіб оплати">
+        <button
+          aria-pressed={form.payment_method === 'card'}
+          onClick={() => setForm((f) => ({ ...f, payment_method: 'card' }))}
+        >
+          На картку
+        </button>
+        <button
+          aria-pressed={form.payment_method === 'cod'}
+          onClick={() => setForm((f) => ({ ...f, payment_method: 'cod' }))}
+        >
+          Накладений платіж
+        </button>
+      </div>
+
+      <div className="field">
+        <label htmlFor="promo"><span>Промокод</span><Requirement optional /></label>
+        <div className="inline-field">
+          <Field
+            id="promo"
+            value={form.promo_code}
+            onChange={(e) => {
+              setPromo(null)
+              set('promo_code')(e)
+            }}
+            placeholder="Якщо є"
+          />
+          <button className="secondary" onClick={applyPromo} disabled={checking || !form.promo_code.trim()}>
+            {checking ? '…' : 'Застосувати'}
+          </button>
+        </div>
+        {promo && (
+          <p className={`field-note ${promo.ok ? 'ok' : 'bad'}`}>
+            {promo.ok
+              ? `Знижка ${money(promo.discount)} ${checkoutCurrency}`
+              : promo.error}
+          </p>
+        )}
+      </div>
+
+      {config.bonus_enabled && Number(profile?.bonus_balance || 0) > 0 && (
+        <label className="toggle">
+          <input type="checkbox" checked={form.use_bonus} onChange={set('use_bonus')} />
+          <span>
+            Списати бонуси
+            <br />
+            <span className="hint num">
+              доступно {money(quote?.bonus_available)} з{' '}
+              {money(profile.bonus_balance)} {checkoutCurrency}
+            </span>
+          </span>
+        </label>
+      )}
+      </section>
+
+      <section className="form-section">
+      <div className="field">
+        <label htmlFor="comment">
+          <span>Коментар</span><Requirement optional />
+        </label>
+        <Field
+          multiline
+          id="comment"
+          value={form.comment}
+          onChange={set('comment')}
+          placeholder="Побажання до замовлення"
+        />
+      </div>
+      </section>
+
+      <div className="summary">
+        {!quoteReady && (
+          <div role="status" className="field-note">
+            {quoteState.error || 'Оновлюємо суму замовлення…'}
+            {quoteState.error && <button className="secondary" onClick={() => setQuoteRetry((value) => value + 1)}>Повторити розрахунок</button>}
+          </div>
+        )}
+        <div className="row-between num">
+          <span className="hint">Товари</span>
+          <span>
+            {money(subtotal)} {checkoutCurrency}
+          </span>
+        </div>
+        {discount > 0 && (
+          <div className="row-between num discount">
+            <span>{byVolume ? `Знижка за суму` : 'Промокод'}</span>
+            <span>
+              −{money(discount)} {checkoutCurrency}
+            </span>
+          </div>
+        )}
+        {bonus > 0 && (
+          <div className="row-between num discount">
+            <span>Бонуси</span>
+            <span>
+              −{money(bonus)} {checkoutCurrency}
+            </span>
+          </div>
+        )}
+        <div className="row-between total num">
+          <span>До сплати</span>
+          <span>
+            {money(total)} {checkoutCurrency}
+          </span>
+        </div>
+
+        {/* Доставка стоїть ПІСЛЯ підсумку і поза ним навмисно. Її платять
+            перевізникові на відділенні, а не нам — вписати її в «До
+            сплати» означало б показати суму, якої покупець нам не
+            переказує. */}
+        {shipping && (shipping.cost || shipping.cost_from > 0) && (
+          <div className="shipping">
+            <div className="row-between num">
+              <span className="hint">
+                Доставка{shipping.source === 'novaposhta' ? ' Новою поштою' : ''}
+              </span>
+              <span>
+                {shipping.cost
+                  ? `≈ ${money(shipping.cost)} ${checkoutCurrency}`
+                  : `від ${money(shipping.cost_from)} ${checkoutCurrency}`}
+              </span>
+            </div>
+            {shipping.redelivery > 0 && (
+              <div className="row-between num">
+                <span className="hint">Переказ накладеного платежу</span>
+                <span>≈ {money(shipping.redelivery)} {checkoutCurrency}</span>
+              </div>
+            )}
+            {/* Слово «приблизно» тут не осторога заради остороги.
+                Перевізник рахує за фактичною вагою й габаритами, а їх
+                дізнаються лише коли посилку зважать на відділенні. Ми
+                підставляємо припущену вагу — тож це орієнтир. */}
+            <p className="shipping-note">
+              {shipping.source === 'novaposhta'
+                ? `Попередній розрахунок Нової пошти за вагою ${shipping.weight} кг.`
+                : 'Приблизна вартість.'}
+              {' '}Точну суму доставки визначає перевізник при відправці — уточніть
+              її в менеджера. Доставка оплачується окремо й не входить
+              у підсумок замовлення.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Згода з офертою — умова укладення договору за ст. 633 ЦК України,
+          тож посилання має бути саме тут, перед підтвердженням */}
+      <p className="hint legal-consent">
+        Підтверджуючи замовлення, ви приймаєте{' '}
+        <button className="inline-link" onClick={() => onLegal?.('offer')}>
+          умови публічної оферти
+        </button>{' '}
+        і погоджуєтесь на{' '}
+        <button className="inline-link" onClick={() => onLegal?.('privacy')}>
+          обробку персональних даних
+        </button>. Умови{' '}
+        <button className="inline-link" onClick={() => onLegal?.('returns')}>
+          повернення та обміну
+        </button>.
+      </p>
+
+      <div className="checkout-submit">
+        <button
+          className="primary"
+          onClick={submit}
+          disabled={busy || (!quoteReady && !replayPending)}
+        >
+          {busy ? 'Оформлюємо…' : replayPending ? 'Перевірити замовлення' : 'Підтвердити замовлення'}
+        </button>
+      </div>
+    </>
+  )
+}

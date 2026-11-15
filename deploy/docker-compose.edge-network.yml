@@ -1,0 +1,20 @@
+# OPTIONAL: Use only if ELFAR's Nginx itself owns host 80/443 inside Docker.
+# docker network create accord-shared-edge
+# Add this with -f after deploy/docker-compose.domains.yml.
+services:
+  website:
+    networks:
+      default:
+      accord_edge:
+        aliases: [accord-website]
+  miniapp:
+    networks:
+      default:
+      accord_edge:
+        aliases: [accord-miniapp]
+  # Dashboard intentionally NOT on this network. Expose it only through
+  # Cloudflare Tunnel + mandatory Access MFA from host loopback.
+networks:
+  accord_edge:
+    external: true
+    name: accord-shared-edge

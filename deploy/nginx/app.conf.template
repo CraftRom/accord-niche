@@ -1,0 +1,337 @@
+
+# ШАБЛОН. Не редагуйте його руками й не монтуйте напряму.
+#
+# render-nginx.sh підставляє сюди домен із PUBLIC_URL і кладе результат
+# у nginx/generated/app.conf — саме він монтується в контейнер.
+#
+# Розділення потрібне через одну конкретну поломку: раніше домен
+# підставлявся прямо в цей файл, і кожне оновлення (розпакування архіву,
+# git pull) повертало заглушку. Nginx після цього не стартував — шукав
+# сертифікат за шляхом __DOMAIN__, — а причина виглядала як загадковий
+# 521 від Cloudflare.
+
+# Резолвер Docker. Без нього nginx визначає адреси контейнерів **один раз**,
+# при старті, і тримає їх довіку.
+#
+# Наслідок болючий і неочевидний: після `up -d --force-recreate api`
+# контейнер отримує нову адресу в мережі, nginx стукає за старою і віддає
+# 502. Сам API при цьому живий і здоровий, у його логах порожньо, а
+# перезапуск nginx «магічно» все лікує — саме тому причину так важко
+# знайти. valid=10s змушує перечитувати адресу кожні десять секунд.
+server_tokens off;
+resolver 127.0.0.11 valid=10s ipv6=off;
+# Never include raw query strings or webhook secrets in access logs.
+map $uri $safe_log_uri {
+    ~^/api/telegram/ /api/telegram/[REDACTED];
+    ~^/api/integrations/salesdrive/webhook/ /api/integrations/salesdrive/webhook/[REDACTED];
+    default $uri;
+}
+log_format elfar_safe '$remote_addr - $remote_user [$time_local] "$request_method $safe_log_uri $server_protocol" $status $body_bytes_sent "$http_user_agent"';
+access_log /var/log/nginx/access.log elfar_safe;
+include /etc/nginx/promo.d/*.conf;
+
+
+# Адреси в змінних — теж навмисно. proxy_pass із літеральним іменем
+# резолвиться на старті; proxy_pass зі змінною — під час запиту, вже
+# через резолвер вище. Це єдиний спосіб змусити nginx не кешувати.
+map $host $api_backend {
+    default "http://api:8000";
+}
+
+map $host $miniapp_static {
+    default "http://miniapp:80";
+}
+
+map $host $dashboard_static {
+    default "http://dashboard:80";
+}
+
+map $host $website_static {
+    default "http://website:80";
+}
+
+# Внутрішній health endpoint для deploy. Він не публікується назовні і
+# не залежить ані від PUBLIC_URL, ані від будь-якого промо-домену.
+# Перевіряє саме nginx -> API через той самий runtime DNS-механізм.
+server {
+    listen 127.0.0.1:8080;
+    server_name _;
+    location = /__deploy_api_health {
+        set $deploy_api_health "http://api:8000/api/health";
+        proxy_pass $deploy_api_health;
+        proxy_set_header Host 127.0.0.1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 3s;
+    }
+}
+
+# Unknown hosts never reach a dashboard, API or open redirect.
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_certificate /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    return 444;
+}
+
+__MAIN_ALIAS_SERVERS__
+
+# ------------------------------------------------------------------------ HTTP
+#
+# Порт 80 ніколи не віддає API, панель чи Mini App незашифрованими.
+# Виняток — ACME challenge, потрібний для першого випуску/поновлення TLS.
+# Усе інше одразу перенаправляється на HTTPS.
+server {
+    listen 80;
+    server_name __DOMAIN__;
+
+    include /etc/nginx/deny.d/*.conf;
+
+    # На HTTP доступний лише ACME challenge. API, панель, Mini App і вебхуки
+    # ніколи не передають секрети незашифрованим каналом.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ---------------------------------------------------------------------- HTTPS
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name __DOMAIN__;
+
+    # Бани fail2ban — ті самі, що й на порту 80.
+    include /etc/nginx/deny.d/*.conf;
+
+    ssl_certificate     /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # HSTS вмикається лише зі справжнім сертифікатом: до цього nginx має
+    # тимчасову TLS-заглушку, яку не слід закріплювати в браузері на рік.
+    include /etc/nginx/hsts.d/*.conf;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    add_header X-Permitted-Cross-Domain-Policies "none" always;
+
+    client_max_body_size 10M;
+
+    # Розвідка. Ці шляхи не існують і не зʼявляться — віддавати по них
+    # 404 означає підтверджувати сканеру, що сервер живий і відповідає.
+    #
+    # Приводом стало сканування 2 вересня: 140 запитів за 67 секунд з
+    # однієї адреси, User-Agent змінювався майже щозапиту й підробляв
+    # довірених ботів — Googlebot, GPTBot, ClaudeBot, TelegramBot. Цілі
+    # були не файли налаштувань, а проксі-точки (fetch, proxy, preview,
+    # webhook): шукали SSRF, через яку сервер сходить у внутрішню мережу
+    # або по метадані хмари.
+    #
+    # 444 закриває зʼєднання без відповіді. Обмеження швидкості тут не
+    # рятує: сканування йшло 2 запити на секунду при межі 30, тобто на
+    # порядок нижче. Заразом третина журналу перестає бути сміттям.
+    #
+    # /api/image і /api/download свідомо не в переліку — вони заплановані.
+    #
+    # Перша половина — службові файли будь-де у шляху: сканер пробує не
+    # лише /api/.env, а й /api/src/.env та /api/shared/config/config.env.
+    # Друга — точні імена проксі-точок, і саме точні: без якоря «config»
+    # закрив би й /api/shop/config, тобто вітрину для покупця.
+    location ~* ^/api/.*(\.env|\.git|\.aws|\.svn|\.ssh|wp-|vendor/)|^/api/(graphql|fetch|proxy|preview|file|account|env|credentials|config|config\.json|openapi\.json|v[0-9]+/(env|fetch|proxy|preview|credentials|config|settings)|v[0-9]+/status/.*)$ {
+        access_log off;
+        return 444;
+    }
+
+    # SalesDrive webhook має секрет у URL. Окрема зона не дає перебирати
+    # токен або заливати API запитами, але залишає запас для реальних піків CRM.
+    location ~ ^/api/integrations/salesdrive/webhook/ {
+        client_max_body_size 256k;
+        limit_req zone=webhook burst=30 nodelay;
+        proxy_pass $api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+
+    # Вебхук Telegram: без ліміту швидкості, інакше загубимо апдейти в піках
+    location ~ ^/api/telegram/ {
+        client_max_body_size 256k;
+        proxy_pass $api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Захист від перебору пароля до панелі
+    location ~ ^/api/auth/(login|browser-login)$ {
+        client_max_body_size 16k;
+        limit_req zone=login burst=5 nodelay;
+        proxy_pass $api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+
+    # Завантажені зображення віддає nginx, а не застосунок: перекладати
+    # мегабайти через Python — марна робота й зайва памʼять на кожен
+    # запит. Кеш довгий, бо ім'я файлу містить хеш вмісту: змінився
+    # файл — змінилося ім'я, і старий кеш просто перестає використовуватись.
+    location /media/ {
+        alias /data/media/;
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        # Каталог зі сховищем не має віддавати нічого, крім картинок,
+        # навіть якщо туди щось потрапить іншим шляхом.
+        disable_symlinks on;
+        if ($uri !~* "^/media/[A-Za-z0-9_-]+\.(jpg|jpeg|png|gif|webp)$") { return 404; }
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Content-Security-Policy "default-src 'none'; sandbox" always;
+    }
+
+    # Клієнтський журнал Mini App. Публічний за задумом, але жорстко
+    # обмежений схемою API та окремою швидкістю на IP.
+    location = /api/shop/client-log {
+        client_max_body_size 16k;
+        limit_req zone=storefront_log burst=10 nodelay;
+        proxy_pass $api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Realtime order streams must never be buffered by either nginx layer.
+    # Without this, backend receives and persists the CRM change, but browser
+    # may see the SSE frame only after opening another page or reconnecting.
+    location = /api/realtime/orders {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass $api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_read_timeout 370s;
+        send_timeout 370s;
+    }
+
+    location = /api/shop/orders/stream {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass $api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_read_timeout 370s;
+        send_timeout 370s;
+    }
+
+    location = /api/backups/upload {
+        client_max_body_size 201M;
+        limit_req zone=login burst=2 nodelay;
+        proxy_pass $api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass $api_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    # ACCORD NICHE landing, каталог і сторінка товару. Dashboard у / без змін.
+    location /site {
+        proxy_pass $website_static;
+        proxy_set_header Host $host;
+        include /etc/nginx/hsts.d/*.conf;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    }
+
+    # Вітрина Mini App. Має стояти перед кореневим location, інакше
+    # запити з'їдала б панель.
+    location /app {
+        proxy_pass $miniapp_static;
+        proxy_set_header Host $host;
+
+        # add_header у location скасовує всі успадковані від server —
+        # це не доповнення, а заміна. Тому загальні заголовки тут
+        # перелічені повторно; без цього вітрина лишилась би зовсім без них.
+        include /etc/nginx/hsts.d/*.conf;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header X-Permitted-Cross-Domain-Policies "none" always;
+
+        # X-Frame-Options тут навмисно немає, а frame-ancestors дозволяє
+        # Telegram. Telegram Desktop і застосунки на телефоні відкривають
+        # Mini App у власному WebView, але Telegram Web — у звичайному
+        # iframe зі свого домену. Спільний для сервера SAMEORIGIN такий
+        # iframe забороняє: у застосунку вітрина працює, у браузері —
+        # порожнє вікно без жодного повідомлення про причину.
+        #
+        # script-src дозволяє telegram.org: звідти вантажиться SDK, без
+        # якого немає ні initData, ні теми, ні кнопки «назад».
+        # style-src з unsafe-inline — через style={{...}} у React: це
+        # атрибути елементів, а не сторонній код.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; frame-ancestors https://web.telegram.org https://*.telegram.org; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    }
+
+    location / {
+        proxy_pass $dashboard_static;
+        proxy_set_header Host $host;
+
+        include /etc/nginx/hsts.d/*.conf;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header X-Permitted-Cross-Domain-Policies "none" always;
+
+        # Панель у рамку не вставляє ніхто й ніколи — frame-ancestors 'none'
+        # жорсткіший за SAMEORIGIN і закриває клікджекінг остаточно.
+        add_header X-Frame-Options "DENY" always;
+
+        # HttpOnly cookie та серверний CSRF-захист доповнюються CSP без inline JS.
+        # Панель більше не тягне Google Fonts: зовнішні font/style origin не
+        # потрібні. worker-src 'self' явно дозволяє notification service worker.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    }
+}

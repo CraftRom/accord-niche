@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+dist/
+.DS_Store
+*.log
+qa/output/
+
+.env.*
+.env.domains
+
+!.env.example
+!.env.domains.example

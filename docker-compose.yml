@@ -1,0 +1,6 @@
+# Compatibility entrypoint. Prefer bash deploy/domains.sh for validated deployments.
+# Requires Docker Compose 2.20+ (include). Credentials stay in .env.domains.
+name: ${COMPOSE_PROJECT_NAME:?Use bash deploy/domains.sh or pass --env-file .env.domains}
+include:
+  - path: deploy/docker-compose.domains.yml
+    env_file: .env.domains

@@ -1,0 +1,174 @@
+"""Сповіщення про замовлення.
+
+Винесено зі скриптів бота, бо замовлення надходять із двох місць: із чату
+й з вітрини Mini App. Поки цей код жив лише в обробнику бота, замовлення,
+оформлені у вітрині, не доходили до менеджера взагалі.
+
+Усе, що ввів користувач, екранується. Telegram працює в режимі HTML, і
+незакритий кутовий дужок у чиємусь імені або коментарі змушує його
+відхилити повідомлення цілком — тобто магазин мовчки втрачав би сповіщення
+про замовлення. Екранування також не дає підсунути менеджеру посилання
+під виглядом коментаря до замовлення.
+"""
+from __future__ import annotations
+
+from shop.formatting import money as format_money
+from shop.telegram_text import send_html
+
+import logging
+from html import escape
+
+from shop.entities import Order, User
+from shop.repo.base import Repository
+from shop.services.shop_settings import get_shop_settings
+
+def topic_kwargs(topic_id: int) -> dict:
+    """Аргументи адресації в гілку форуму.
+
+    Порожній словник, якщо гілка не задана: message_thread_id=0 Telegram
+    відхиляє помилкою, а None у деяких версіях aiogram теж. Простіше не
+    передавати параметр узагалі.
+    """
+    return {"message_thread_id": topic_id} if topic_id else {}
+
+
+log = logging.getLogger(__name__)
+
+PAYMENT_LABELS = {"card": "картка", "cod": "накладений платіж"}
+
+# Спосіб доставки в шапці сповіщення. Менеджер бачить одразу, чи везти
+# курʼєром, чи оформляти на відділення — раніше це доводилось вгадувати
+# з тексту адреси.
+DELIVERY_LABELS = {
+    "warehouse": "Відділення",
+    "courier": "Курʼєр",
+}
+
+
+def esc(value) -> str:
+    """Робить рядок безпечним для HTML-розмітки Telegram."""
+    return escape(str(value or ""), quote=False)
+
+
+async def build_order_text(repo: Repository, order: Order, user: User) -> str:
+    shop = await get_shop_settings(repo)
+    cur = esc(shop.currency)
+
+    items = "\n".join(
+        f"• {esc(ln.name)} × {ln.qty} — {format_money(ln.line_total)} {cur}" for ln in order.items
+    )
+    who = f"@{esc(user.username)}" if user.username else f"id{user.tg_id}"
+
+    text = (
+        f"🆕 <b>Замовлення №{order.id}</b>\n\n"
+        f"{items}\n\n"
+        f"Сума: {format_money(order.subtotal)} {cur}\n"
+        f"Знижка: {format_money(order.discount)} {cur} | Бонуси: {format_money(order.bonus_used)} {cur}\n"
+        f"<b>До сплати: {format_money(order.total)} {cur}</b>\n\n"
+        f"Клієнт: {esc(order.contact_name)} ({who})\n"
+        f"Телефон: {esc(order.contact_phone)}\n"
+        f"{DELIVERY_LABELS.get(order.delivery_method or '', 'Доставка')}: "
+        f"{esc(', '.join(p for p in (order.delivery_city, order.delivery_address) if p))}\n"
+        f"Оплата: {PAYMENT_LABELS.get(order.payment_method, esc(order.payment_method))}"
+    )
+    if order.comment:
+        text += f"\n\nКоментар: {esc(order.comment)}"
+    return text
+
+
+async def notify_new_order(bot, repo: Repository, order: Order, user: User) -> bool:
+    """Публікує замовлення в панель і, якщо можливо, у Telegram.
+
+    ``bot`` навмисно може бути ``None``. Панельний event — базовий канал
+    визначення нового замовлення й не повинен зникати лише через restart або
+    недоступність Telegram bot process. Повертаємо True тільки якщо Telegram
+    також отримав повідомлення.
+    """
+    from shop.services.panel_notifications import safe_publish
+    who_name = user.first_name or user.username or f"id{user.tg_id}"
+    await safe_publish(
+        repo,
+        "order.created",
+        f"Нове замовлення №{order.id}",
+        f"{order.contact_name or who_name} · {format_money(order.total)} грн",
+        href=f"/orders/{order.id}",
+        entity_id=order.id,
+        actor=who_name,
+    )
+
+    if bot is None:
+        log.warning(
+            "Замовлення №%s опубліковано в панель, але Telegram bot недоступний",
+            order.id,
+        )
+        return False
+
+    shop = await get_shop_settings(repo)
+    if not shop.admin_chat_id:
+        log.warning("Чат для замовлень не заданий — №%s нікуди надіслати", order.id)
+        return False
+
+    from bot import keyboards as kb
+
+    try:
+        await send_html(
+            bot, shop.admin_chat_id,
+            await build_order_text(repo, order, user),
+            reply_markup=kb.admin_order(order.id, order.payment_method, order.status),
+            **topic_kwargs(shop.admin_topic_id),
+        )
+        return True
+    except Exception:
+        log.warning("Не вдалося надіслати замовлення №%s в адмінський чат",
+                    order.id, exc_info=True)
+        return False
+
+
+async def notify_cancelled_by_client(bot, repo, order, user) -> None:
+    """Повідомляє команду, що покупець скасував замовлення сам.
+
+    Окремим повідомленням, а не записом у чат замовлення: менеджер, який
+    саме пакує посилку, у чат не дивиться, а «💬 Питання по замовленню»
+    він прочитає як питання й відповість на нього, замість того щоб
+    зупинити відправку.
+    """
+    if bot is None:
+        return
+    shop = await get_shop_settings(repo)
+    if not shop.admin_chat_id:
+        return
+
+    who = f"@{esc(user.username)}" if user.username else esc(user.first_name or "клієнт")
+    try:
+        await bot.send_message(
+            shop.admin_chat_id,
+            f"🚫 <b>Замовлення №{order.id} скасоване покупцем</b>\n"
+            f"Хто: {who}\n"
+            f"Сума: {format_money(order.total)} грн\n\n"
+            "<i>Товар повернуто в наявність, бонуси — на рахунок. "
+            "Якщо посилку вже зібрано — розберіть.</i>",
+            **topic_kwargs(shop.admin_topic_id),
+        )
+    except Exception:
+        log.info("Не вдалося сповістити команду про скасування", exc_info=True)
+
+
+async def notify_receipt(bot, repo, order, attachment) -> bool:
+    """Best-effort Telegram copy; the database/chat remains the primary record."""
+    if bot is None or order is None:
+        return False
+    shop = await get_shop_settings(repo)
+    if not shop.admin_chat_id:
+        return False
+    from bot import keyboards as kb
+    try:
+        send = bot.send_photo if attachment["file_kind"] == "photo" else bot.send_document
+        await send(shop.admin_chat_id, attachment["file_id"],
+                   caption=f"Квитанція до замовлення №{order.id}",
+                   reply_markup=kb.admin_order(order.id, order.payment_method, order.status),
+                   **topic_kwargs(shop.admin_topic_id))
+        return True
+    except Exception:
+        log.warning("Квитанція №%s збережена в панелі; Telegram-сповіщення не доставлено",
+                    order.id, exc_info=True)
+        return False

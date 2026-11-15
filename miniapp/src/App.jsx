@@ -1,0 +1,984 @@
+import { useResource, ResourceStatus } from './useResource'
+import { money } from './money'
+import { hasCartProblems } from './cartAvailability'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import { api, AUTH_FAILURE_EVENT, consumeOrderEvents } from './api'
+import { clientLog } from './logger'
+import { trackVisit } from './attribution'
+import { horizontalWheel, trackViewport } from './scroll'
+import { AgeGate, Catalog } from './screens/Catalog'
+import { Cart, Checkout } from './screens/Checkout'
+import { ChatList, ChatRoom } from './screens/Chat'
+import { SupportCenter } from './screens/Support'
+import { ProductPage } from './screens/ProductPage'
+import { Legal, Footer } from './screens/Legal'
+import { SavePicker, WishlistPage, Wishlists, isSaved } from './screens/Wishlists'
+import { Profile } from './screens/Profile'
+import { OrderSuccess } from './screens/OrderSuccess'
+import { StoreNavigation } from './StoreNavigation'
+import {
+  applyTheme, backButton, getInitData, hideMainButton, initDataSource, isTelegramContext,
+  launchParamNames, notify, onThemeChange, ready, startTarget, waitForInitData,
+} from './telegram'
+
+export default function App() {
+  const [config, setConfig] = useState(null)
+  const [completedOrder, setCompletedOrder] = useState(null)
+  const cartResource = useResource(api.cart)
+  const profileResource = useResource(api.profile)
+  const savedResource = useResource(api.wishlists.list)
+  const activeResource = useResource(api.chattableOrders)
+  const historyDepth = useRef(20)
+  const historyBusy = useRef(false)
+  const fetchHistory = useCallback(async () => {
+    // Reconcile the entire visible prefix so new orders cannot shift offsets
+    // and silently drop/duplicate a previously opened historical page.
+    const items = new Map()
+    let total = 0
+    for (let offset = 0; offset < historyDepth.current; offset += 20) {
+      const result = await api.orders({ paginated: true, limit: 20, offset })
+      for (const order of result.items) items.set(order.id, order)
+      total = result.total
+      if (!result.has_more) break
+    }
+    return { items: [...items.values()], total, has_more: items.size < total }
+  }, [])
+  const historyResource = useResource(fetchHistory)
+  const { data: cart, setData: setCart } = cartResource
+  const { data: profile, setData: setProfile } = profileResource
+  const { data: wishlists, setData: setWishlists } = savedResource
+  const orders = historyResource.data?.items ?? null
+  const activeOrders = activeResource.data
+  const readCart = cartResource.read
+  const readProfile = profileResource.read
+  const readSaved = savedResource.read
+  const readHistory = historyResource.read
+  const readActive = activeResource.read
+  const loadMoreOrders = async () => {
+    if (historyBusy.current) return
+    historyBusy.current = true
+    historyDepth.current += 20
+    try { await readHistory() } finally { historyBusy.current = false }
+  }
+  const [tab, setTab] = useState('catalog')
+  const [searchRequest, setSearchRequest] = useState(0)
+  const [catalogState, setCatalogState] = useState({})
+  const [recentProducts, setRecentProducts] = useState([])
+  const navigationRequest = useRef(0)
+  const [checkingOut, setCheckingOut] = useState(false)
+  // Відкрите замовлення в чаті. Кнопка з бота веде сюди напряму.
+  const [chatOrder, setChatOrder] = useState(null)
+  const [supportOpen,setSupportOpen]=useState(false)
+  const supportRooms=useRef(new Map())
+  const supportBack=useRef(null)
+  const [openProduct, setOpenProduct] = useState(null)
+  const showProduct = useCallback((product) => {
+    setOpenProduct(product)
+    setRecentProducts((items) => [product, ...items.filter((item) => item.id !== product.id)].slice(0, 8))
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [])
+  const navigate = async (section) => {
+    if (checkoutPreparingRef.current) {
+      checkoutPreparationVersion.current += 1
+      checkoutPreparingRef.current = false;setCheckoutPreparing(false)
+    }
+    trackVisit(api)
+    const request = ++navigationRequest.current
+    if (section === 'cart') {
+      clearTimeout(flushTimer.current)
+      await flushCart()
+    }
+    if (request !== navigationRequest.current) return
+    setOpenProduct(null)
+    setOpenListId(null)
+    setTab(section)
+    if (section === 'search') setSearchRequest((value) => value + 1)
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
+  // Товар, для якого відкрито вибір списку
+  const [saving, setSaving] = useState(null)
+  // Відкритий список бажаного. Тримаємо номер, а не сам об'єкт: після
+  // прибирання товару приходить оновлений список, і копія в стані
+  // показувала б те, що вже прибрали.
+  const [openListId, setOpenListId] = useState(null)
+  // Екран документів: відкривається з підвалу й з оформлення
+  const [legal, setLegal] = useState(null)
+  const [fatal, setFatal] = useState('')
+
+  // Кількості, які людина щойно натиснула, але сервер ще не підтвердив.
+  // Показуємо суму «серверне + очікуване», тож лічильник реагує на дотик
+  // одразу, а не через півсекунди.
+  const [pendingQty, setPendingQty] = useState({})
+  const [cartError, setCartError] = useState('')
+  const [quantityErrors,setQuantityErrors] = useState({})
+  const [quantityInFlight,setQuantityInFlight] = useState(new Set())
+  const pendingTotalRef = useRef({})
+  const pendingEpochRef = useRef({})
+  // Накопичені дельти й таймер відправки. У ref, а не в стані: їх читає
+  // таймер, і перемальовування тут ні до чого.
+  const pendingRef = useRef({})
+  const flushTimer = useRef(null)
+  // Серіалізує flush кошика. Якщо debounce уже почав POST, кнопка
+  // «Оформити» має дочекатися саме його, а не побачити порожній pendingRef
+  // і відкрити checkout зі старим серверним кошиком.
+  const flushInFlight = useRef(Promise.resolve())
+  const cartMutating = useRef(0)
+  const cartWriteVersion = useRef(0)
+  const cartReviewRequired = useRef(false)
+  const checkoutPreparingRef = useRef(false)
+  const checkoutPreparationVersion = useRef(0)
+  const [checkoutPreparing,setCheckoutPreparing] = useState(false)
+
+  useEffect(() => {
+    ready()
+    applyTheme()
+    return onThemeChange(applyTheme)
+  }, [])
+
+  useEffect(() => {
+    const stop = trackViewport()
+    document.addEventListener('wheel', horizontalWheel, { passive: false })
+    return () => { stop(); document.removeEventListener('wheel', horizontalWheel) }
+  }, [])
+
+  // Telegram initData не оновлюється всередині вже відкритого WebView.
+  // Після першого 401 зупиняємо всю фонову активність замість нескінченного
+  // циклу poll/SSE → 401 → reconnect. Новий валідний initData Telegram
+  // видасть лише після повторного відкриття Mini App.
+  useEffect(() => {
+    const onAuthFailure = (event) => {
+      const message = event?.detail?.message || 'Сесію завершено. Закрийте магазин і відкрийте його знову в Telegram.'
+      checkoutPreparationVersion.current += 1
+      checkoutPreparingRef.current = false;setCheckoutPreparing(false)
+      setConfig(null)
+      pendingRef.current = {};pendingTotalRef.current = {};pendingEpochRef.current = {}
+      setPendingQty({});setQuantityErrors({});setQuantityInFlight(new Set())
+      supportRooms.current.clear()
+      setSupportOpen(false)
+      setCart(null)
+      setProfile(null)
+      setWishlists(null)
+      historyResource.setData(null)
+      activeResource.setData(null)
+      setChatOrder(null)
+      setFatal(message)
+    }
+    window.addEventListener(AUTH_FAILURE_EVENT, onAuthFailure)
+    return () => window.removeEventListener(AUTH_FAILURE_EVENT, onAuthFailure)
+  }, [])
+
+  /* Клавіатура займає нижню половину екрана, а сторінка під неї не
+   * прокручується сама. Піднімаємо активне поле у видиму частину із
+   * затримкою на анімацію клавіатури: до неї вікно ще старої висоти.
+   */
+  useEffect(() => {
+    const typing = (node) => Boolean(node) && (
+      node.tagName === 'INPUT' || node.tagName === 'TEXTAREA'
+    )
+    const reveal = () => {
+      const node = document.activeElement
+      if (!typing(node)) return
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+    const revealSoon = (e) => {
+      if (typing(e.target)) setTimeout(reveal, 320)
+    }
+    document.addEventListener('focusin', revealSoon)
+    window.visualViewport?.addEventListener('resize', reveal)
+    return () => {
+      document.removeEventListener('focusin', revealSoon)
+      window.visualViewport?.removeEventListener('resize', reveal)
+    }
+  }, [])
+
+  const load = useCallback(async () => {
+    setFatal('')
+    // Частина Telegram WebView спершу створює window.Telegram.WebApp і лише
+    // через кілька сотень мілісекунд заповнює initData. Раніше ми перевіряли
+    // його синхронно й показували хибну помилку. Тепер коротко чекаємо.
+    const init = getInitData() || await waitForInitData(2500)
+    if (init && initDataSource() === 'кеш пристрою') {
+      clientLog('storefront.telegram.initdata_recovered', {
+        message: 'Telegram initData відновлено з кешу канонічного origin',
+        once: 'initdata-recovered',
+      })
+    }
+    if (!init) {
+      clientLog('storefront.telegram.initdata_missing', {
+        level: 'warning',
+        message: 'Telegram initData відсутній після очікування',
+        once: 'initdata-missing',
+      })
+      setFatal(
+        'Магазин відкрито без авторизації Telegram. Закрийте це вікно й '
+        + 'відкрийте магазин кнопкою в особистому чаті з ботом. Якщо помилка '
+        + 'повторюється саме в Telegram — повідомте підтримку: діагностику вже записано.',
+      )
+      return
+    }
+
+    api.config()
+      .then((value) => {
+        setConfig(value)
+        trackVisit(api)
+        clientLog('storefront.open.ok', {
+          message: 'Вітрина успішно отримала конфігурацію',
+          once: 'open-ok',
+        })
+      })
+      .catch((err) => {
+        // Повтори безпечних GET централізовані в api.js. Тут не дублюємо
+        // таймери й не створюємо кілька паралельних ланцюжків завантаження.
+        clientLog('storefront.open.failed', {
+          level: 'error', message: err?.message || 'Невідома помилка',
+          status: err?.status || null,
+        })
+        setFatal(err.message || 'Невідома помилка')
+      })
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const refresh = useCallback(() => Promise.all([
+    readCart(), readProfile(), readHistory(), readSaved(), readActive(),
+  ]), [readCart, readProfile, readHistory, readSaved, readActive])
+
+  useEffect(() => {
+    if (config?.age_confirmed) void refresh()
+  }, [config?.age_confirmed, refresh])
+
+  // Тихий read-side refresh вітрини. Чат має свій швидший delta-poll,
+  // а тут синхронізуємо статуси замовлень, профіль і кошик між вкладками/
+  // пристроями без spinner-ів та перезавантаження екрана.
+  const backgroundSyncRef = useRef(false)
+  useEffect(() => {
+    if (!config?.age_confirmed) return undefined
+    let stopped = false
+    let cycle = 0
+    let timer = null
+
+    const visibleAndOnline = () => !document.hidden && navigator.onLine !== false
+    const clearTimer = () => {
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
+    }
+    const schedule = (delay = 20000) => {
+      clearTimer()
+      if (!stopped && visibleAndOnline()) timer = window.setTimeout(sync, delay)
+    }
+
+    const sync = async () => {
+      if (stopped || !visibleAndOnline() || backgroundSyncRef.current) return
+      backgroundSyncRef.current = true
+      cycle += 1
+      try {
+        const jobs = [readHistory(), readActive(), readProfile(), readSaved()]
+        const canRefreshCart = cartMutating.current === 0 && Object.keys(pendingRef.current || {}).length === 0
+        if (canRefreshCart && cycle % 2 === 0) jobs.push(readCart())
+        if (cycle % 4 === 0) jobs.push(api.config().then((value) => { if (!stopped) setConfig(value) }))
+        await Promise.allSettled(jobs)
+      } finally {
+        backgroundSyncRef.current = false
+        schedule()
+      }
+    }
+
+    const wake = () => {
+      clearTimer()
+      if (visibleAndOnline()) sync()
+    }
+    schedule()
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('focus', wake)
+    window.addEventListener('online', wake)
+    return () => {
+      stopped = true
+      clearTimer()
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('focus', wake)
+      window.removeEventListener('online', wake)
+    }
+  }, [config?.age_confirmed])
+
+  // Primary realtime path for customer-visible order state. Redis/SSE only
+  // invalidates the read-model; actual data is always re-read through the
+  // signed Mini App API. The 20s DB-only background sync above remains recovery.
+  const liveRefreshRef = useRef(false)
+  useEffect(() => {
+    if (!config?.age_confirmed) return undefined
+    let stopped = false
+    let controller = null
+    let retryTimer = null
+    let refreshTimer = null
+    let retryMs = 1000
+
+    const refreshOrderState = async () => {
+      if (stopped || liveRefreshRef.current || document.hidden || navigator.onLine === false) return
+      liveRefreshRef.current = true
+      try {
+        await Promise.all([readHistory(), readActive(), readProfile()])
+      } finally {
+        liveRefreshRef.current = false
+      }
+    }
+
+    const stopConnection = () => {
+      controller?.abort()
+      controller = null
+      if (retryTimer) clearTimeout(retryTimer)
+      retryTimer = null
+    }
+
+    const scheduleReconnect = () => {
+      if (stopped || document.hidden || navigator.onLine === false) return
+      if (retryTimer) clearTimeout(retryTimer)
+      retryTimer = setTimeout(connect, retryMs)
+      retryMs = Math.min(15000, retryMs * 2)
+    }
+
+    const onOrder = () => {
+      if (refreshTimer) clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(() => refreshOrderState().catch(() => {}), 80)
+    }
+
+    const connect = async () => {
+      if (stopped || document.hidden || navigator.onLine === false) return
+      stopConnection()
+      controller = new AbortController()
+      try {
+        await consumeOrderEvents(onOrder, controller.signal)
+        retryMs = 1000
+      } catch (err) {
+        if (err?.name === 'AbortError' || stopped || err?.authFailure || err?.status === 401) return
+        // Telegram/Android обриває довгі fetch під час згортання WebView.
+        // Якщо стан змінився вже після старту read(), це очікуване закриття,
+        // а не збій realtime.
+        if (!document.hidden && navigator.onLine !== false) {
+          clientLog('storefront.orders.realtime_disconnected', {
+            level: 'warning', message: err?.message || 'Realtime connection failed',
+            status: err?.status || null,
+          })
+        }
+      }
+      scheduleReconnect()
+    }
+
+    const wake = () => {
+      if (document.hidden || navigator.onLine === false) stopConnection()
+      else { retryMs = 1000; connect(); refreshOrderState().catch(() => {}) }
+    }
+
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('online', wake)
+    window.addEventListener('offline', wake)
+    connect()
+    return () => {
+      stopped = true
+      stopConnection()
+      if (refreshTimer) clearTimeout(refreshTimer)
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('online', wake)
+      window.removeEventListener('offline', wake)
+    }
+  }, [config?.age_confirmed])
+
+  // Open chat gets the same fresh object as the list/profile. Otherwise a
+  // status changed by CRM would update the list but leave the open room with
+  // the old badge until the user navigated back.
+  useEffect(() => {
+    if (!chatOrder) return
+    const fresh = [...(activeOrders || []), ...(orders || [])].find((order) => order.id === chatOrder.id)
+    if (fresh && fresh !== chatOrder) setChatOrder(fresh)
+  }, [orders, activeOrders, chatOrder?.id])
+
+  // Cart deep link from public website. Server replaces absolute quantities (no doubling)
+  // and validates availability. Ignore until age/Telegram authentication is complete.
+  const importCartLinkUsed = useRef(false)
+  useEffect(() => {
+    if (!config?.age_confirmed || importCartLinkUsed.current) return
+    const target = startTarget()
+    if (target?.screen !== 'cart' || !target.items?.length) return
+    importCartLinkUsed.current = true
+    setCartError('')
+    api.importWebsiteCart(target.items)
+      .then((value) => { setCart(value); setTab('cart') })
+      .catch((error) => { setTab('cart'); setCartError(error.message || 'Не вдалося перенести кошик із сайту') })
+  }, [config?.age_confirmed, setCart])
+
+  // Кнопка «Відкрити чат» у боті веде одразу на потрібну розмову.
+  //
+  // Спрацьовує рівно один раз за запуск. Раніше умови не було, і вихід
+  // із чату не працював зовсім: людина натискала «Назад», chatOrder
+  // ставав порожнім, ефект бачив це як «розмову ще не відкрито» і
+  // відкривав її знову. Ззовні кнопка просто не діяла, і Telegram
+  // доводилось закривати цілком.
+  const deepLinkUsed = useRef(false)
+  useEffect(() => {
+    if (deepLinkUsed.current) return
+    const target = startTarget()
+    if (!target) return
+    if (target.orderId === null) {
+      deepLinkUsed.current = true
+      setTab('chat')
+      return
+    }
+    const found = [...(activeOrders || []), ...(orders || [])].find((o) => o.id === target.orderId)
+    if (!found) return
+    deepLinkUsed.current = true
+    setTab('chat')
+    setChatOrder(found)
+  }, [orders, activeOrders])
+
+  // Системна кнопка «назад» веде з оформлення до кошика, а не закриває вікно
+  useEffect(() => {
+    // Найверхніший overlay/екран закривається першим. Legal може бути
+    // відкритий поверх checkout, SavePicker — поверх товару: старий порядок
+    // закривав батьківський екран і кнопка «Назад» виглядала зламаною.
+    if (legal) return backButton(() => setLegal(null))
+    if (saving) return backButton(() => setSaving(null))
+    if (completedOrder) return backButton(() => { setCompletedOrder(null); setTab('profile') })
+    if (checkingOut) return backButton(() => setCheckingOut(false))
+    if (openProduct) return backButton(() => setOpenProduct(null))
+    if (openListId) return backButton(() => setOpenListId(null))
+    if (supportOpen && tab === 'chat') return backButton(() => supportBack.current?.())
+    if (chatOrder && tab === 'chat') return backButton(() => setChatOrder(null))
+    return backButton(null)
+  }, [checkingOut, chatOrder, openProduct, openListId, legal, saving, tab, completedOrder, supportOpen])
+
+  useEffect(() => hideMainButton, [])
+
+  const onWishlistChanged = useCallback((updated) => {
+    // Розрізняємо не «є id чи немає», а «список уже відомий чи ні».
+    //
+    // Раніше будь-яка відповідь з id ішла гілкою підміни, і щойно
+    // створений список просто не потрапляв у перелік: map не знаходив
+    // його серед наявних і мовчки лишав усе як було. Тому в «Збереженому»
+    // новий список не з'являвся, у вибірці його не було, а наступна
+    // спроба створити ту саму назву давала 409 — рівно те, що видно
+    // в журналі дванадцять разів поспіль.
+    if (updated?.id) {
+      setWishlists((prev) => {
+        prev = prev || []
+        const known = prev.some((w) => w.id === updated.id)
+        return known
+          ? prev.map((w) => (w.id === updated.id ? updated : w))
+          : [...prev, updated]
+      })
+      return
+    }
+    // Видалення й інші зміни складу — перечитуємо повністю
+    void readSaved()
+  }, [readSaved, setWishlists])
+
+  /** Відправляє накопичені зміни кошика одним запитом на товар.
+   *
+   * Раніше кожне натискання «+» було окремим запитом, і нічого не
+   * малювалось, поки він не повернеться. На телефоні з поганим звʼязком
+   * три швидкі дотики виглядали як зламана кнопка: лічильник стоїть,
+   * потім стрибає на три. Тепер він рухається одразу, а на сервер іде
+   * одна зміна замість трьох.
+   */
+  const flushCart = useCallback(async () => {
+    const run = async () => {
+      cartResource.invalidate()
+      const batch = pendingRef.current
+      pendingRef.current = {}
+      const ids = Object.keys(batch)
+      const epochs = Object.fromEntries(ids.map(id=>[id,pendingEpochRef.current[id] || 0]))
+      const completed = new Set()
+      if (!ids.length) return cart
+      setQuantityInFlight(new Set(ids.filter(id=>batch[id]).map(Number)))
+
+      cartMutating.current += 1
+      const version = ++cartWriteVersion.current
+      try {
+        let next = null
+        for (const id of ids) {
+          if (!batch[id]) continue
+          let remaining = batch[id]
+          // The API accepts -99..99. A fast series must not become a 422.
+          while (remaining) {
+            const chunk = Math.max(-99,Math.min(99,remaining))
+            next = await api.changeCart(Number(id),chunk)
+            remaining -= chunk
+          }
+          completed.add(id)
+        }
+        if (next && version === cartWriteVersion.current) {setCart(next);if (!next.lines?.length) cartReviewRequired.current = false}
+        if (version === cartWriteVersion.current) setCartError('')
+        setQuantityErrors(prev=>{const rest={...prev};ids.forEach(id=>{if(epochs[id]===(pendingEpochRef.current[id]||0))delete rest[id]});return rest})
+        return next
+      } catch (err) {
+        cartReviewRequired.current = true
+        setQuantityErrors(prev=>{const rest={...prev};ids.forEach(id=>{if(batch[id] && !completed.has(id) && epochs[id]===(pendingEpochRef.current[id]||0))rest[id]=err.message || 'Не вдалося зберегти кількість'});return rest})
+        if (version === cartWriteVersion.current) setCartError(err.message || 'Не вдалося змінити кошик')
+        notify('error')
+        try {
+          const fresh = await api.cart()
+          if (version === cartWriteVersion.current) setCart(fresh)
+          return fresh
+        } catch {
+          return null
+        }
+      } finally {
+        cartMutating.current -= 1
+        // Acknowledge only this batch. Later taps belong to the next batch;
+        // explicit remove/clear starts a new epoch and cancels old intentions.
+        for (const id of ids) {
+          if (epochs[id] !== (pendingEpochRef.current[id] || 0)) continue
+          const rest = (pendingTotalRef.current[id] || 0) - batch[id]
+          if (rest) pendingTotalRef.current[id] = rest
+          else delete pendingTotalRef.current[id]
+        }
+        setPendingQty({...pendingTotalRef.current})
+        setQuantityInFlight(new Set())
+      }
+    }
+
+    // Якщо попередній debounce уже в мережі, наступний batch піде після
+    // нього. Це також робить await flushCart() справжнім барʼєром перед
+    // checkout, а не лише читанням поточного pendingRef.
+    const queued = flushInFlight.current.catch(() => null).then(run)
+    flushInFlight.current = queued
+    return queued
+  }, [cart])
+
+  const changeCart = useCallback(
+    async (productId, delta, opts = {}) => {
+      if (checkoutPreparingRef.current) return
+      if (opts.clear || opts.remove) {
+        // Очищення теж стає в ту саму чергу, що й +/- . Інакше сценарій
+        // «натиснув + і відразу очистити» запускав POST /cart та DELETE
+        // паралельно: повільний POST міг завершитись останнім і повернути
+        // вже очищений товар назад у кошик.
+        clearTimeout(flushTimer.current)
+        if (opts.clear) {
+          for (const id of Object.keys(pendingTotalRef.current)) pendingEpochRef.current[id]=(pendingEpochRef.current[id]||0)+1
+          pendingRef.current = {};pendingTotalRef.current = {}
+          setPendingQty({});setQuantityErrors({})
+        } else {
+          pendingEpochRef.current[productId]=(pendingEpochRef.current[productId]||0)+1
+          delete pendingRef.current[productId];delete pendingTotalRef.current[productId]
+          setQuantityErrors(prev=>{const next={...prev};delete next[productId];return next})
+          setPendingQty(prev => {const next={...prev};delete next[productId];return next})
+        }
+        cartResource.invalidate()
+        const previous = opts.remove ? flushCart() : flushInFlight.current
+        let version = 0
+        const clearRun = previous.catch(() => null).then(async () => {
+          cartMutating.current += 1
+          version = ++cartWriteVersion.current
+          try { return await (opts.remove ? api.removeCartLine(productId) : api.clearCart()) } finally { cartMutating.current -= 1 }
+        })
+        flushInFlight.current = clearRun
+        try {
+          const next = await clearRun
+          if (version === cartWriteVersion.current) {setCart(next);setCartError('');if (!next.lines?.length) cartReviewRequired.current = false}
+          return true
+        } catch (err) {
+          cartReviewRequired.current = true
+          if (!opts.remove && version === cartWriteVersion.current) setCartError(err.message || 'Не вдалося змінити кошик')
+          try { const fresh = await api.cart();if (version === cartWriteVersion.current) setCart(fresh) } catch { /* наступна дія перечитає */ }
+          throw err
+        }
+      }
+
+      const line = cart?.lines?.find(item=>item.product_id===productId)
+      if (line) {
+        const requested = Math.max(0,line.qty+(pendingTotalRef.current[productId]||0))
+        if (delta > 0) {
+          if (line.is_available === false || Number(line.stock) <= requested) return
+          if (Number.isFinite(Number(line.stock))) delta = Math.min(delta,Math.max(0,Number(line.stock)-requested))
+        } else delta = Math.max(delta,-requested)
+      }
+      if (!delta) return
+      pendingTotalRef.current[productId]=(pendingTotalRef.current[productId]||0)+delta
+      setQuantityErrors(prev=>{const next={...prev};delete next[productId];return next})
+      setPendingQty((prev) => ({
+        ...prev,
+        [productId]: (prev[productId] || 0) + delta,
+      }))
+      pendingRef.current[productId] = (pendingRef.current[productId] || 0) + delta
+
+      // Коротка пауза злипає серію дотиків в один запит. 350 мс —
+      // помітно менше, ніж пауза між свідомими натисканнями, і достатньо,
+      // щоб зловити «плюс-плюс-плюс» поспіль.
+      clearTimeout(flushTimer.current)
+      flushTimer.current = setTimeout(flushCart, 350)
+    },
+    [flushCart],
+  )
+
+  // Незбережені зміни не мають зникнути разом із екраном.
+  useEffect(() => () => clearTimeout(flushTimer.current), [])
+
+  /** Кошик, яким його бачить людина: серверний плюс те, що вже натиснуто. */
+  const shownCart = useMemo(() => {
+    if (!cart) return cart
+    const ids = Object.keys(pendingQty).filter((id) => pendingQty[id])
+    if (!ids.length) return cart
+
+    const lines = cart.lines.map((line) => ({ ...line }))
+    for (const id of ids) {
+      const productId = Number(id)
+      const line = lines.find((l) => l.product_id === productId)
+      if (line) {
+        line.qty = Math.max(0, line.qty + pendingQty[id])
+      } else if (pendingQty[id] > 0) {
+        // Товару в кошику ще немає — показуємо рядок наперед, інакше
+        // перше натискання «У кошик» не дає жодного відгуку.
+        lines.push({ product_id: productId, qty: pendingQty[id], name: '', price: 0 })
+      }
+    }
+    // Суми лишаються серверними: знижки, промокод і бонуси рахує сервер,
+    // і вигадувати їх тут означало б показати число, яке потім зміниться.
+    return { ...cart, lines: lines.filter((l) => l.qty > 0) }
+  }, [cart, pendingQty])
+
+  const refreshQuantity = async (productId) => {
+    const version = cartWriteVersion.current
+    const preparation = checkoutPreparationVersion.current
+    const fresh = await api.cart()
+    if (version !== cartWriteVersion.current || preparation !== checkoutPreparationVersion.current || pendingTotalRef.current[productId]) return
+    setCart(fresh);setCartError('')
+    setQuantityErrors(prev=>{const next={...prev};delete next[productId];return next})
+  }
+
+  const prepareCheckout = async () => {
+    if (checkoutPreparingRef.current) return
+    const version = ++checkoutPreparationVersion.current
+    checkoutPreparingRef.current = true
+    setCheckoutPreparing(true)
+    const showCart = () => {
+      setOpenProduct(null);setOpenListId(null);setTab('cart')
+      window.scrollTo({top:0,behavior:'instant'})
+    }
+    try {
+      clearTimeout(flushTimer.current)
+      await flushCart()
+      if (version !== checkoutPreparationVersion.current) return
+      // Empty/no-op batches can hold an old render's cart. Re-read the
+      // canonical snapshot before opening the form, including after delete.
+      const fresh = await api.cart()
+      if (version !== checkoutPreparationVersion.current) return
+      setCart(fresh)
+      if (!fresh.lines?.length) {
+        cartReviewRequired.current = false
+        setCartError('Кошик уже порожній. Додайте товари з каталогу.');showCart();return
+      }
+      if (cartReviewRequired.current) {
+        cartReviewRequired.current = false
+        setCartError('Не всі зміни кошика вдалося зберегти. Перевірте кількість і суму, потім натисніть «Оформити» ще раз.')
+        showCart();return
+      }
+      if (hasCartProblems(fresh)) {
+        setCartError('Змінилася наявність. Перевірте позначені товари перед оформленням.');showCart();return
+      }
+      setCartError('')
+      void readProfile()
+      setCheckingOut(true)
+    } catch (err) {
+      if (version !== checkoutPreparationVersion.current) return
+      setCartError(err.message || 'Не вдалося перевірити кошик. Спробуйте ще раз.')
+      showCart()
+    } finally {
+      if (version === checkoutPreparationVersion.current) {
+        checkoutPreparingRef.current = false;setCheckoutPreparing(false)
+      }
+    }
+  }
+
+  if (fatal) {
+    return (
+      <div className="empty">
+        <h2>Не вдалося відкрити магазин</h2>
+        <p>{fatal}</p>
+
+        {!isTelegramContext() && (
+          <p>
+            Застосунок відкрито поза Telegram. Скористайтесь кнопкою «Відкрити
+            магазин» у чаті з ботом.
+          </p>
+        )}
+        <div className="actions">
+          <button className="primary" onClick={load}>
+            Спробувати ще раз
+          </button>
+          {window.Telegram?.WebApp && !getInitData() && (
+            <button onClick={() => window.Telegram.WebApp.close?.()}>
+              Закрити й повернутися в Telegram
+            </button>
+          )}
+        </div>
+        {/* Технічні деталі — щоб не доводилось лізти в логи по кожен збій */}
+        <details className="support-details">
+          <summary className="hint">
+            Деталі для підтримки
+          </summary>
+          <pre className="hint num">
+{`SDK Telegram: ${window.Telegram?.WebApp ? 'підключено' : 'відсутній'}
+initData: ${getInitData() ? `${getInitData().length} символів` : 'порожній'}
+джерело: ${initDataSource()}
+поля: ${getInitData() ? [...new URLSearchParams(getInitData()).keys()].sort().join(', ') : '—'}
+версія: ${window.Telegram?.WebApp?.version || '—'}
+платформа: ${window.Telegram?.WebApp?.platform || '—'}
+фрагмент: ${window.location.hash ? `${window.location.hash.length} символів` : 'порожній'}
+параметри запуску: ${launchParamNames().join(', ') || '—'}
+походження: ${window.location.origin}`}
+          </pre>
+        </details>
+      <Footer onLegal={() => setLegal(true)} />
+      </div>
+    )
+  }
+
+  if (!config) {
+    return (
+      <div className="app">
+        <div className="list list-loading">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="skeleton" />
+          ))}
+        </div>
+        <Footer onLegal={() => setLegal(true)} />
+      </div>
+    )
+  }
+
+  if (!config.age_confirmed) {
+    // Футер тут обов'язковий за законом: перш ніж підтвердити вік, людина
+    // має мати доступ до умов, оферти й даних продавця. Сховати їх до
+    // моменту згоди означало б просити згоди наосліп.
+    return (
+      <div className="app">
+        <AgeGate config={config} onConfirmed={setConfig} />
+        <Footer onLegal={(key) => setLegal(key || true)} />
+      </div>
+    )
+  }
+
+  const count = cart?.lines?.reduce((sum, l) => sum + l.qty, 0) || 0
+  const subtotal = Number(cart?.subtotal || 0)
+
+  if (legal) {
+    return (
+      <div className="app">
+        <Legal
+          config={config}
+          initial={legal === true ? null : legal}
+          onBack={() => setLegal(null)}
+        />
+      </div>
+    )
+  }
+
+  // Відкритий список беремо з переліку щоразу заново: після прибирання
+  // товару приходить оновлений список, і збережена копія показувала б
+  // те, що вже прибрали. Якщо список тим часом видалили — просто
+  // повертаємось у профіль, а не показуємо порожній екран.
+  const openedList = (wishlists || []).find((w) => w.id === openListId)
+
+  if (openProduct) {
+    return (
+      <div className="app storefront">
+        <ProductPage
+          key={openProduct.id}
+          recentProducts={recentProducts}
+          onOpenProduct={showProduct}
+          onCart={() => navigate('cart')}
+          config={config}
+          product={openProduct}
+          cart={shownCart}
+          onCartChange={changeCart}
+          onBack={() => { setOpenProduct(null); window.scrollTo({ top: 0, behavior: 'instant' }) }}
+          backLabel={openListId ? 'Назад до списку' : 'Назад до каталогу'}
+          saved={isSaved(wishlists, openProduct.id)}
+          onSave={() => setSaving(openProduct)}
+        />
+        {saving && (
+          <SavePicker
+            resource={savedResource}
+            product={saving}
+            wishlists={wishlists || []}
+            onClose={() => setSaving(null)}
+            onChanged={onWishlistChanged}
+          />
+        )}
+        {cartError && <div className="banner warn" role="alert">{cartError}</div>}
+        <Footer onLegal={() => setLegal(true)} />
+        <StoreNavigation active={openListId ? 'profile' : tab} count={count} onNavigate={navigate} />
+      </div>
+    )
+  }
+
+  if (openListId && openedList) {
+    return (
+      <div className="app storefront">
+        {/* Назад — над списком, як на сторінці товару. Під списком кнопку
+            треба було шукати, догортаючи до кінця. */}
+        <div className="page-back">
+          <button className="back" onClick={() => setOpenListId(null)}>
+            До збереженого
+          </button>
+        </div>
+        <WishlistPage
+          config={config}
+          list={openedList}
+          cart={shownCart}
+          onChanged={onWishlistChanged}
+          onOpenProduct={showProduct}
+          onCartChange={(product, delta) => changeCart(product.id, delta)}
+        />
+        {cartError && <div className="banner warn" role="alert">{cartError}</div>}
+        <Footer onLegal={() => setLegal(true)} />
+        <StoreNavigation active={openListId ? 'profile' : tab} count={count} onNavigate={navigate} />
+      </div>
+    )
+  }
+
+  if (completedOrder) {
+    return <div className="app app-form">
+      <OrderSuccess order={completedOrder}
+        onCatalog={() => { setCompletedOrder(null); setTab('catalog') }}
+        onOrders={() => { setCompletedOrder(null); setTab('profile') }}
+        onChat={() => {
+          const order = { id: completedOrder.order_id, total: completedOrder.total, can_chat: true }
+          setCompletedOrder(null); setChatOrder(order); setTab('chat')
+        }} />
+      <Footer onLegal={() => setLegal(true)} />
+    </div>
+  }
+
+  if (checkingOut) {
+    return (
+      <div className="app app-form">
+        <Checkout
+          config={config}
+          cart={cart}
+          profile={profile}
+          onLegal={(key) => setLegal(key)}
+          onDone={(order) => {
+            setCompletedOrder(order)
+            setCheckingOut(false)
+            refresh().catch(() => {})
+          }}
+        />
+        <Footer onLegal={() => setLegal(true)} />
+      </div>
+    )
+  }
+
+  return (
+    <div className={`app storefront ${count > 0 && tab !== 'chat' ? 'has-cart-bar' : ''}`}>
+      {/* Шапка в один рядок: назва магазину й вікова позначка. Раніше тут
+          були два рядки й окремий блок-заставка в каталозі — разом вони
+          з'їдали пів екрана, і до першого товару доводилось гортати. */}
+      <header className="store-head">
+        <strong className="store-name">{config.shop_name || 'Магазин'}</strong>
+        <span className="store-age" title="Лише для повнолітніх">
+          {config.min_age ?? 18}+
+        </span>
+      </header>
+
+      {cartError && (
+        <div className="banner warn" role="alert">{cartError}</div>
+      )}
+
+      {(tab === 'catalog' || tab === 'search') && (
+        <Catalog
+          searchRequest={searchRequest}
+          onSearchRequestHandled={setSearchRequest}
+          initialState={catalogState}
+          onStateChange={setCatalogState}
+          config={config}
+          cart={shownCart}
+          onCartChange={changeCart}
+          onOpenProduct={showProduct}
+          wishlists={wishlists || []}
+          onSave={setSaving}
+        />
+      )}
+      {/* Money stays canonical. Cart shows pending quantity separately,
+          with an explicit saving state until the server confirms totals. */}
+      {tab === 'cart' && (
+        <>
+          <ResourceStatus resource={cartResource} label="Кошик" />
+          {cart && <Cart config={config} cart={cart} onCartChange={changeCart} quantityPending={pendingQty} quantityInFlight={quantityInFlight} quantityErrors={quantityErrors} onQuantityRefresh={refreshQuantity} checkoutPending={checkoutPreparing} onBrowse={()=>navigate('catalog')} />}
+        </>
+      )}
+      {tab === 'chat' && (
+        supportOpen ? <SupportCenter backRef={supportBack} rooms={supportRooms.current} onBack={()=>setSupportOpen(false)} /> : chatOrder
+          ? <ChatRoom key={chatOrder.id} config={config} order={chatOrder} onBack={() => setChatOrder(null)} onSupport={()=>setSupportOpen(true)} />
+          : <><button className="secondary support-entry" onClick={()=>setSupportOpen(true)}>Загальна підтримка</button><ResourceStatus resource={activeResource} label="Доступні чати" />
+              {activeOrders && <ChatList config={config} orders={activeOrders} onOpen={setChatOrder} />}</>
+      )}
+      {tab === 'profile' && (
+        <>
+          <ResourceStatus resource={profileResource} label="Профіль" />
+          <Profile config={config} profile={profile} profileFailed={Boolean(profileResource.error)}
+            orders={orders} ordersState={historyResource} onOpenChat={(order) => { setChatOrder(order); setTab('chat') }} onOrdersChange={() => refresh()}
+            onLoadMore={loadMoreOrders} />
+          <ResourceStatus resource={savedResource} label="Збережені списки" />
+          {/* Збережене живе в профілі, а не окремою вкладкою: у навігації
+              лишаються тільки ті розділи, куди заходять під час покупки */}
+          {wishlists && <Wishlists
+            wishlists={wishlists || []}
+            onChanged={onWishlistChanged}
+            onOpenList={(list) => setOpenListId(list.id)}
+          />}
+        </>
+      )}
+
+      {/* Помилка кошика показується поверх усіх вкладок: натиснути «+»
+          можна і в каталозі, і на сторінці товару, і в списку бажаного,
+          а мовчазна відмова тут найгірша — людина побачить порожній
+          кошик аж на оформленні. */}
+
+      {/* Вибір списку — тут, а не всередині однієї вкладки. «Відкласти»
+          натискають і в каталозі, і в «Збереженому», а вікно раніше
+          малювалося лише на сторінці товару. Кнопка в каталозі виставляла
+          стан, показувати який було нікому: людина тиснула, нічого не
+          відбувалося, а вікно вискакувало аж коли вона відкривала товар. */}
+      {saving && (
+        <SavePicker
+          resource={savedResource}
+          product={saving}
+          wishlists={wishlists || []}
+          onClose={() => setSaving(null)}
+          onChanged={onWishlistChanged}
+        />
+      )}
+
+      {/* Футер на всіх вкладках, а не лише в профілі.
+          Посилання на документи й вікове застереження мають бути доступні
+          звідусіль: людина оформлює покупку з каталогу й не мусить шукати
+          умови в іншому розділі. */}
+      <Footer onLegal={() => setLegal(true)} />
+
+      {/* Панель тримається внизу на всіх вкладках: сума завжди перед очима */}
+      {/* У чаті панель кошика перекрила б поле вводу */}
+      <StoreNavigation active={tab} count={count} onNavigate={navigate} />
+      <div className="bar" hidden={count === 0 || tab === 'chat'}>
+        <div className="bar-info">
+          <strong className="num">
+            {money(subtotal)} {config.currency}
+          </strong>
+          <span className="num">
+            {count} {count === 1 ? 'товар' : count < 5 ? 'товари' : 'товарів'} у кошику
+          </span>
+        </div>
+        <button onClick={prepareCheckout} disabled={checkoutPreparing} aria-busy={checkoutPreparing}>
+          {checkoutPreparing ? 'Перевіряємо…' : 'Оформити'}
+        </button>
+      </div>
+
+      {!isTelegramContext() && (
+        <div className="banner warn">
+          Застосунок відкрито поза Telegram — запити не пройдуть автентифікацію.
+        </div>
+      )}
+    </div>
+  )
+}

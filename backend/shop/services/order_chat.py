@@ -1,0 +1,443 @@
+"""Листування менеджера з клієнтом у межах замовлення.
+
+Ключова складність — у клієнта може бути кілька відкритих замовлень
+одночасно, а в Telegram у нього один чат із ботом. Тому кожне повідомлення
+менеджера йде з підписом «Замовлення №N» та кнопкою, що відкриває чат
+цього замовлення в Mini App. Якщо клієнт відповідає без контексту, бот
+уточнює, до якого замовлення належить повідомлення.
+"""
+from __future__ import annotations
+
+from shop.formatting import money as format_money
+
+import logging
+from datetime import datetime, timedelta
+from shop.services.chat_access import OPEN_STATUSES, CLOSED_GRACE_DAYS, can_chat, is_closed
+from html import escape
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from shop.links import app_link
+from shop.entities import STATUS_LABELS, Order, OrderStatus
+from shop.repo.base import Repository
+from shop.services.status_messages import is_permanent_delivery_error
+
+log = logging.getLogger(__name__)
+
+
+
+async def _remember_delivery(repo: Repository, user, delivered: bool, error=None) -> None:
+    """Оновлює довгоживучу ознаку зв'язку лише коли висновок надійний.
+
+    Успішна відправка точно означає, що чат доступний. Невдача означає
+    недоступність лише для постійних відповідей Bot API на кшталт
+    ``chat not found`` / ``blocked``. 502, timeout, reset і flood control
+    нічого не говорять про самого клієнта й не повинні ставити False.
+    """
+    if delivered:
+        await repo.set_bot_reachable(user.tg_id, True)
+    elif error is not None and is_permanent_delivery_error(error):
+        await repo.set_bot_reachable(user.tg_id, False)
+
+
+def esc(value) -> str:
+    return escape(str(value or ""), quote=False)
+
+
+def _header(order_id: int) -> str:
+    return f"💬 <b>Замовлення №{order_id}</b>"
+
+
+def chat_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    """Відкриває Named Mini App одразу на чаті цього замовлення.
+
+    ``startapp=chat_<id>`` Telegram передає як ``start_param`` разом із
+    валідним initData, тому кнопка більше не залежить від PUBLIC_URL і не
+    створює анонімний WebView при старому/закешованому домені.
+    """
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="💬 Відкрити чат",
+            url=app_link(f"chat_{order_id}"),
+        )
+    ]])
+
+
+async def announce_accepted(
+    bot, repo: Repository, order: Order, operator_name: str | None = None
+) -> bool:
+    """Повідомляє, що замовлення взяли в роботу.
+
+    Імені може ще не бути. Замовлення приймається автоматично, щойно
+    менеджер відкриє його в панелі, а закріплюється за конкретною людиною
+    аж коли та напише клієнту. Називати менеджера навмання не можна:
+    клієнт запам'ятає ім'я, а відповість йому хтось інший.
+
+    Тому без імені текст говорить про сам факт — замовлення побачили й
+    узяли. Це вже набагато більше, ніж мовчання.
+    """
+    user = order.user or await repo.get_user(order.user_id)
+    if not user:
+        return False
+    if user.bot_reachable is False:
+        log.info(
+            "Сповіщення про прийняття №%s пропущено: чат клієнта недоступний",
+            order.id,
+            extra={"event": "order.notify.skipped_unreachable", "orderId": order.id,
+                   "clientId": user.tg_id, "status": OrderStatus.ACCEPTED.value},
+        )
+        return False
+
+    who = esc(operator_name)
+    if who:
+        line = f"Ним займається {who}."
+        note = f"Замовлення прийняв {operator_name}"
+    else:
+        line = "Менеджер уже переглядає склад і деталі доставки."
+        note = "Замовлення прийнято в роботу"
+
+    text = (
+        f"✅ <b>Замовлення №{order.id} прийнято в роботу</b>\n\n"
+        f"{line}\n"
+        "Питання щодо доставки чи оплати пишіть прямо сюди — "
+        "відповідь надійде в цей чат."
+    )
+    try:
+        sent = await bot.send_message(user.tg_id, text, reply_markup=chat_keyboard(order.id))
+    except Exception as exc:
+        await _remember_delivery(repo, user, False, exc)
+        log.warning(
+            "Не вдалося повідомити про прийняття №%s", order.id,
+            extra={"event": "order.notify.failed", "orderId": order.id,
+                   "clientId": user.tg_id, "status": OrderStatus.ACCEPTED.value,
+                   "permanent": is_permanent_delivery_error(exc)},
+            exc_info=True,
+        )
+        return False
+
+    await _remember_delivery(repo, user, True)
+
+    await repo.add_order_message({
+        "order_id": order.id, "user_id": order.user_id, "direction": "out",
+        "author": "Система", "text": note,
+        "tg_message_id": sent.message_id, "is_read": False, "delivered": True,
+    })
+    return True
+
+
+async def send_to_client(
+    bot, repo: Repository, order: Order, text: str, author: str = ""
+) -> bool:
+    """Повідомлення менеджера клієнту. Зберігає його в стрічці замовлення."""
+    user = order.user or await repo.get_user(order.user_id)
+    if not user:
+        log.warning("Замовлення №%s без клієнта — нікому писати", order.id)
+        return False
+    if user.bot_reachable is False:
+        log.info(
+            "Повідомлення менеджера по №%s пропущено: чат клієнта недоступний",
+            order.id,
+            extra={"event": "order.chat.delivery.skipped", "orderId": order.id,
+                   "clientId": user.tg_id},
+        )
+        return False
+
+    signature = f"\n\n<i>{esc(author)}</i>" if author else ""
+    try:
+        # У Mini App видно всю історію саме цього замовлення; Named Mini App
+        # не залежить від PUBLIC_URL, тому запасний ForceReply більше не потрібен.
+        markup = chat_keyboard(order.id)
+        sent = await bot.send_message(
+            user.tg_id,
+            f"{_header(order.id)}\n\n{esc(text)}{signature}",
+            reply_markup=markup,
+        )
+    except Exception as exc:
+        await _remember_delivery(repo, user, False, exc)
+        log.warning(
+            "Не вдалося доставити повідомлення клієнту (замовлення №%s)",
+            order.id,
+            extra={"event": "order.chat.delivery.failed", "orderId": order.id,
+                   "clientId": user.tg_id,
+                   "permanent": is_permanent_delivery_error(exc)},
+            exc_info=True,
+        )
+        return False
+
+    await _remember_delivery(repo, user, True)
+
+    await repo.add_order_message({
+        "order_id": order.id, "user_id": order.user_id, "direction": "out",
+        "author": author, "text": text, "tg_message_id": sent.message_id,
+        "is_read": False, "delivered": True,
+    })
+    return True
+
+
+async def send_tracking(bot, repo: Repository, order: Order, tracking: str) -> bool:
+    """Повідомляє ТТН. Окремий текст, бо це найочікуваніше повідомлення."""
+    user = order.user or await repo.get_user(order.user_id)
+    if not user:
+        return False
+    if user.bot_reachable is False:
+        log.info(
+            "ТТН по №%s не надсилається: чат клієнта недоступний",
+            order.id,
+            extra={"event": "order.notify.skipped_unreachable", "orderId": order.id,
+                   "clientId": user.tg_id, "status": OrderStatus.SHIPPED.value},
+        )
+        return False
+
+    text = (
+        f"📦 <b>Замовлення №{order.id} відправлено</b>\n\n"
+        f"Номер накладної:\n<code>{esc(tracking)}</code>\n\n"
+        "Натисніть на номер, щоб скопіювати."
+    )
+    try:
+        sent = await bot.send_message(user.tg_id, text, reply_markup=chat_keyboard(order.id))
+    except Exception as exc:
+        await _remember_delivery(repo, user, False, exc)
+        log.warning(
+            "Не вдалося надіслати ТТН по замовленню №%s", order.id,
+            extra={"event": "order.notify.failed", "orderId": order.id,
+                   "clientId": user.tg_id, "status": OrderStatus.SHIPPED.value,
+                   "permanent": is_permanent_delivery_error(exc)},
+            exc_info=True,
+        )
+        return False
+
+    await _remember_delivery(repo, user, True)
+
+    await repo.add_order_message({
+        "order_id": order.id, "user_id": order.user_id, "direction": "out",
+        "author": "Система", "text": f"Відправлено. ТТН: {tracking}",
+        "tg_message_id": sent.message_id, "is_read": False, "delivered": True,
+    })
+    return True
+
+
+def is_chattable(order: Order) -> bool:
+    return can_chat(order)
+
+
+async def send_tracking_update(bot, repo: Repository, order: Order, tracking: str) -> bool:
+    """Накладну виправили вже після відправлення.
+
+    Мовчазна заміна лишила б клієнта зі старим номером, за яким посилка
+    не знаходиться — і він вважав би, що її не відправили.
+    """
+    user = order.user or await repo.get_user(order.user_id)
+    if not user:
+        return False
+    if user.bot_reachable is False:
+        log.info(
+            "Оновлення ТТН №%s не надсилається: чат клієнта недоступний",
+            order.id,
+            extra={"event": "order.tracking.delivery.skipped", "orderId": order.id,
+                   "clientId": user.tg_id},
+        )
+        return False
+    try:
+        sent = await bot.send_message(
+            user.tg_id,
+            f"📦 <b>Замовлення №{order.id}: накладну оновлено</b>\n\n"
+            f"Новий номер:\n<code>{esc(tracking)}</code>\n\n"
+            "Попередній номер більше не актуальний.",
+            reply_markup=chat_keyboard(order.id),
+        )
+    except Exception as exc:
+        await _remember_delivery(repo, user, False, exc)
+        log.warning(
+            "Не вдалося повідомити про заміну ТТН №%s", order.id,
+            extra={"event": "order.tracking.delivery.failed", "orderId": order.id,
+                   "clientId": user.tg_id,
+                   "permanent": is_permanent_delivery_error(exc)},
+            exc_info=True,
+        )
+        return False
+
+    await _remember_delivery(repo, user, True)
+
+    await repo.add_order_message({
+        "order_id": order.id, "user_id": order.user_id, "direction": "out",
+        "author": "Система", "text": f"Накладну змінено на {tracking}",
+        "tg_message_id": sent.message_id, "is_read": False, "delivered": True,
+    })
+    return True
+
+
+async def open_orders_for(repo: Repository, user_id: int) -> list[Order]:
+    """Усе, про що ще можна писати — разом із закритими в межах грейс-періоду.
+
+    Використовується для показу списку й вибору кнопкою.
+    """
+    orders = await repo.list_orders(user_id=user_id, limit=None)
+    return [o for o in orders if is_chattable(o)]
+
+
+async def active_orders_for(repo: Repository, user_id: int) -> list[Order]:
+    """Лише незакриті замовлення — для автовизначення адресата.
+
+    Грейс-період навмисно не враховується: інакше щойно виконане замовлення
+    робило б вибір неоднозначним, і клієнта питали б кнопками навіть тоді,
+    коли активне замовлення в нього одне.
+    """
+    orders = await repo.list_orders(user_id=user_id, limit=None)
+    return [o for o in orders if not is_closed(o)]
+
+
+async def route_incoming(repo: Repository, user, message) -> int | None:
+    """Визначає, до якого замовлення належить повідомлення клієнта.
+
+    Порядок: явна відповідь на повідомлення бота → єдине відкрите
+    замовлення → None, якщо вибір неоднозначний.
+    """
+    reply_to = getattr(message, "reply_to_message", None)
+    if reply_to is not None:
+        order_id = await repo.find_order_by_tg_message(reply_to.message_id, user.id)
+        if order_id:
+            order = await repo.get_order(order_id)
+            if order and order.user_id == user.id and is_chattable(order):
+                return order_id
+            # An explicit reply to a closed order must not be reassigned to
+            # another currently active order.
+            return None
+
+    # Замовлення, яке клієнт обрав кнопкою. Зберігається в базі, тож
+    # переживає холодний старт функції — на відміну від стану FSM.
+    # Дозволяємо й закриті в межах грейс-періоду: клієнт міг свідомо
+    # обрати щойно виконане, щоб уточнити щось по ньому.
+    chattable = {o.id for o in await open_orders_for(repo, user.id)}
+    if user.chat_order_id in chattable:
+        return user.chat_order_id
+
+    active = await active_orders_for(repo, user.id)
+    if len(active) == 1:
+        return active[0].id
+    return None
+
+
+def pick_order_keyboard(orders: list[Order], offset: int = 0) -> InlineKeyboardMarkup:
+    """Bounded pages keep every eligible chat reachable in Telegram."""
+    offset = max(0, min(int(offset), max(0, (len(orders) - 1) // 8 * 8)))
+    rows = [[InlineKeyboardButton(
+        text=f"№{o.id} · {format_money(o.total)} · {o.created_at:%d.%m}" if o.created_at else f"№{o.id} · {format_money(o.total)}",
+        callback_data=f"chat:{o.id}",
+    )] for o in orders[offset:offset + 8]]
+    navigation = []
+    if offset:
+        navigation.append(InlineKeyboardButton(text="← Попередні", callback_data=f"chatpage:{max(0, offset - 8)}"))
+    if offset + 8 < len(orders):
+        navigation.append(InlineKeyboardButton(text="Наступні →", callback_data=f"chatpage:{offset + 8}"))
+    if navigation:
+        rows.append(navigation)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def contact_options_keyboard(
+    orders: list[Order], *, include_support: bool = True, include_done: bool = False
+) -> InlineKeyboardMarkup:
+    """Кнопки для явного вибору: чат замовлення або загальна підтримка.
+
+    Кожне замовлення відкривається через Named Mini App зі ``startapp`` —
+    один стабільний шлях для приватних чатів, груп і різних Telegram-клієнтів.
+    """
+    rows = []
+    for order in orders[:8]:
+        label = STATUS_LABELS.get(order.status, order.status)
+        text = f"💬 Замовлення №{order.id} · {label}"
+        rows.append([InlineKeyboardButton(
+            text=text,
+            url=app_link(f"chat_{order.id}"),
+        )])
+
+    if len(orders) > 8:
+        rows.append([InlineKeyboardButton(text="💬 Усі доступні чати", url=app_link("chats"))])
+    if include_support:
+        rows.append([InlineKeyboardButton(
+            text="🆘 Загальне питання / техпідтримка",
+            callback_data="support:start",
+        )])
+    if include_done:
+        rows.append([InlineKeyboardButton(
+            text="✅ Завершити звернення",
+            callback_data="support:done",
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def describe_attachment(message) -> dict | None:
+    """Витягує вкладення з повідомлення Telegram.
+
+    Зберігаємо лише file_id: сам файл лишається у Telegram, панель тягне
+    його через бекенд і тільки коли менеджер відкриває стрічку.
+    """
+    if getattr(message, "photo", None):
+        # Останній елемент — найбільший доступний розмір
+        return {"file_id": message.photo[-1].file_id, "file_kind": "photo",
+                "file_name": "Фото"}
+    if getattr(message, "document", None):
+        return {"file_id": message.document.file_id, "file_kind": "document",
+                "file_name": message.document.file_name or "Документ"}
+    if getattr(message, "video", None):
+        return {"file_id": message.video.file_id, "file_kind": "video",
+                "file_name": "Відео"}
+    if getattr(message, "voice", None):
+        return {"file_id": message.voice.file_id, "file_kind": "voice",
+                "file_name": "Голосове"}
+    return None
+
+
+async def save_incoming(
+    repo: Repository, order: Order, user, text: str, bot=None,
+    attachment: dict | None = None, tg_message_id: int | None = None,
+) -> None:
+    """Зберігає відповідь клієнта і сповіщає команду.
+
+    Без сповіщення менеджер дізнався б про повідомлення лише випадково,
+    відкривши панель. Клієнт при цьому чекає на відповідь.
+    """
+    author = user.first_name or user.username or f"id{user.tg_id}"
+    await repo.add_order_message({
+        "order_id": order.id, "user_id": user.id, "direction": "in",
+        "author": author,
+        "text": text, "tg_message_id": tg_message_id, "is_read": False,
+        **(attachment or {}),
+    })
+
+    from shop.services.panel_notifications import safe_publish
+    await safe_publish(
+        repo,
+        "order.message",
+        f"Повідомлення по замовленню №{order.id}",
+        text,
+        href=f"/orders/{order.id}",
+        entity_id=order.id,
+        actor=author,
+    )
+
+    if bot is None:
+        return
+
+    from shop.services.shop_settings import get_shop_settings
+
+    shop = await get_shop_settings(repo)
+    if not shop.admin_chat_id:
+        return
+
+    who = f"@{esc(user.username)}" if user.username else esc(user.first_name or "клієнт")
+    try:
+        from shop.services.notifications import topic_kwargs
+
+        await bot.send_message(
+            shop.admin_chat_id,
+            f"💬 <b>Питання по замовленню №{order.id}</b>\n"
+            f"Від: {who}\n\n{esc(text)}\n\n"
+            "<i>Відповісти — у панелі, на сторінці замовлення.</i>",
+            # Своя гілка: замовлення читають раз, а переписку ведуть далі,
+            # і в спільній стрічці нові замовлення тонули б у відповідях.
+            # Якщо окрема гілка не задана — падаємо назад у гілку замовлень.
+            **topic_kwargs(shop.chat_topic_id or shop.admin_topic_id),
+        )
+    except Exception:
+        log.info("Не вдалося сповістити команду про повідомлення клієнта", exc_info=True)
