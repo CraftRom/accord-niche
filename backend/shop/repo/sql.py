@@ -744,6 +744,25 @@ class SqlRepository(Repository):
         query = query.order_by(m.Product.sort_order, m.Product.name, m.Product.id).limit(limit).offset(offset)
         return [_product(row, name, subname) for row, name, subname in await self.s.execute(query.execution_options(populate_existing=True))]
 
+    async def storefront_data(self, since, until):
+        # Count commercial sales, never unpaid reservations, refusals or clicks.
+        event = func.coalesce(m.Order.business_state_at, m.Order.created_at)
+        sales = await self.s.execute(
+            select(m.OrderItem.product_id, func.sum(m.OrderItem.qty))
+            .join(m.Order, m.Order.id == m.OrderItem.order_id)
+            .where(m.Order.business_state == business.BUSINESS_SALE,
+                   event >= since, event < until, m.OrderItem.product_id.is_not(None),
+                   m.OrderItem.qty > 0)
+            .group_by(m.OrderItem.product_id)
+        )
+        query = (select(m.Product, m.Category.name, m.Subcategory.name)
+                 .outerjoin(m.Category, m.Category.id == m.Product.category_id)
+                 .outerjoin(m.Subcategory, m.Subcategory.id == m.Product.subcategory_id)
+                 .where(m.Product.is_active.is_(True), m.Product.price > 0)
+                 .order_by(m.Product.sort_order, m.Product.name, m.Product.id))
+        products = [_product(row, name, subname) for row, name, subname in await self.s.execute(query)]
+        return products, {int(pid): int(qty) for pid, qty in sales}
+
     async def products_by_ids(self, ids):
         if not ids:
             return []
@@ -980,7 +999,7 @@ class SqlRepository(Repository):
             products = {product.id: product for product in rows}
             for pid, qty in items:
                 product = products.get(pid)
-                if not product or not product.is_active or not (product.brand or '').strip():
+                if not product or not product.is_active or product.price <= 0:
                     raise ValueError('Деякі товари більше не продаються')
                 if int(product.stock or 0) < qty:
                     raise ValueError(f'«{product.name}»: залишилось {product.stock or 0} шт.')

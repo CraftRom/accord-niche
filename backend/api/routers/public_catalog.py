@@ -11,6 +11,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from typing import Literal
 
 from shop.repo.base import Repository
 from shop.repo.factory import get_repo
@@ -18,22 +19,29 @@ from shop.repo.factory import get_repo
 router = APIRouter()
 
 @router.get("/site-config")
-async def site_config():
+async def site_config(repo: Repository = Depends(get_repo)):
     from shop.links import NAMED_MINIAPP_URL
     from shop.config import settings
+    from shop.services.shop_settings import get_shop_settings
+    shop = await get_shop_settings(repo)
     # Explicit configuration only. Never send ACCORD shoppers to legacy ELFAR
     # bot as a silent fallback: no checkout link is safer than the wrong store.
     named_app = (os.getenv("ACCORD_MINIAPP_URL", "") or (
         NAMED_MINIAPP_URL if os.getenv("NAMED_MINIAPP_URL") else ""
     )) if settings.bot_token else ""
     def safe_social(value):
-        parts = urlsplit(value)
+        try:
+            parts = urlsplit(value)
+        except ValueError:
+            return ''
         return value if parts.scheme == "https" and parts.netloc and not parts.username and not parts.password else ""
     return {
         "miniapp_url": named_app,
         "instagram_url": safe_social(os.getenv("ACCORD_INSTAGRAM_URL", "")),
         "tiktok_url": safe_social(os.getenv("ACCORD_TIKTOK_URL", "")),
-        "phone": os.getenv("ACCORD_PHONE", ""),
+        "phone": shop.seller_phone or os.getenv("ACCORD_PHONE", ""),
+        "seller_name": shop.seller_name,
+        "email": shop.seller_email,
     }
 
 # Only local product media exposed by this *product-authorized* endpoint.
@@ -43,7 +51,10 @@ _LOCAL_MEDIA = re.compile(r"^/media/([a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp|gif))$
 def local_product_media_name(url: str | None) -> str | None:
     if not url:
         return None
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
     if parts.scheme or parts.netloc or parts.query or parts.fragment:
         return None
     m = _LOCAL_MEDIA.fullmatch(parts.path)
@@ -62,6 +73,8 @@ class PublicProduct(BaseModel):
     stock: int
     photo_url: str | None
     photo_endpoint: str | None
+    old_price: Decimal | None = None
+    is_sale: bool = False
 
 class PublicCatalog(BaseModel):
     items: list[PublicProduct]
@@ -78,9 +91,13 @@ def public_product(p):
         url = None
     # Avoid browser execution and malformed/non-HTTPS external sources.
     if url:
-        parts = urlsplit(url)
-        if parts.scheme != "https" or not parts.netloc or parts.username or parts.password:
+        try:
+            parts = urlsplit(url)
+        except ValueError:
             url = None
+        else:
+            if parts.scheme != "https" or not parts.netloc or parts.username or parts.password:
+                url = None
     return PublicProduct(
         id=p.id, name=p.name, brand=p.brand,
         gender=p.gender or "unisex", volume_ml=p.volume_ml,
@@ -88,6 +105,8 @@ def public_product(p):
         description=p.description, price=p.price,
         stock=p.stock, photo_url=url,
         photo_endpoint=f"/api/public/catalog/{p.id}/photo" if p.photo_file_id or hosted else None,
+        old_price=p.old_price if p.old_price and p.old_price > p.price else None,
+        is_sale=bool(p.is_sale and p.old_price and p.old_price > p.price),
     )
 
 @router.get("/catalog", response_model=PublicCatalog)
@@ -95,21 +114,21 @@ async def catalog(
     limit: int = Query(100, ge=1, le=100), offset: int = Query(0, ge=0),
     repo: Repository = Depends(get_repo),
 ):
-    items = await repo.list_products(only_active=True, perfume_only=True, limit=limit, offset=offset)
-    total = await repo.count_products(only_active=True, perfume_only=True)
+    items = await repo.list_products(only_active=True, limit=limit, offset=offset)
+    total = await repo.count_products(only_active=True)
     return PublicCatalog(items=[public_product(p) for p in items], total=total, limit=limit, offset=offset)
 
 @router.get("/catalog/{product_id}", response_model=PublicProduct)
 async def detail(product_id: int, repo: Repository = Depends(get_repo)):
     p = await repo.get_product(product_id)
-    if not p or not p.is_active or not p.brand.strip():
+    if not p or not p.is_active or p.price <= 0:
         raise HTTPException(404, "Аромат не знайдено")
     return public_product(p)
 
 @router.get("/catalog/{product_id}/photo")
 async def photo(product_id: int, repo: Repository = Depends(get_repo)):
     p = await repo.get_product(product_id)
-    if not p or not p.is_active or not p.brand.strip():
+    if not p or not p.is_active:
         raise HTTPException(404, "Фото немає")
     local_name = local_product_media_name(p.photo_url)
     if local_name:
@@ -142,3 +161,123 @@ async def photo(product_id: int, repo: Repository = Depends(get_repo)):
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(413, "Фото завелике")
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control":"public, max-age=3600", "X-Content-Type-Options":"nosniff"})
+
+
+class PublicAroma(BaseModel):
+    id: int
+    key: str
+    name: str
+    brand: str
+    gender: str
+    description: str
+    variants: list[PublicProduct]
+    categories: list[dict]
+    stock: int
+    min_price: Decimal
+    price_per_ml: Decimal | None
+    image: str
+    volumes: list[int]
+    is_new: bool
+    is_featured: bool
+    is_set: bool
+    bestseller_rank: int | None
+
+
+class AromaPage(BaseModel):
+    items: list[PublicAroma]
+    total: int
+    limit: int
+    offset: int
+    brands: list[str]
+    categories: list[dict]
+    volumes: list[int]
+    updated_at: str
+
+
+class Storefront(BaseModel):
+    hits: list[PublicAroma]
+    recommended: list[PublicAroma]
+    new_arrivals: list[PublicAroma]
+    selection: list[PublicAroma]
+    total: int
+    available: int
+    window_days: int
+    updated_at: str
+
+
+@router.get('/storefront', response_model=Storefront)
+async def storefront(response: Response, repo: Repository = Depends(get_repo)):
+    from shop.services.storefront import snapshot, sorted_groups, WINDOW_DAYS
+    data = await snapshot(repo, public_product)
+    groups = data['groups']
+    available = [g for g in groups if g['stock'] > 0]
+    response.headers['Cache-Control'] = 'no-store'
+    return Storefront(
+        hits=[g for g in sorted_groups(available, 'popular') if g['bestseller_rank']][:8],
+        recommended=[g for g in sorted_groups(available) if g['is_featured']][:8],
+        new_arrivals=[g for g in sorted_groups(available, 'new') if g['is_new']][:8],
+        selection=sorted_groups(available or groups)[:8], total=len(groups), available=len(available),
+        window_days=WINDOW_DAYS, updated_at=data['updated_at'])
+
+
+@router.get('/aromas', response_model=AromaPage)
+async def aromas(
+    response: Response, q: str = Query('', max_length=120), brand: str = Query('', max_length=100),
+    gender: Literal['', 'male', 'female', 'unisex'] = '', category: int | None = Query(None, gt=0),
+    available: bool = False, volume: int | None = Query(None, gt=0, le=10000),
+    kind: Literal['all', 'sets', 'new', 'hits', 'recommended'] = 'all',
+    sort: Literal['recommended', 'popular', 'new', 'price_asc', 'price_desc', 'name'] = 'recommended',
+    limit: int = Query(24, ge=1, le=48), offset: int = Query(0, ge=0),
+    repo: Repository = Depends(get_repo),
+):
+    from shop.services.storefront import snapshot, sorted_groups
+    data = await snapshot(repo, public_product)
+    all_groups = data['groups']
+    needle = q.strip().casefold()
+    groups = [g for g in all_groups if
+        (not needle or needle in (g['brand'] + ' ' + g['name']).casefold()) and
+        (not brand or g['brand'] == brand) and (not gender or g['gender'] == gender) and
+        (not category or any(c['id'] == category for c in g['categories'])) and
+        (not available or g['stock'] > 0) and
+        (not volume or any(p.volume_ml == volume and (not available or p.stock > 0) for p in g['variants'])) and
+        (kind != 'sets' or g['is_set']) and (kind != 'new' or g['is_new']) and
+        (kind != 'hits' or g['bestseller_rank'] is not None) and
+        (kind != 'recommended' or g['is_featured'])]
+    groups = sorted_groups(groups, 'popular' if kind == 'hits' else sort)
+    categories = {c['id']: c for g in all_groups for c in g['categories']}
+    response.headers['Cache-Control'] = 'no-store'
+    return AromaPage(items=groups[offset:offset+limit], total=len(groups), limit=limit, offset=offset,
+        brands=sorted({g['brand'] for g in all_groups if g['brand']}, key=str.casefold),
+        categories=sorted(categories.values(), key=lambda c: c['name'].casefold()),
+        volumes=sorted({v for g in all_groups for v in g['volumes']}), updated_at=data['updated_at'])
+
+
+class AromaDetail(BaseModel):
+    item: PublicAroma
+    related: list[PublicAroma]
+
+
+@router.get('/aromas/{product_id}', response_model=AromaDetail)
+async def aroma_detail(product_id: int, response: Response, repo: Repository = Depends(get_repo)):
+    from shop.services.storefront import snapshot, sorted_groups
+    groups = (await snapshot(repo, public_product))['groups']
+    group = next((g for g in groups if any(p.id == product_id for p in g['variants'])), None)
+    if group is None:
+        raise HTTPException(404, 'Товар не знайдено')
+    related = [g for g in groups if g['key'] != group['key'] and g['stock'] > 0 and
+               ((group['brand'] and g['brand'] == group['brand']) or g['gender'] == group['gender'])]
+    response.headers['Cache-Control'] = 'no-store'
+    return AromaDetail(item=group, related=sorted_groups(related)[:4])
+
+
+@router.get('/products', response_model=list[PublicProduct])
+async def cart_products(ids: str = Query('', max_length=600), repo: Repository = Depends(get_repo)):
+    if not ids:
+        return []
+    if not re.fullmatch(r'[1-9][0-9]{0,18}(?:,[1-9][0-9]{0,18}){0,29}', ids):
+        raise HTTPException(422, 'Дозволено до 30 ідентифікаторів товарів')
+    selected = {int(value) for value in ids.split(',')}
+    if max(selected) > 2**63 - 1:
+        raise HTTPException(422, 'Некоректний ідентифікатор товару')
+    products = await repo.products_by_ids(list(selected))
+    return [public_product(p) for p in products if p.is_active and p.price > 0]

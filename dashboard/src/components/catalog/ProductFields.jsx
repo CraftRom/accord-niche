@@ -7,6 +7,7 @@ export function groupPayload(form) { return { category_id: form.category_id ? Nu
 export function pricePayload(form) { return { price: Number(form.price), old_price: form.old_price === '' || form.old_price == null ? null : Number(form.old_price), is_sale: Boolean(form.is_sale) } }
 export function validateProduct(form) {
   if (!form.name?.trim()) return 'Вкажіть назву товару'
+  if (form.volume_ml !== '' && form.volume_ml != null && (!Number.isInteger(Number(form.volume_ml)) || Number(form.volume_ml) < 1 || Number(form.volume_ml) > 1000)) return 'Обʼєм має бути цілим числом від 1 до 1000 мл'
   if (form.price === '' || !Number.isFinite(Number(form.price)) || Number(form.price) < 0) return 'Вкажіть невід’ємну ціну'
   if (form.is_sale && (!form.old_price || Number(form.old_price) <= Number(form.price))) return 'Для акції стара ціна має бути більшою за поточну'
   if (!Number.isInteger(Number(form.stock)) || Number(form.stock) < 0) return 'Залишок має бути цілим невід’ємним числом'
@@ -51,11 +52,11 @@ export function PerfumeFields({ form, setForm }) {
   return <div className="stack">
     <div className="grid k2">
       <Field label="Бренд парфуму"><input className="input" aria-label="Бренд парфуму" maxLength={100} value={form.brand || ''} onChange={changeField(setForm, 'brand')} placeholder="CREED" /></Field>
-      <Field label="Обʼєм атомайзера, мл"><select className="input" aria-label="Обʼєм атомайзера" value={form.volume_ml ?? ''} onChange={changeField(setForm, 'volume_ml')}><option value="">Не задано</option>{[2, 5, 10, 15, 20, 30, 50, 100].map(v => <option key={v} value={v}>{v} мл</option>)}</select></Field>
+      <Field label="Обʼєм атомайзера, мл"><input className="input" aria-label="Обʼєм атомайзера" type="number" min="1" max="1000" step="1" value={form.volume_ml ?? ''} onChange={changeField(setForm, 'volume_ml')} placeholder="Не задано" /></Field>
       <Field label="Для кого"><select className="input" aria-label="Стать аромату" value={form.gender || 'unisex'} onChange={changeField(setForm, 'gender')}><option value="male">Чоловічий</option><option value="female">Жіночий</option><option value="unisex">Унісекс</option></select></Field>
     </div>
-    <label className="catalog-check"><input type="checkbox" checked={Boolean(form.is_featured)} onChange={changeField(setForm, 'is_featured')} />Показувати серед хітів розливу</label>
-    <p className="muted">Кожен обʼєм — окремий товар (SKU) зі своєю ціною та залишком. Ціна в усіх каналах є ціною за атомайзер, а сайт обчислює вартість за 1 мл.</p>
+    <label className="catalog-check"><input type="checkbox" checked={Boolean(form.is_featured)} onChange={changeField(setForm, 'is_featured')} />Рекомендувати на головній сторінці</label>
+    <p className="muted">Хіти визначаються автоматично за підтвердженими продажами за 90 днів; ця позначка керує окремою добіркою рекомендацій. Кожен обʼєм — окремий товар (SKU) зі своєю ціною та залишком. Ціна в усіх каналах є ціною за атомайзер, а сайт обчислює вартість за 1 мл.</p>
   </div>
 }
-export function perfumePayload(f) { return { brand: (f.brand || '').trim(), gender: f.gender || 'unisex', volume_ml: f.volume_ml ? Number(f.volume_ml) : null, is_featured: Boolean(f.is_featured) } }
+export function perfumePayload(f) { return { brand: (f.brand || '').trim(), gender: f.gender || 'unisex', volume_ml: f.volume_ml === '' || f.volume_ml == null ? null : Number(f.volume_ml), is_featured: Boolean(f.is_featured) } }

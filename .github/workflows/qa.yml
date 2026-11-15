@@ -21,6 +21,7 @@ jobs:
           cache-dependency-path: |
             dashboard/package-lock.json
             miniapp/package-lock.json
+            website/package-lock.json
             qa/package-lock.json
       - name: Python dependencies
         run: python -m pip install -r backend/requirements-lock.txt -r backend/requirements-qa.txt
@@ -34,6 +35,7 @@ jobs:
         run: |
           npm ci --prefix dashboard
           npm ci --prefix miniapp
+          npm ci --prefix website
           npm ci --prefix qa
           cd qa
           npx playwright install --with-deps chromium
@@ -44,10 +46,13 @@ jobs:
         run: bash backend/qa/run_all.sh
       - name: System groups UI policy
         run: node --test dashboard/tests/roles.mjs
+      - name: Live storefront UI and cart
+        run: npm test --prefix website
       - name: Production builds
         run: |
           npm run build --prefix dashboard
           npm run build --prefix miniapp
+          WEBSITE_BASE=/ npm run build --prefix website
       - name: System groups browser regression
         run: node qa/browser-roles.mjs
       - name: Full browser regression

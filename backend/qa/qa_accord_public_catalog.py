@@ -22,10 +22,11 @@ class Repo:
     def __init__(self, items): self.items = items; self.kw = {}
     async def list_products(self, **kw):
         self.kw = kw
-        return [p for p in self.items if p.is_active and p.brand.strip()]
+        return [p for p in self.items if p.is_active]
     async def count_products(self, **kw):
-        return len([p for p in self.items if p.is_active and p.brand.strip()])
+        return len([p for p in self.items if p.is_active])
     async def get_product(self, id): return next((p for p in self.items if p.id == id), None)
+    async def get_settings_map(self): return {}
 
 async def run():
     p = perfume()
@@ -36,24 +37,25 @@ async def run():
     assert public_product(perfume(photo='http://invalid.example')).photo_url is None
     repo = Repo([p, perfume(13,brand=''), perfume(14,active=False)])
     response = await catalog(limit=100,offset=0,repo=repo)
-    assert response.total == 1 and len(response.items) == 1
-    assert repo.kw['only_active'] and repo.kw['perfume_only']
+    assert response.total == 2 and len(response.items) == 2
+    assert repo.kw['only_active']
     assert (await detail(12,repo)).brand == 'CREED'
-    for invalid in (13,14,999):
+    assert (await detail(13,repo)).brand == ''
+    for invalid in (14,999):
         try: await detail(invalid,repo)
         except HTTPException as error: assert error.status_code == 404
         else: raise AssertionError('Hidden product exposed: '+str(invalid))
     os.environ.pop('ACCORD_MINIAPP_URL',None)
     os.environ.pop('NAMED_MINIAPP_URL',None)
-    info=await site_config()
+    info=await site_config(repo)
     assert info['miniapp_url'] == '', info
     from shop.config import settings
     previous_token = settings.bot_token
     settings.bot_token = ''
     os.environ['ACCORD_MINIAPP_URL']='https://t.me/accordbot/accordapp'
-    assert (await site_config())['miniapp_url'] == '', 'No bot token must not enable checkout'
+    assert (await site_config(repo))['miniapp_url'] == '', 'No bot token must not enable checkout'
     settings.bot_token = '123456:validlookingtesttoken'
-    assert (await site_config())['miniapp_url'] == 'https://t.me/accordbot/accordapp'
+    assert (await site_config(repo))['miniapp_url'] == 'https://t.me/accordbot/accordapp'
     settings.bot_token = previous_token
     del os.environ['ACCORD_MINIAPP_URL']
     assert local_product_media_name('/media/perfume-abcd1234.jpg') == 'perfume-abcd1234.jpg'

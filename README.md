@@ -2,6 +2,8 @@
 
 Публічний магазин: **https://accordniche.pp.ua/**. Telegram Mini App: **https://shop.accordniche.pp.ua/**. Панель: **https://dashboard.accordniche.pp.ua/**.
 
+Вітрина використовує реальний каталог БД: серверні фільтри й сторінки, доступні об'єми, фото, ціни та залишки. Хіти обчислюються за підтвердженими продажами за 90 днів; ручні рекомендації й новинки — окремі добірки. Демонстраційні товари та ціни прибрано. Деталі й перевірки: [v1.8.0](ACCORD_NICHE_v1.8.0_UA.md).
+
 ## Паралельно з чинним ELFAR
 
 Для VPS із `/opt/elfar/deploy` і публічним `deploy-nginx-1` підготовлено [підключення двох проєктів і окремого TLS](docs/ELFAR_ACCORD_SHARED_EDGE_UA.md). Після оновлення файлів і підготовки DNS від root виконайте одну команду:
@@ -71,7 +73,9 @@ bash deploy/domains.sh --profile workers up -d --build
 
 ```bash
 PYTHONPATH=backend python3 -m pytest backend/tests_accord backend/qa/qa_accord_domain_split.py -q
-node --test website/tests/*.test.mjs dashboard/tests/roles.mjs
+npm ci --prefix website
+npm test --prefix website
+node --test dashboard/tests/roles.mjs
 ```
 
 `docker-compose.yml` тепер підключає той самий доменний стек (для цього entrypoint потрібен Compose 2.20+). Для ACCORD використовуйте `deploy/domains.sh`: він перевіряє конфігурацію та блокує видалення томів. `deploy/docker-compose.prod.yml` належить попередній спільній інфраструктурі; доменний сценарій його не використовує.

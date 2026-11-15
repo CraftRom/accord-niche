@@ -28,6 +28,10 @@ class PromoCodeConflict(ValueError):
 class Repository(ABC):
     """Одна одиниця роботи. Створюється на запит, закривається після нього."""
 
+    async def storefront_data(self, since, until):
+        """Public active catalog and SKU sales totals; implementation must read storage."""
+        raise NotImplementedError
+
     # ------------------------------------------------------------ users
 
     @abstractmethod

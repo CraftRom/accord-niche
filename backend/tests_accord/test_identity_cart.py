@@ -5,6 +5,7 @@ These tests don't claim to replace a PostgreSQL integration test.
 """
 import asyncio
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -57,8 +58,8 @@ class CartSession:
         self.calls.append('rollback')
 
 
-def product(id, stock, brand='CREED', active=True):
-    return SimpleNamespace(id=id, stock=stock, brand=brand, is_active=active, name=f'Aroma {id}')
+def product(id, stock, brand='CREED', active=True, price=Decimal('100')):
+    return SimpleNamespace(id=id, stock=stock, brand=brand, is_active=active, price=price, name=f'Aroma {id}')
 
 
 @pytest.mark.asyncio
@@ -73,7 +74,7 @@ async def test_replace_cart_writes_both_lines_in_one_transaction():
 @pytest.mark.asyncio
 @pytest.mark.parametrize('products,items', [
     ([product(3, 1)], [(3, 2)]),
-    ([product(3, 10, brand='')], [(3, 1)]),
+    ([product(3, 10, price=Decimal('0'))], [(3, 1)]),
     ([product(3, 10, active=False)], [(3, 1)]),
     ([product(3, 10)], [(3, 1), (4, 1)]),
     ([product(3, 10)], [(3, 1), (3, 2)]),
