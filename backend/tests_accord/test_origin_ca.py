@@ -46,16 +46,21 @@ def certificates(tmp_path):
 
 
 @pytest.mark.parametrize('hosts', [edge.HOSTS, ('accordniche.pp.ua', '*.accordniche.pp.ua')])
-def test_valid_origin_certificates_cover_both_hostnames(certificates, hosts):
+def test_valid_origin_certificates_cover_all_hostnames(certificates, hosts):
     edge.validate_origin_files(*certificates(names=hosts))
 
 
 def test_missing_shop_hostname_is_rejected(certificates):
-    with pytest.raises(RuntimeError): edge.validate_origin_files(*certificates(names=('accordniche.pp.ua',)))
+    with pytest.raises(ValueError): edge.validate_origin_files(*certificates(names=('accordniche.pp.ua',)))
+
+
+def test_missing_dashboard_hostname_is_rejected_before_installation(certificates):
+    with pytest.raises(ValueError, match='dashboard.accordniche.pp.ua'):
+        edge.validate_origin_files(*certificates(names=('accordniche.pp.ua', 'shop.accordniche.pp.ua')))
 
 
 def test_expired_origin_certificate_is_rejected(certificates):
-    with pytest.raises(RuntimeError): edge.validate_origin_files(*certificates(expired=True))
+    with pytest.raises(ValueError): edge.validate_origin_files(*certificates(expired=True))
 
 
 def test_mismatched_private_key_is_rejected(certificates):
@@ -89,7 +94,8 @@ def test_origin_import_keeps_private_key_out_of_arguments_and_elfar_paths(certif
     assert calls[-1][-3:] == ['600', cert_path, key_path]
 
 
-def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, certificates, monkeypatch):
+@pytest.mark.parametrize('implicit_paths', [False, True])
+def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, certificates, monkeypatch, implicit_paths):
     cert, key, ca = certificates()
     project, elfar = tmp_path / 'accord', tmp_path / 'elfar/deploy'
     (project / 'deploy/nginx').mkdir(parents=True)
@@ -98,6 +104,7 @@ def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, cert
     (elfar / 'docker-compose.prod.yml').write_text((ROOT / 'deploy/docker-compose.prod.yml').read_text())
     (project / '.env.domains').write_text('COMPOSE_PROJECT_NAME=accord-niche\n')
     monkeypatch.setattr(edge, 'ROOT', project)
+    monkeypatch.setattr(edge, 'DEFAULT_ORIGIN_DIR', cert.parent)
     monkeypatch.setattr(edge.os, 'geteuid', lambda: 0)
     monkeypatch.setattr(edge, 'inspect_container', lambda name: {})
     monkeypatch.setattr(edge, 'validate_layout', lambda *args: None)
@@ -115,11 +122,13 @@ def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, cert
     monkeypatch.setattr(edge.subprocess, 'run', lambda *args, **kw: subprocess.CompletedProcess(args[0], 0))
     calls = []
     monkeypatch.setattr(edge, 'run', lambda args, **kw: calls.append(args) or '')
-    assert edge.main(['--elfar-dir', str(elfar), '--origin-cert', str(cert), '--origin-key', str(key), '--origin-ca', str(ca)]) == 0
+    origin_args = [] if implicit_paths else ['--origin-cert', str(cert), '--origin-key', str(key)]
+    assert edge.main(['--elfar-dir', str(elfar), '--origin-ca', str(ca)] + origin_args) == 0
     text = (elfar / 'nginx/accord-main.conf').read_text()
     assert edge.ORIGIN_MARKER in text and '/accord-origin/' in text
     assert '/live/accordniche.pp.ua/fullchain.pem' not in text
     assert set(edge.HOSTS) <= set(checked)
+    assert 'HTTP dashboard.accordniche.pp.ua' in checked
     assert all('certonly' not in args for args in calls)
 
 
@@ -166,4 +175,13 @@ def test_leaf_certificate_cannot_replace_ca_trust_file(certificates, tmp_path):
 def test_custom_ca_requires_origin_mode(tmp_path):
     with pytest.raises(SystemExit) as error:
         edge.main(['--origin-ca', str(tmp_path / 'ca.pem')])
+    assert error.value.code == 2
+
+
+def test_incomplete_default_origin_pair_stops_before_docker(tmp_path, monkeypatch):
+    (tmp_path / 'origin.pem').write_text('incomplete')
+    monkeypatch.setattr(edge, 'DEFAULT_ORIGIN_DIR', tmp_path)
+    monkeypatch.setattr(edge, 'inspect_container', lambda *args: pytest.fail('Docker must not run'))
+    with pytest.raises(SystemExit) as error:
+        edge.main([])
     assert error.value.code == 2

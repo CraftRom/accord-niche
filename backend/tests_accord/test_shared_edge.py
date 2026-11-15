@@ -56,10 +56,12 @@ def test_tls_config_uses_only_accord_certificate_and_allows_renewal_after_redire
     text = edge.tls_config()
     assert '__ACCORD_' not in text
     assert '/live/elfar.pp.ua/' not in text
-    assert text.count('/live/accordniche.pp.ua/fullchain.pem') == 2
-    assert text.count('location ^~ /.well-known/acme-challenge/') == 2
+    assert text.count('/live/accordniche.pp.ua/fullchain.pem') == 3
+    assert text.count('location ^~ /.well-known/acme-challenge/') == 3
     assert 'accord-website:80' in text and 'accord-miniapp:80' in text
-    assert 'dashboard.accordniche.pp.ua;' not in text
+    assert 'server_name dashboard.accordniche.pp.ua;' in text
+    assert 'http://accord-dashboard:80' in text
+    assert 'proxy_read_timeout 370s' in text
 
 
 def test_certbot_never_expands_or_replaces_elfar_certificate(monkeypatch):
@@ -145,6 +147,18 @@ def test_root_nginx_frontends_keep_required_worker_and_bind_capabilities():
     for name in ('website', 'dashboard', 'miniapp'):
         assert 'ALL' in compose['services'][name]['cap_drop']
         assert {'CHOWN', 'SETUID', 'SETGID', 'NET_BIND_SERVICE'} <= set(compose['services'][name]['cap_add'])
+
+
+def test_edge_network_contains_only_frontends_and_keeps_host_ports_local():
+    base = yaml.safe_load((ROOT / 'deploy/docker-compose.domains.yml').read_text())
+    edge_network = yaml.safe_load((ROOT / 'deploy/docker-compose.edge-network.yml').read_text())
+    assert set(edge_network['services']) == {'website', 'miniapp', 'dashboard'}
+    for name, alias in [('website', 'accord-website'), ('miniapp', 'accord-miniapp'), ('dashboard', 'accord-dashboard')]:
+        assert edge_network['services'][name]['networks']['accord_edge']['aliases'] == [alias]
+        assert all(port.startswith('127.0.0.1:') for port in base['services'][name]['ports'])
+    for name in ('api', 'db', 'redis'):
+        assert name not in edge_network['services']
+        assert not base['services'][name].get('ports')
 
 
 def test_successful_workflow_keeps_elfar_and_persists_accord_edge(tmp_path, monkeypatch):

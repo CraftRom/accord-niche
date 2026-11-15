@@ -132,7 +132,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      # Admin service is local; TLS and MFA at the existing public edge.
+      # Host listener stays local; the shared Docker edge terminates HTTPS.
       - "127.0.0.1:${ACCORD_DASHBOARD_PORT:-18082}:80"
     logging: *logging
     security_opt: ["no-new-privileges:true"]

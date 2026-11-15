@@ -12,8 +12,11 @@ services:
       default:
       accord_edge:
         aliases: [accord-miniapp]
-  # Dashboard intentionally NOT on this network. Expose it only through
-  # Cloudflare Tunnel + mandatory Access MFA from host loopback.
+  dashboard:
+    networks:
+      default:
+      accord_edge:
+        aliases: [accord-dashboard]
 networks:
   accord_edge:
     external: true

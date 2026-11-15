@@ -7,11 +7,23 @@
 - Certbot: `deploy-certbot-1`, спільні з Nginx томи `/etc/letsencrypt` і `/var/www/certbot`.
 - ACCORD: `/opt/accord-niche`, `COMPOSE_PROJECT_NAME='accord-niche'`.
 
+## Простий запуск із наявним Origin CA
+
+Оновіть файли проєкту зі збірки v1.7.0, збережіть `.env.domains` і `/etc/accord-niche/tls`. Від root:
+
+```bash
+python3 /opt/accord-niche/scripts/connect_elfar_edge.py
+```
+
+Наявні `origin.pem` і `origin.key` беруться автоматично. Сценарій збирає та запускає ACCORD і налаштовує всі три домени у чинному HTTPS Nginx: магазин, Mini App та dashboard. Вхід у dashboard використовує наявні облікові записи. Tunnel для цього не потрібний.
+
+Для Origin CA DNS `@`, `shop`, `dashboard` має вести на VPS у Proxied; SSL/TLS — Full (strict). Стандартний сертифікат Cloudflare з коренем та `*.accordniche.pp.ua` підходить. Якщо використано окремий список SAN без wildcard, у ньому мають бути всі три домени; скрипт перевіряє це до зміни Nginx.
+
 ## Уже створений Cloudflare Origin CA
 
-Для цього способу DNS-записи ACCORD `@` і `shop` залишаються **Proxied**, SSL/TLS — **Full (strict)**. Origin CA перевіряє Cloudflare; у звичайному прямому підключенні браузер не довіряє цьому CA. Сертифікат повинен містити `accordniche.pp.ua` і `shop.accordniche.pp.ua`, або `accordniche.pp.ua` та `*.accordniche.pp.ua`.
+Для цього способу DNS-записи ACCORD `@`, `shop` і `dashboard` залишаються **Proxied**, SSL/TLS — **Full (strict)**. Origin CA перевіряє Cloudflare; у звичайному прямому підключенні браузер не довіряє цьому CA. Сертифікат повинен містити корінь і `*.accordniche.pp.ua`, або всі три домени: корінь, shop і dashboard.
 
-Встановіть збірку v1.6.4 або новішу зі збереженням `.env.domains`. Від root створіть файли поза Git:
+Встановіть збірку v1.7.0 або новішу зі збереженням `.env.domains`. Від root створіть файли поза Git:
 
 ```bash
 umask 077
@@ -29,7 +41,7 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py \
   --origin-key /etc/accord-niche/tls/origin.key
 ```
 
-Сценарій використовує офіційні публічні RSA/ECC кореневі CA, включені до збірки у `deploy/tls/cloudflare-origin-ca.pem`. Завантаження CA із сайту Cloudflare під час встановлення не виконується. Перед зміною проксі перевіряє пару cert/key, строк дії, ланцюжок і обидва hostname. Потім копіює пару в окремий каталог `accord-origin/<digest>` спільного TLS-тома Nginx/Certbot; файли ELFAR та попередні пари не перезаписуються. Certbot issuance і HTTP-01 probe у цьому режимі не виконуються. Локальна перевірка TLS використовує явний trust bundle Origin CA із перевіркою hostname; глобальне системне сховище CA не змінюється.
+Сценарій використовує офіційні публічні RSA/ECC кореневі CA, включені до збірки у `deploy/tls/cloudflare-origin-ca.pem`. Завантаження CA із сайту Cloudflare під час встановлення не виконується. Перед зміною проксі перевіряє пару cert/key, строк дії, ланцюжок і усі три hostname. Потім копіює пару в окремий каталог `accord-origin/<digest>` спільного TLS-тома Nginx/Certbot; файли ELFAR та попередні пари не перезаписуються. Certbot issuance і HTTP-01 probe у цьому режимі не виконуються. Локальна перевірка TLS використовує явний trust bundle Origin CA із перевіркою hostname; глобальне системне сховище CA не змінюється.
 
 ### Якщо попередній запуск повернув HTTP Error 403
 
@@ -58,8 +70,8 @@ python3 scripts/connect_elfar_edge.py \
 ## Підготовка для Let's Encrypt
 
 1. Розпакуйте оновлену повну збірку в `/opt/accord-niche`, зберігши `.env.domains`. Скрипт не генерує й не змінює паролі.
-2. У Cloudflare DNS для **зони ACCORD** переконайтеся, що `@` і `shop` ведуть на цей VPS. На час першого випуску сертифіката встановіть для цих двох записів **DNS only** (сіра хмаринка) та дочекайтеся оновлення DNS. Записи ELFAR залишаються поточними. Якщо AAAA заданий, його IPv6 теж має вести на цей VPS.
-3. Порт 80 має приймати HTTP-перевірку Let's Encrypt. Сценарій перевірить обидва hostname контрольним файлом перед зверненням до Certbot. За недоступності зупиниться й відновить конфігурацію проксі.
+2. У Cloudflare DNS для **зони ACCORD** переконайтеся, що `@`, `shop` і `dashboard` ведуть на цей VPS. На час першого випуску сертифіката встановіть для цих трьох записів **DNS only** (сіра хмаринка) та дочекайтеся оновлення DNS. Записи ELFAR залишаються поточними. Якщо AAAA заданий, його IPv6 теж має вести на цей VPS.
+3. Порт 80 має приймати HTTP-перевірку Let's Encrypt. Сценарій перевірить усі три hostname контрольним файлом перед зверненням до Certbot. За недоступності зупиниться й відновить конфігурацію проксі.
 4. Зробіть звичну резервну копію даних обох проєктів перед інфраструктурними змінами. Сам сценарій окремо копіює змінювані конфігурації в `.edge-backups`.
 
 ## Запуск від root
@@ -79,18 +91,18 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py --email YOUR_EMAIL
 ## Дії сценарію
 
 1. Перевіряє live-мітки Compose, шляхи та спільні томи Nginx/Certbot. Відмовляється працювати з іншим namespace, невідомою структурою YAML або стороннім конфігом ACCORD.
-2. Створює зовнішню мережу `accord-shared-edge` і піднімає ACCORD через `deploy/domains.sh --docker-edge up -d --build`. До цієї мережі зі сторони ACCORD підключаються тільки website і miniapp.
+2. Створює зовнішню мережу `accord-shared-edge` і піднімає ACCORD через `deploy/domains.sh --docker-edge up -d --build`. До цієї мережі зі сторони ACCORD підключаються тільки website, miniapp і dashboard.
 3. Зберігає копію Compose ELFAR, додає до **його nginx** спільну мережу та mount окремого `nginx/accord-main.conf`. Нові налаштування постійні й застосовуються стандартним деплоєм ELFAR.
 4. Перевіряє Compose та Nginx у helper-контейнері без публікації портів. Для застосування mounts/networks коротко перестворює **тільки nginx і promo-controller** ELFAR. Controller перестворюється разом із проксі, бо ділить із ним PID namespace. Використовує `--no-deps --no-build --pull never`; інші сервіси ELFAR командою не вибираються.
 5. Тимчасовий HTTP-vhost ACCORD віддає тільки ACME challenge, решта HTTP-запитів отримує 404.
-6. Certbot отримує окремий сертифікат із cert-name `accordniche.pp.ua`, SAN: `accordniche.pp.ua` і `shop.accordniche.pp.ua`. Сертифікат ELFAR не розширюється й не замінюється.
-7. Сценарій підключає TLS-vhost ACCORD, виконує `nginx -t`, потім reload. Перевіряє TLS з SNI й hostname validation, відповідь обох публічних сторінок і незмінність сертифіката ELFAR.
+6. Certbot отримує окремий сертифікат із cert-name `accordniche.pp.ua`, SAN: `accordniche.pp.ua`, `shop.accordniche.pp.ua` і `dashboard.accordniche.pp.ua`. Сертифікат ELFAR не розширюється й не замінюється.
+7. Сценарій підключає TLS-vhost ACCORD, виконує `nginx -t`, потім reload. Перевіряє TLS з SNI й hostname validation, відповідь усіх трьох публічних сторінок і незмінність сертифіката ELFAR.
 
 На час перестворення проксі очікуйте коротку перерву публічних HTTP/HTTPS-з'єднань. Бази, API, бот і scheduler ELFAR цим сценарієм не перезапускаються. Дані й `.env` ELFAR не змінюються. При помилці після внесення змін сценарій намагається відновити попередні конфігурації та проксі; резервна копія залишається для ручного відновлення.
 
 ## Після успіху
 
-Поверніть `@` та `shop` ACCORD у **Proxied** (помаранчева хмаринка). Режим SSL/TLS — **Full (strict)**.
+Поверніть `@`, `shop` та `dashboard` ACCORD у **Proxied** (помаранчева хмаринка). Режим SSL/TLS — **Full (strict)**.
 
 ```bash
 curl -I https://accordniche.pp.ua/
@@ -99,7 +111,7 @@ curl -I https://elfar.pp.ua/
 docker ps --format 'table {{.Names}}\t{{.Ports}}'
 ```
 
-Панель `dashboard.accordniche.pp.ua` залишається окремою: Cloudflare Tunnel → `http://127.0.0.1:18082` із Access/MFA. Сценарій не публікує панель у спільному Nginx.
+Панель `dashboard.accordniche.pp.ua` обслуговує цей самий Nginx через alias `accord-dashboard`. Доступ потребує входу в панель; перевірки ролей, CSRF, cookies і rate limits збережені. Окремий Tunnel не потрібний. Із v1.7.0 запуск без аргументів автоматично використовує наявні файли `/etc/accord-niche/tls/origin.pem` і `origin.key`. Сертифікат перевіряється для всіх трьох доменів до зміни Nginx.
 
 Подовження сертифіката використовує чинний renew-loop promo-controller, який читає спільний `/etc/letsencrypt`. ACME location додана також у HTTPS-vhost ACCORD, щоб перевірка працювала при перенаправленні HTTP→HTTPS на Cloudflare. Після інсталяції варто окремо перевірити renew dry-run у погодженому режимі обслуговування.
 

@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.setup_domains import parse_env
 
-HOSTS = ('accordniche.pp.ua', 'shop.accordniche.pp.ua')
+HOSTS = ('accordniche.pp.ua', 'shop.accordniche.pp.ua', 'dashboard.accordniche.pp.ua')
+DEFAULT_ORIGIN_DIR = Path('/etc/accord-niche/tls')
 NETWORK = 'accord-shared-edge'
 ORIGIN_MARKER = '# TLS provider: cloudflare-origin-ca\n'
 MARKER = '# Managed by ACCORD NICHE shared-edge installer\n'
@@ -62,7 +63,7 @@ def patch_compose(text: str) -> str:
 def bootstrap_config() -> str:
     return MARKER + '''server {
     listen 80;
-    server_name accordniche.pp.ua shop.accordniche.pp.ua;
+    server_name accordniche.pp.ua shop.accordniche.pp.ua dashboard.accordniche.pp.ua;
     server_tokens off;
     include /etc/nginx/deny.d/*.conf;
     location ^~ /.well-known/acme-challenge/ {
@@ -176,8 +177,13 @@ def validate_origin_files(cert, key, cafile):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(str(cert), str(key), password=b'')  # Match the pair; never prompt for a password.
     for host in HOSTS:
-        run(['openssl', 'verify', '-CAfile', str(cafile), '-purpose', 'sslserver',
-             '-verify_hostname', host, str(cert)], capture=True)
+        try:
+            run(['openssl', 'verify', '-CAfile', str(cafile), '-purpose', 'sslserver',
+                 '-verify_hostname', host, str(cert)], capture=True)
+        except RuntimeError as exc:
+            raise ValueError('Origin CA не пройшов перевірку для ' + host +
+                             '. Сертифікат має бути чинним і покривати accordniche.pp.ua та *.accordniche.pp.ua '
+                             '(або всі три домени окремо).') from exc
 
 
 def import_origin_files(cert, key):
@@ -209,6 +215,13 @@ def main(argv=None):
     parser.add_argument('--origin-key', type=Path, help='Matching private key, permissions 0600')
     parser.add_argument('--origin-ca', type=Path, help='Local trusted CA PEM; defaults to bundled Cloudflare RSA/ECC roots')
     args = parser.parse_args(argv)
+    if args.origin_cert is None and args.origin_key is None and not args.email:
+        default_cert, default_key = DEFAULT_ORIGIN_DIR / 'origin.pem', DEFAULT_ORIGIN_DIR / 'origin.key'
+        if default_cert.exists() or default_key.exists():
+            if not default_cert.is_file() or not default_key.is_file():
+                parser.error('У /etc/accord-niche/tls потрібні обидва файли: origin.pem і origin.key')
+            args.origin_cert, args.origin_key = default_cert, default_key
+            print('Використовую наявний Origin CA із /etc/accord-niche/tls.', flush=True)
     if bool(args.origin_cert) != bool(args.origin_key):
         parser.error('--origin-cert і --origin-key потрібно вказати разом')
     origin_mode = args.origin_cert is not None
@@ -303,7 +316,8 @@ def main(argv=None):
         if before != after:
             raise RuntimeError('Сертифікат ELFAR змінився під час операції; потрібна перевірка')
         print('Готово: TLS і публічні сторінки ACCORD перевірено; сертифікат ELFAR збережений.')
-        print('Залиште @ і shop у Proxied; SSL/TLS Cloudflare — Full (strict).')
+        print('Магазин, Mini App і панель працюють через спільний HTTPS Nginx.')
+        print('Залиште @, shop і dashboard у Proxied на цей VPS; SSL/TLS Cloudflare — Full (strict).')
         if origin_mode:
             print('Origin CA встановлено. Його заміна після закінчення строку виконується окремо від Certbot renew.')
         return 0

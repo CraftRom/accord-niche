@@ -4,13 +4,13 @@
 
 ## Паралельно з чинним ELFAR
 
-Для VPS із `/opt/elfar/deploy` і публічним `deploy-nginx-1` підготовлено [підключення двох проєктів і окремого TLS](docs/ELFAR_ACCORD_SHARED_EDGE_UA.md). Після підготовки DNS від root:
+Для VPS із `/opt/elfar/deploy` і публічним `deploy-nginx-1` підготовлено [підключення двох проєктів і окремого TLS](docs/ELFAR_ACCORD_SHARED_EDGE_UA.md). Після оновлення файлів і підготовки DNS від root виконайте одну команду:
 
 ```bash
 python3 /opt/accord-niche/scripts/connect_elfar_edge.py
 ```
 
-Для вже створеного Cloudflare Origin CA використовуйте параметри `--origin-cert` і `--origin-key` за цією ж інструкцією; DNS залишайте Proxied. Із v1.6.4 публічні CA включені у `deploy/tls/cloudflare-origin-ca.pem`, тому їх завантаження під час встановлення не потрібне; попередню помилку HTTP 403 усунуто.
+Сценарій сам знаходить наявні `/etc/accord-niche/tls/origin.pem` та `origin.key`. Магазин, Mini App і панель працюють через спільний HTTPS Nginx; Tunnel не потрібний. DNS `@`, `shop`, `dashboard` має вести на VPS у Proxied, SSL/TLS — Full (strict). Сертифікат має покривати корінь і `*.accordniche.pp.ua` або всі три домени окремо. Власні шляхи можна передати через `--origin-cert` та `--origin-key`. Із v1.6.4 публічні CA включені у `deploy/tls/cloudflare-origin-ca.pem`, тому їх завантаження під час встановлення не потрібне; попередню помилку HTTP 403 усунуто.
 
 ## Перший запуск
 
@@ -27,7 +27,7 @@ bash deploy/domains.sh ps
 
 Генератор створює `.env.domains` із випадковими секретами та правами `0600`. Повторний запуск лише перевіряє файл. Пароль `accordadmin` зберігається у `DASHBOARD_PASSWORD`; відкрийте файл локально через редактор, не надсилайте його в чат.
 
-Compose запускає PostgreSQL, Redis, міграції, API, магазин, Mini App і панель. Зовнішні адреси потребують DNS, HTTPS edge та Cloudflare Tunnel/Access для панелі. **Підняття контейнерів саме по собі не налаштовує DNS і сертифікати.**
+Compose запускає PostgreSQL, Redis, міграції, API, магазин, Mini App і панель. Зовнішні адреси потребують DNS і HTTPS edge; усі три домени, включно з панеллю, обслуговує спільний Nginx. **Підняття контейнерів саме по собі не налаштовує DNS і сертифікати.**
 
 ## Оновлення
 

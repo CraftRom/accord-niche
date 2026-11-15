@@ -4,9 +4,9 @@
 | --- | --- | --- |
 | `https://accordniche.pp.ua/` | Магазин, профіль, оформлення | `127.0.0.1:18081` |
 | `https://shop.accordniche.pp.ua/` | Telegram Mini App | `127.0.0.1:18083` |
-| `https://dashboard.accordniche.pp.ua/` | Панель через Cloudflare Tunnel + Access/MFA | `127.0.0.1:18082` |
+| `https://dashboard.accordniche.pp.ua/` | Панель через спільний HTTPS Nginx | `127.0.0.1:18082` |
 
-IP-адреса VPS потрібна тільки в DNS та для SSH. Публічного запуску застосунку за IP немає. API, PostgreSQL та Redis не публікуються. Внутрішній HTTP працює за HTTPS edge, а панель доступна лише через захищений Tunnel.
+IP-адреса VPS потрібна тільки в DNS та для SSH. Публічного запуску застосунку за IP немає. API, PostgreSQL та Redis не публікуються. Внутрішній HTTP працює за HTTPS edge, панель використовує той самий HTTPS edge та власну автентифікацію.
 
 ## Перша інсталяція
 
@@ -77,7 +77,7 @@ bash deploy/domains.sh up -d --build
 
 ## DNS і HTTPS edge
 
-Для `@` та `shop` створіть A-записи на фактичну IPv4-адресу VPS. AAAA використовуйте лише за наявності справного IPv6. Спершу перевірте власника портів:
+Для `@`, `shop` та `dashboard` створіть A-записи на фактичну IPv4-адресу VPS. AAAA використовуйте лише за наявності справного IPv6. Спершу перевірте власника портів:
 
 ```bash
 sudo ss -ltnp '( sport = :80 or sport = :443 )'
@@ -86,7 +86,7 @@ docker ps --format 'table {{.Names}}\t{{.Ports}}'
 
 Не запускайте ще один публічний Nginx на зайнятих портах.
 
-**Якщо 80/443 обслуговує системний Nginx:** використовуйте `deploy/nginx/accord-public-edge.conf.template`. Замініть `__ACCORD_CERT__` і `__ACCORD_KEY__` фактичними шляхами чинного сертифіката з SAN для `accordniche.pp.ua` та `shop.accordniche.pp.ua`. Підключіть отриманий конфіг окремим файлом; перед reload виконайте `nginx -t`. Зберігайте резервну копію чинного конфіга.
+**Якщо 80/443 обслуговує системний Nginx:** використовуйте `deploy/nginx/accord-public-edge.conf.template`. Замініть `__ACCORD_CERT__` і `__ACCORD_KEY__` фактичними шляхами чинного сертифіката з SAN для кореня, shop і dashboard, або кореня та `*.accordniche.pp.ua`. Підключіть отриманий конфіг окремим файлом; перед reload виконайте `nginx -t`. Зберігайте резервну копію чинного конфіга.
 
 **Якщо 80/443 обслуговує Nginx у Docker ELFAR:** створіть зовнішню мережу `accord-shared-edge` один раз, додайте до неї тільки чинний ELFAR Nginx через його Compose конфіг. Для ACCORD запускайте:
 
@@ -95,13 +95,13 @@ docker network inspect accord-shared-edge >/dev/null 2>&1 || docker network crea
 bash deploy/domains.sh --docker-edge up -d --build
 ```
 
-Змонтуйте в edge конфіг із `deploy/nginx/accord-elfar-docker-edge.conf.template` після підстановки шляхів сертифіката. Він використовує DNS aliases `accord-website` і `accord-miniapp`. `dashboard`, API, PostgreSQL і Redis до edge-мережі не підключайте. Надалі використовуйте `--docker-edge` при кожному запуску/оновленні цього варіанта.
+Змонтуйте в edge конфіг із `deploy/nginx/accord-elfar-docker-edge.conf.template` після підстановки шляхів сертифіката. Він використовує DNS aliases `accord-website`, `accord-miniapp` і `accord-dashboard`. До edge-мережі підключаються тільки ці три frontend-сервіси; API, PostgreSQL і Redis залишаються у внутрішній мережі. Надалі використовуйте `--docker-edge` при кожному запуску/оновленні цього варіанта.
 
 Обидва шаблони містять редирект HTTP → HTTPS. За Cloudflare використовуйте Full (strict) із чинним сертифікатом origin. Не відкривайте порти 18081–18083 в інтернет.
 
 ## Панель
 
-Cloudflare Tunnel для `dashboard.accordniche.pp.ua` направте на `http://127.0.0.1:18082`, якщо cloudflared встановлений на хості. Якщо cloudflared працює в окремому контейнері, його `127.0.0.1` не є loopback VPS — мережеве підключення треба налаштувати окремо. Додайте Cloudflare Access із доступом тільки для адміністраторів та обов'язковим MFA; перевірте перевірку Access на Tunnel. Публічного vhost панелі у шаблонах немає.
+Із v1.7.0 панель має окремий HTTPS vhost у спільному Nginx. Для підтвердженого ELFAR достатньо запустити від root `python3 /opt/accord-niche/scripts/connect_elfar_edge.py`: сценарій підключає frontend панелі до мережі, налаштовує TLS і перевіряє відповідь домену. Наявний Origin CA береться з `/etc/accord-niche/tls` автоматично. Окремі Cloudflare Tunnel або Access не потрібні для запуску; Access можна додати як додатковий захист. Вхід у панель вимагає облікового запису; перевірки CSRF, ролей і ліміти входу збережені.
 
 Cookies сесій панелі та магазину окремі, HttpOnly/Secure, без спільного Domain. Запити панелі приймаються тільки зі свого Origin. Невідомі хости відхиляються і в Nginx, і на межі API; локальні API health checks залишені.
 
@@ -125,4 +125,4 @@ curl -si https://accordniche.pp.ua/api/auth/session
 curl -si https://shop.accordniche.pp.ua/api/orders
 ```
 
-Без сесії Access панель має спрямовувати на автентифікацію. Два останні API запити мають повертати 404. Окремо перевірте checkout, логін/вихід, відновлення бекапу й неможливість прямого доступу до локальних портів із зовнішньої мережі.
+Панель без сесії показує форму входу; захищені API без сесії відхиляють запити. Два останні API запити мають повертати 404. Окремо перевірте checkout, логін/вихід, відновлення бекапу й неможливість прямого доступу до локальних портів із зовнішньої мережі.
