@@ -5,6 +5,7 @@
 # No server block for dashboard: Cloudflare Tunnel + Access required.
 server {
     listen 80;
+    include /etc/nginx/deny.d/*.conf;
     server_name accordniche.pp.ua shop.accordniche.pp.ua;
     if ($host !~ ^(accordniche\.pp\.ua|shop\.accordniche\.pp\.ua)$) { return 444; }
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
@@ -12,6 +13,7 @@ server {
 }
 server {
     listen 443 ssl;
+    include /etc/nginx/deny.d/*.conf;
     server_tokens off;
     http2 on;
     server_name accordniche.pp.ua;
@@ -21,6 +23,7 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     resolver 127.0.0.11 valid=10s ipv6=off;
     add_header Strict-Transport-Security "max-age=31536000" always;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / {
         set $accord_website http://accord-website:80;
         proxy_pass $accord_website;
@@ -33,6 +36,7 @@ server {
 }
 server {
     listen 443 ssl;
+    include /etc/nginx/deny.d/*.conf;
     server_tokens off;
     http2 on;
     server_name shop.accordniche.pp.ua;
@@ -51,6 +55,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-For $remote_addr;
     }
+    location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / {
         set $accord_miniapp http://accord-miniapp:80;
         proxy_pass $accord_miniapp;

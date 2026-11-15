@@ -2,6 +2,16 @@
 
 Публічний магазин: **https://accordniche.pp.ua/**. Telegram Mini App: **https://shop.accordniche.pp.ua/**. Панель: **https://dashboard.accordniche.pp.ua/**.
 
+## Паралельно з чинним ELFAR
+
+Для VPS із `/opt/elfar/deploy` і публічним `deploy-nginx-1` підготовлено [підключення двох проєктів і окремого TLS](docs/ELFAR_ACCORD_SHARED_EDGE_UA.md). Після підготовки DNS від root:
+
+```bash
+python3 /opt/accord-niche/scripts/connect_elfar_edge.py
+```
+
+Для вже створеного Cloudflare Origin CA використовуйте параметри `--origin-cert` і `--origin-key` за цією ж інструкцією; DNS залишайте Proxied.
+
 ## Перший запуск
 
 Потрібні Python 3.11+, Docker Engine та Compose v2. У каталозі ACCORD:
