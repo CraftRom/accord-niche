@@ -19,7 +19,6 @@ import subprocess
 import sys
 import time
 from urllib.request import urlopen
-from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -28,10 +27,6 @@ from scripts.setup_domains import parse_env
 HOSTS = ('accordniche.pp.ua', 'shop.accordniche.pp.ua')
 NETWORK = 'accord-shared-edge'
 ORIGIN_MARKER = '# TLS provider: cloudflare-origin-ca\n'
-ORIGIN_ROOT_URLS = (
-    'https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem',
-    'https://developers.cloudflare.com/ssl/static/origin_ca_ecc_root.pem',
-)
 MARKER = '# Managed by ACCORD NICHE shared-edge installer\n'
 MOUNT = './nginx/accord-main.conf:/etc/nginx/conf.d/20-accord.conf:ro'
 
@@ -153,19 +148,23 @@ def probe_http():
         run(['docker', 'exec', 'deploy-certbot-1', 'rm', '-f', path])
 
 
-def download_origin_roots(destination):
-    parts = []
-    for url in ORIGIN_ROOT_URLS:
-        with urlopen(url, timeout=20) as response:
-            target = urlsplit(response.geturl())
-            if target.scheme != 'https' or target.hostname != 'developers.cloudflare.com':
-                raise ValueError('Неочікуване перенаправлення при завантаженні Cloudflare CA')
-            data = response.read(131073)
-            if len(data) > 131072 or b'-----BEGIN CERTIFICATE-----' not in data:
-                raise ValueError('Cloudflare CA не є коректним PEM-файлом')
-            parts.append(data.rstrip() + b'\n')
-    destination.write_bytes(b''.join(parts))
-    ssl.create_default_context(cafile=str(destination))  # Parse all roots before use.
+def prepare_origin_roots(destination, source=None):
+    """Use the shipped public roots, or an explicitly supplied local trust file."""
+    source = source if source is not None else ROOT / 'deploy/tls/cloudflare-origin-ca.pem'
+    if source.is_symlink() or not source.is_file():
+        raise ValueError('Відсутній звичайний CA-файл ' + str(source) +
+                         '; оновіть збірку або вкажіть локальний PEM через --origin-ca')
+    with source.open('rb') as stream:
+        data = stream.read(131073)
+    if len(data) > 131072 or b'PRIVATE KEY' in data:
+        raise ValueError('CA-файл має містити лише публічні PEM-сертифікати, до 128 KiB')
+    # Load explicit local trust without calling load_default_certs().
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    existing_ca = context.cert_store_stats()['x509_ca']
+    context.load_verify_locations(cadata=data.decode('ascii'))
+    if context.cert_store_stats()['x509_ca'] <= existing_ca:
+        raise ValueError('CA-файл не містить кореневих CA-сертифікатів')
+    destination.write_bytes(data)
 
 
 def validate_origin_files(cert, key, cafile):
@@ -208,10 +207,13 @@ def main(argv=None):
     parser.add_argument('--email', default='', help='Optional Let’s Encrypt contact email')
     parser.add_argument('--origin-cert', type=Path, help='Cloudflare Origin CA certificate (PEM)')
     parser.add_argument('--origin-key', type=Path, help='Matching private key, permissions 0600')
+    parser.add_argument('--origin-ca', type=Path, help='Local trusted CA PEM; defaults to bundled Cloudflare RSA/ECC roots')
     args = parser.parse_args(argv)
     if bool(args.origin_cert) != bool(args.origin_key):
         parser.error('--origin-cert і --origin-key потрібно вказати разом')
     origin_mode = args.origin_cert is not None
+    if args.origin_ca is not None and not origin_mode:
+        parser.error('--origin-ca використовується лише разом із --origin-cert і --origin-key')
     if origin_mode and args.email:
         parser.error('--email використовується лише для Let’s Encrypt')
     if os.geteuid() != 0:
@@ -252,7 +254,7 @@ def main(argv=None):
     selected_tls = None
     if origin_mode:
         ca_file = backup / 'cloudflare-origin-roots.pem'
-        download_origin_roots(ca_file)
+        prepare_origin_roots(ca_file, args.origin_ca)
         validate_origin_files(args.origin_cert, args.origin_key, ca_file)
         cert_path, key_path = import_origin_files(args.origin_cert.resolve(), args.origin_key.resolve())
         selected_tls = tls_config(cert_path, key_path)

@@ -10,7 +10,7 @@
 python3 /opt/accord-niche/scripts/connect_elfar_edge.py
 ```
 
-Для вже створеного Cloudflare Origin CA використовуйте параметри `--origin-cert` і `--origin-key` за цією ж інструкцією; DNS залишайте Proxied.
+Для вже створеного Cloudflare Origin CA використовуйте параметри `--origin-cert` і `--origin-key` за цією ж інструкцією; DNS залишайте Proxied. Із v1.6.4 публічні CA включені у `deploy/tls/cloudflare-origin-ca.pem`, тому їх завантаження під час встановлення не потрібне; попередню помилку HTTP 403 усунуто.
 
 ## Перший запуск
 

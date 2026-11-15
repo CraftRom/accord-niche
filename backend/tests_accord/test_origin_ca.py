@@ -101,7 +101,7 @@ def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, cert
     monkeypatch.setattr(edge.os, 'geteuid', lambda: 0)
     monkeypatch.setattr(edge, 'inspect_container', lambda name: {})
     monkeypatch.setattr(edge, 'validate_layout', lambda *args: None)
-    monkeypatch.setattr(edge, 'download_origin_roots', lambda path: path.write_bytes(ca.read_bytes()))
+    monkeypatch.setattr(edge, 'urlopen', lambda *args, **kw: pytest.fail('Origin CA must not download trust roots'))
     monkeypatch.setattr(edge, 'probe_http', lambda: pytest.fail('Origin CA must not use HTTP-01'))
     monkeypatch.setattr(edge, 'issue_certificate', lambda *args: pytest.fail('Origin CA must not issue a Let’s Encrypt certificate'))
     checked = []
@@ -115,9 +115,55 @@ def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, cert
     monkeypatch.setattr(edge.subprocess, 'run', lambda *args, **kw: subprocess.CompletedProcess(args[0], 0))
     calls = []
     monkeypatch.setattr(edge, 'run', lambda args, **kw: calls.append(args) or '')
-    assert edge.main(['--elfar-dir', str(elfar), '--origin-cert', str(cert), '--origin-key', str(key)]) == 0
+    assert edge.main(['--elfar-dir', str(elfar), '--origin-cert', str(cert), '--origin-key', str(key), '--origin-ca', str(ca)]) == 0
     text = (elfar / 'nginx/accord-main.conf').read_text()
     assert edge.ORIGIN_MARKER in text and '/accord-origin/' in text
     assert '/live/accordniche.pp.ua/fullchain.pem' not in text
     assert set(edge.HOSTS) <= set(checked)
     assert all('certonly' not in args for args in calls)
+
+
+def test_bundled_roots_are_official_cloudflare_cas_and_load_without_network(tmp_path, monkeypatch):
+    monkeypatch.setattr(edge, 'urlopen', lambda *args, **kw: pytest.fail('unexpected network request'))
+    destination = tmp_path / 'ca.pem'
+    edge.prepare_origin_roots(destination)
+    certs = x509.load_pem_x509_certificates(destination.read_bytes())
+    assert {cert.fingerprint(hashes.SHA256()).hex() for cert in certs} == {
+        'd3c7e85c91707fc0a12abc5d88266747aa4fa8e7b162f633ffb3c9d989947620',
+        'aa63697a22764b67b2134ce14cb5690ea336940b93986113f49545917832d80d',
+    }
+    for cert in certs:
+        assert cert.extensions.get_extension_for_class(x509.BasicConstraints).value.ca
+        assert cert.not_valid_before_utc < datetime.now(timezone.utc) < cert.not_valid_after_utc
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    previous = context.cert_store_stats()['x509_ca']
+    context.load_verify_locations(cafile=str(destination))
+    assert context.cert_store_stats()['x509_ca'] == previous + 2
+
+
+def test_missing_bundled_ca_has_local_recovery_message(tmp_path, monkeypatch):
+    monkeypatch.setattr(edge, 'ROOT', tmp_path)
+    with pytest.raises(ValueError, match='--origin-ca'):
+        edge.prepare_origin_roots(tmp_path / 'result.pem')
+    assert not (tmp_path / 'result.pem').exists()
+
+
+@pytest.mark.parametrize('contents', [b'<html>403 Forbidden</html>', b'', b'X' * 131073, b'-----BEGIN PRIVATE KEY-----'])
+def test_invalid_local_ca_rejected_without_creating_snapshot(tmp_path, contents):
+    source, destination = tmp_path / 'bad.pem', tmp_path / 'snapshot.pem'
+    source.write_bytes(contents)
+    with pytest.raises((ValueError, ssl.SSLError)):
+        edge.prepare_origin_roots(destination, source)
+    assert not destination.exists()
+
+
+def test_leaf_certificate_cannot_replace_ca_trust_file(certificates, tmp_path):
+    cert, _, _ = certificates()
+    with pytest.raises(ValueError, match='CA-сертифікатів'):
+        edge.prepare_origin_roots(tmp_path / 'snapshot.pem', cert)
+
+
+def test_custom_ca_requires_origin_mode(tmp_path):
+    with pytest.raises(SystemExit) as error:
+        edge.main(['--origin-ca', str(tmp_path / 'ca.pem')])
+    assert error.value.code == 2

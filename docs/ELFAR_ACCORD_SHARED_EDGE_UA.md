@@ -11,7 +11,7 @@
 
 Для цього способу DNS-записи ACCORD `@` і `shop` залишаються **Proxied**, SSL/TLS — **Full (strict)**. Origin CA перевіряє Cloudflare; у звичайному прямому підключенні браузер не довіряє цьому CA. Сертифікат повинен містити `accordniche.pp.ua` і `shop.accordniche.pp.ua`, або `accordniche.pp.ua` та `*.accordniche.pp.ua`.
 
-Встановіть збірку v1.6.3 або новішу зі збереженням `.env.domains`. Від root створіть файли поза Git:
+Встановіть збірку v1.6.4 або новішу зі збереженням `.env.domains`. Від root створіть файли поза Git:
 
 ```bash
 umask 077
@@ -29,7 +29,15 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py \
   --origin-key /etc/accord-niche/tls/origin.key
 ```
 
-Сценарій завантажує публічні RSA/ECC кореневі CA з офіційних HTTPS-адрес Cloudflare. Перед зміною проксі перевіряє пару cert/key, строк дії, ланцюжок і обидва hostname. Потім копіює пару в окремий каталог `accord-origin/<digest>` спільного TLS-тома Nginx/Certbot; файли ELFAR та попередні пари не перезаписуються. Certbot issuance і HTTP-01 probe у цьому режимі не виконуються. Локальна перевірка TLS використовує явний trust bundle Origin CA із перевіркою hostname; глобальне системне сховище CA не змінюється.
+Сценарій використовує офіційні публічні RSA/ECC кореневі CA, включені до збірки у `deploy/tls/cloudflare-origin-ca.pem`. Завантаження CA із сайту Cloudflare під час встановлення не виконується. Перед зміною проксі перевіряє пару cert/key, строк дії, ланцюжок і обидва hostname. Потім копіює пару в окремий каталог `accord-origin/<digest>` спільного TLS-тома Nginx/Certbot; файли ELFAR та попередні пари не перезаписуються. Certbot issuance і HTTP-01 probe у цьому режимі не виконуються. Локальна перевірка TLS використовує явний trust bundle Origin CA із перевіркою hostname; глобальне системне сховище CA не змінюється.
+
+### Якщо попередній запуск повернув HTTP Error 403
+
+У v1.6.3 запит до сайту документації Cloudflare міг отримати 403 під час завантаження CA. На цьому етапі конфігурація Nginx ще не змінювалася. Із v1.6.4 цей зовнішній запит видалено.
+
+Для виправлення достатньо оновити два файли зі збірки в `/opt/accord-niche`: `scripts/connect_elfar_edge.py` та `deploy/tls/cloudflare-origin-ca.pem` (створіть каталог `deploy/tls`, якщо його немає). Збережіть наявний `.env.domains` і файли `/etc/accord-niche/tls/origin.pem`, `origin.key`. Повторіть ту саму команду з `--origin-cert` та `--origin-key`. Відкат через цю помилку не потрібний.
+
+За потреби можна передати власну локальну копію довірених Cloudflare Origin CA через `--origin-ca /path/to/cloudflare-origin-ca.pem`. Це файл **кореневих публічних CA**, а не ваш серверний `origin.pem` і не приватний ключ. Невідомим CA-файлам довіряти не слід. Без цього аргумента використовується файл зі збірки; системне сховище довіри не змінюється.
 
 Origin CA замінюється вручну після закінчення його строку або відкликання; Certbot renew його не подовжує. Повторний запуск такого встановлення потребує тих самих `--origin-cert`/`--origin-key`, щоб випадково не змінити постачальника сертифіката.
 
