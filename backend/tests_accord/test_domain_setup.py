@@ -213,3 +213,22 @@ def test_default_compose_cannot_publish_the_retired_public_dashboard():
                        ('dashboard', 'dashboard.accordniche.pp.ua')]:
         text = (ROOT / f'deploy/nginx/accord-domain-{name}.conf').read_text()
         assert f'if ($host != {host}) {{ return 444; }}' in text
+
+
+@pytest.mark.parametrize('password,accepted', [('Abc123!', False), ('Abc123!?', True), ('Abc123!?longer', True)])
+def test_system_password_minimum_matches_setup_and_api(project, monkeypatch, password, accepted):
+    path, values = make_config(project)
+    values['DASHBOARD_PASSWORD'] = password
+    path.write_text(setup.serialize(values))
+    from shop.production_security import unsafe_secrets, validate_production_security
+    if accepted:
+        assert setup.main(['--check']) == 0
+        assert 'DASHBOARD_PASSWORD' not in unsafe_secrets(values['JWT_SECRET'], password)
+        validate_production_security(values['PUBLIC_URL'], values['JWT_SECRET'], password)
+        for key, value in values.items(): monkeypatch.setenv(key, value)
+        from shop.config import Settings
+        Settings(_env_file=None).validate_production_security()
+    else:
+        with pytest.raises(SystemExit): setup.main(['--check'])
+        with pytest.raises(RuntimeError, match='DASHBOARD_PASSWORD'):
+            validate_production_security(values['PUBLIC_URL'], values['JWT_SECRET'], password)

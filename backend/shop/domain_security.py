@@ -31,7 +31,7 @@ def validate_domain_environment(values: dict[str, str]) -> None:
         errors.append('DOMAIN_ONLY')
     if values.get('MAIN_DOMAIN_ALIASES', '').strip():
         errors.append('MAIN_DOMAIN_ALIASES')
-    for key, minimum in [('JWT_SECRET', 32), ('DASHBOARD_PASSWORD', 16),
+    for key, minimum in [('JWT_SECRET', 32), ('DASHBOARD_PASSWORD', 8),
                          ('POSTGRES_PASSWORD', 24), ('REDIS_PASSWORD', 24)]:
         value = values.get(key, '')
         if len(value) < minimum or value.lower().startswith(('change', 'your_', 'example', 'test', 'generate_', 'placeholder')):
