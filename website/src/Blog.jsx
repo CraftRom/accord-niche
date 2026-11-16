@@ -19,15 +19,15 @@ export function BlogList({route,go}) {
   const request=useStoreRequest('/api/public/blog?q='+encodeURIComponent(query.get('q') || '')+'&limit=12&offset='+((page-1)*12))
   useEffect(()=>setSearch(query.get('q') || ''),[route])
   useEffect(()=>{const old=document.title;document.title='Блог — ACCORD NICHE';return()=>{document.title=old}},[])
-  function navigate(nextPage=1) {
+  function navigate(nextPage=1,term=query.get('q') || '') {
     const next=new URLSearchParams()
-    if(search.trim())next.set('q',search.trim())
+    if(term.trim())next.set('q',term.trim())
     if(nextPage>1)next.set('page',String(nextPage))
     go('/blog'+(next.size?'?'+next:''))
   }
   const data=request.data
   return <main className="shell blog-page"><header className="blog-heading"><p className="eyebrow">ЖУРНАЛ ACCORD NICHE</p><h1>Блог</h1><p>Про аромати, знайомство з парфумерією та життя магазину.</p></header>
-    <form className="blog-search" role="search" onSubmit={event=>{event.preventDefault();navigate()}}><input aria-label="Пошук у блозі" placeholder="Знайти публікацію…" value={search} maxLength={120} onChange={event=>setSearch(event.target.value)}/><button className="btn outline" type="submit">Знайти</button></form>
+    <form className="blog-search" role="search" onSubmit={event=>{event.preventDefault();navigate(1,search)}}><input aria-label="Пошук у блозі" placeholder="Знайти публікацію…" value={search} maxLength={120} onChange={event=>setSearch(event.target.value)}/><button className="btn outline" type="submit">Знайти</button></form>
     <State request={request}>{data?.items.length===0?<div className="blog-state"><h2>{query.get('q')?'Публікацій не знайдено':'Скоро тут з’являться публікації'}</h2><p>{query.get('q')?'Спробуй інший пошуковий запит.':'Нові матеріали редакції будуть доступні на цій сторінці.'}</p></div>:<div className="blog-grid">{data?.items.map(post=><article className="blog-card" key={post.id}><button className="blog-card-link" onClick={()=>go('/blog/'+encodeURIComponent(post.slug))}>{post.cover_url && <img src={post.cover_url} alt="" loading="lazy" referrerPolicy="no-referrer"/>}<div className="blog-card-content"><p className="blog-meta">{date(post.published_at)} · {post.reading_minutes} хв читання</p><h2>{post.title}</h2><p>{post.excerpt}</p><span>Читати →</span></div></button><p className="blog-card-footer">{post.author_name} · Коментарів: {post.comment_count}</p></article>)}</div>}</State>
     {data?.total>12 && <nav className="catalog-pagination" aria-label="Сторінки блогу"><button className="btn outline" disabled={page===1} onClick={()=>navigate(page-1)}>← Назад</button><span>{page} / {Math.ceil(data.total/12)}</span><button className="btn outline" disabled={page*12>=data.total} onClick={()=>navigate(page+1)}>Далі →</button></nav>}
   </main>

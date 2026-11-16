@@ -173,20 +173,29 @@ export function ProfilePage({shop,go}) {
   const [newName,setNewName]=useState('')
   const [cancelling,setCancelling]=useState(null)
   const generation=useRef(0)
+  const pagination=useRef(null)
+  const [historyLoaded,setHistoryLoaded]=useState(false)
+  useEffect(()=>()=>{generation.current++;pagination.current=null},[])
   const [saving,setSaving]=useState(false)
   const refreshOrders=async()=>{
     const version=++generation.current
+    pagination.current=null;setMoreLoading(false)
     setLoading(true);setError('')
     await Promise.all([shop.request('/orders?limit=30&offset=0'),shop.request('/profile')])
-      .then(([result,data])=>{if(version===generation.current){setOrders(result.items||[]);setHasMore(Boolean(result.has_more));setProfile(data)}})
+      .then(([result,data])=>{if(version===generation.current){setOrders(result.items||[]);setHasMore(Boolean(result.has_more));setProfile(data);setHistoryLoaded(true)}})
       .catch(e=>{if(version===generation.current)setError(e.message)}).finally(()=>{if(version===generation.current)setLoading(false)})
   }
   const loadMore=async()=>{
-    if(moreLoading || !hasMore)return
-    setMoreLoading(true)
+    if(loading || pagination.current || !hasMore)return
+    const token={version:generation.current}
+    pagination.current=token;setMoreLoading(true);setError('')
+    const current=()=>pagination.current===token && generation.current===token.version
     try{const result=await shop.request(`/orders?limit=30&offset=${orders.length}`)
-      setOrders(prev=>[...new Map([...prev,...(result.items||[])].map(order=>[order.id,order])).values()]);setHasMore(Boolean(result.has_more))}
-    catch(e){setError(e.message)}finally{setMoreLoading(false)}
+      if(current()){
+        setOrders(prev=>[...new Map([...prev,...(result.items||[])].map(order=>[order.id,order])).values()]);setHasMore(Boolean(result.has_more))
+      }
+    }catch(e){if(current())setError(e.message)}
+    finally{if(current()){pagination.current=null;setMoreLoading(false)}}
   }
   useEffect(()=>{if(shop.account.has_session)refreshOrders();else setLoading(false)},[shop.account.has_session,shop.account.signed_in,shop.account.telegram_linked])
   const save=async()=>{setSaving(true);setError('');try{await shop.request('/profile','PATCH',{display_name:newName});await shop.refresh();setNewName('')}catch(e){setError(e.message)}finally{setSaving(false)}}
@@ -219,7 +228,7 @@ export function ProfilePage({shop,go}) {
     </section>}
     <section className="orders-section"><div className="section-row"><h2>Історія покупок</h2><button className="text-muted-button" onClick={refreshOrders} disabled={!shop.account.has_session || loading}>Оновити</button></div>
       {error && <p className="shop-error" role="alert">{error}</p>}
-      {shop.account.has_session ? <><OrderList orders={orders} loading={loading} cancelOrder={cancelOrder} cancelling={cancelling} />{hasMore && !loading && <button className="btn outline" disabled={moreLoading} onClick={loadMore}>{moreLoading?'ЗАВАНТАЖУЄМО…':'ПОКАЗАТИ БІЛЬШЕ ЗАМОВЛЕНЬ'}</button>}</> : <div className="shop-empty">Після першого замовлення історія зʼявиться тут. Для збереження між пристроями увійди через Google.</div>}
+      {shop.account.has_session ? <>{(loading || historyLoaded) && <OrderList orders={orders} loading={loading} cancelOrder={cancelOrder} cancelling={cancelling} />}{hasMore && !loading && <button className="btn outline" disabled={moreLoading} onClick={loadMore}>{moreLoading?'ЗАВАНТАЖУЄМО…':'ПОКАЗАТИ БІЛЬШЕ ЗАМОВЛЕНЬ'}</button>}</> : <div className="shop-empty">Після першого замовлення історія зʼявиться тут. Для збереження між пристроями увійди через Google.</div>}
     </section><button className="btn outline" onClick={()=>go('/catalog')}>ПРОДОВЖИТИ ПОКУПКИ</button>
   </main>
 }

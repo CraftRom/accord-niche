@@ -119,3 +119,19 @@ test('historical slug resolves to current address and article metadata',async()=
     assert.equal(app.document.querySelector('meta[name="description"]').content,article.excerpt)
   }finally{app.close()}
 })
+
+test('blog pagination keeps the applied search until the search form is submitted',async()=>{
+ const app=mount({path:'/blog?q=аромат'})
+ try{
+  await waitFor(()=>app.document.querySelector('.blog-card'))
+  const field=app.document.querySelector('[aria-label="Пошук у блозі"]')
+  Object.getOwnPropertyDescriptor(app.window.HTMLInputElement.prototype,'value').set.call(field,'чернетка запиту')
+  field.dispatchEvent(new app.window.Event('input',{bubbles:true}))
+  await new Promise(resolve=>setTimeout(resolve,20))
+  button(app.document,'Далі →').click()
+  await waitFor(()=>app.window.location.search.includes('page=2'))
+  assert.equal(new URLSearchParams(app.window.location.search).get('q'),'аромат')
+  await waitFor(()=>app.calls.some(call=>call.url.pathname==='/api/public/blog' && call.url.searchParams.get('offset')==='12'))
+  assert.equal(app.calls.filter(call=>call.url.pathname==='/api/public/blog').at(-1).url.searchParams.get('q'),'аромат')
+ }finally{app.close()}
+})
