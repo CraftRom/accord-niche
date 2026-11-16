@@ -65,9 +65,9 @@ ADMIN_FIELDS = frozenset({
 ROLE_PERMISSIONS = {
     OperatorRole.MANAGER: frozenset({'sales.manage', 'customers.manage', 'support.manage'}),
     OperatorRole.ADMIN: frozenset({'sales.manage', 'customers.manage', 'support.manage',
-                                   'settings.manage', 'modules.manage', 'operators.manage'}),
+                                   'blog.manage', 'settings.manage', 'modules.manage', 'operators.manage'}),
     OperatorRole.SYSADMIN: frozenset({'sales.manage', 'customers.manage', 'support.manage',
-                                      'settings.manage', 'modules.manage', 'operators.manage', 'system.manage'}),
+                                      'blog.manage', 'settings.manage', 'modules.manage', 'operators.manage', 'system.manage'}),
 }
 
 

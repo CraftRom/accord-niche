@@ -205,7 +205,7 @@ async def remove(name: str, who: Principal = Depends(require_staff), repo: Repos
         raise HTTPException(404, "Файл не знайдено")
     references = await repo.media_references(_public_url(name))
     if any(references.values()):
-        raise HTTPException(409, 'Зображення використовується в товарах або розсилках. Спочатку приберіть його з цих записів')
+        raise HTTPException(409, 'Зображення використовується в товарах, розсилках або блозі. Спочатку приберіть його з цих записів')
 
     target.unlink()
     return None

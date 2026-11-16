@@ -18,7 +18,8 @@ from urllib.parse import urlsplit
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import delete, select, update
 
 from api.routers.shop import CheckoutIn, _orders_payload
@@ -31,6 +32,7 @@ from shop.services import shop_service as svc
 from shop.services import novaposhta as np
 from shop.services.shop_settings import get_shop_settings
 from shop.services.website_identity import _owned_user_ids, _order_time, attach_guest_identity
+from shop.services.attribution import clean_attribution
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -157,6 +159,7 @@ def _display(account):
         return {'signed_in': False, 'has_session': False}
     return {
         'signed_in': bool(account.google_sub),
+        'account_key': _hash('accord-account:'+str(account.id))[:24],
         'has_session': True,
         'name': account.display_name or '',
         'email': account.email if account.google_sub else None,
@@ -288,8 +291,6 @@ async def _sync_cart(repo, user_id, items):
 @router.post('/checkout/quote')
 async def quote(data: QuoteIn, request: Request, response: Response, repo: Repository = Depends(get_repo)):
     _require_csrf(request)
-    if not data.terms_accepted:
-        raise HTTPException(422, 'Підтвердьте згоду з умовами замовлення')
     account = await _guest_account(request, response, repo)
     user = await repo.get_user(account.user_id)
     await _sync_cart(repo, user.id, data.items)
@@ -298,11 +299,43 @@ async def quote(data: QuoteIn, request: Request, response: Response, repo: Repos
                                      use_bonus=data.use_bonus)
     except svc.CheckoutQuoteError as exc:
         raise HTTPException(409, str(exc)) from exc
-    return q.payload()
+    result = q.payload()
+    result['items'] = [{'product_id':line.product_id,'qty':line.qty,
+                        'name':line.product.name,'unit_price':f'{line.product.price:.2f}',
+                        'line_total':f'{line.line_total:.2f}'} for line in q.lines]
+    return result
 
 
 class WebsiteCheckoutIn(CheckoutIn):
+    # The website must confirm a server-calculated quote and use durable retries.
+    checkout_key: str = Field(min_length=12, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
+    quote_token: str = Field(pattern=r'^[a-f0-9]{64}$')
     terms_accepted: bool = False
+
+    @field_validator('contact_phone')
+    @classmethod
+    def ascii_phone(cls,value):
+        if not value.isascii():
+            raise ValueError('Використовуйте цифри 0–9 у номері телефону')
+        return value
+
+    @model_validator(mode='after')
+    def full_name_fits_database(self):
+        full_name=' '.join(part for part in [self.contact_surname,self.contact_name,self.contact_patronymic] if part)
+        if len(full_name)>255:
+            raise ValueError('Скоротіть ПІБ: загалом не більше 255 символів')
+        return self
+
+
+@router.get('/checkout/status')
+async def checkout_status(request: Request, checkout_key: str = Query(min_length=12,max_length=64,pattern=r'^[A-Za-z0-9_-]+$'),
+                          repo: Repository = Depends(get_repo)):
+    account = await _required_account(request,repo)
+    owned = await _owned_user_ids(repo,account)
+    order = await repo.get_order_by_checkout_key(checkout_key)
+    if order is None or order.user_id not in owned:
+        return {'found':False}
+    return {'found':True,'order_id':order.id,'total':order.total,'payment_method':order.payment_method,'replayed':True}
 
 
 @router.post('/checkout')
@@ -316,7 +349,7 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
     if data.checkout_key:
         existing = await repo.get_order_by_checkout_key(data.checkout_key)
         if existing:
-            if existing.user_id != user.id:
+            if existing.user_id not in await _owned_user_ids(repo,account):
                 raise HTTPException(409, 'Ключ замовлення вже використано')
             return {'order_id': existing.id, 'total': existing.total,
                     'payment_method': existing.payment_method, 'replayed': True}
@@ -325,6 +358,10 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
         raise HTTPException(422, 'Курʼєрська доставка недоступна')
     if data.delivery_method in (None, 'warehouse') and not data.address.strip():
         raise HTTPException(422, 'Вкажіть номер та адресу відділення або поштомата')
+    if data.delivery_method == 'courier' and data.delivery_warehouse_ref:
+        raise HTTPException(422, 'Для курʼєрської доставки не передавайте код відділення')
+    if data.delivery_warehouse_ref and not data.delivery_city_ref:
+        raise HTTPException(422, 'Для вибраного відділення потрібен населений пункт із довідника')
     # Website attribution must be distinct from Telegram analytics.
     order, error = await svc.create_order(
         repo, user, contact_surname=data.contact_surname, contact_name=data.contact_name,
@@ -334,11 +371,12 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
         delivery_city_ref=data.delivery_city_ref, delivery_warehouse_ref=data.delivery_warehouse_ref,
         promo_code=data.promo_code, use_bonus=data.use_bonus, comment=data.comment,
         checkout_key=data.checkout_key, expected_quote=data.quote_token,
-        attribution={'source':'accord_website','medium':'website', 'campaign':'organic'},
+        attribution={**clean_attribution(data.attribution.model_dump() if data.attribution else
+            {'source':'accord_website','medium':'website'}),'channel':'accord_website'},
     )
     if error or order is None:
-        raise HTTPException(409 if error == svc.CHECKOUT_CHANGED else 400,
-                            error or 'Не вдалося оформити замовлення')
+        return JSONResponse(status_code=409,content={
+            'detail':error or 'Не вдалося оформити замовлення','code':'checkout_changed'})
     # Same manager notification pipeline as Mini App. Dashboard always gets a
     # durable event, even with no configured Telegram token/process.
     if not getattr(order, 'checkout_replayed', False):
@@ -380,7 +418,9 @@ async def checkout_defaults(request: Request, repo: Repository = Depends(get_rep
     row = await repo.s.scalar(select(m.Order).where(m.Order.user_id.in_(ids))
                               .order_by(m.Order.created_at.desc()).limit(1))
     if not row:
-        return {'contact_name':account.display_name or '', 'contact_phone':account.verified_phone or ''}
+        # Account display names may be nicknames or full Google names. They
+        # are not a verified first name for a shipment recipient.
+        return {'contact_name':'', 'contact_phone':account.verified_phone or ''}
     # Shipping fields from the customer's own last order, not product/CRM data.
     return {'contact_surname': row.contact_surname or '',
             'contact_name': ((row.contact_name or '').removeprefix((row.contact_surname or '') + ' ').removesuffix(' ' + (row.contact_patronymic or '')) if row.contact_surname else row.contact_name or account.display_name or ''),
@@ -439,6 +479,11 @@ async def profile(request: Request, repo: Repository = Depends(get_repo)):
 
 class ProfileIn(BaseModel):
     display_name: str = Field(min_length=2, max_length=100)
+
+    @field_validator('display_name',mode='before')
+    @classmethod
+    def clean_name(cls,value):
+        return value.strip() if isinstance(value,str) else value
 
 
 @router.patch('/profile')

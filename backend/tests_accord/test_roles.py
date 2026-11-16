@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from api import auth
 from api.browser_sessions import profile
-from api.routers import settings as settings_api, operators, landing_pages
+from api.routers import settings as settings_api, operators, landing_pages, blog
 from api.schemas import ShopSettingsIn
 from shop.access import MODULE_FIELDS, INFRA_FIELDS
 from shop.config import settings
@@ -62,6 +62,7 @@ async def client(monkeypatch):
     app.include_router(settings_api.router, prefix='/api/settings')
     app.include_router(operators.router, prefix='/api/operators')
     app.include_router(landing_pages.router, prefix='/api/landing-pages')
+    app.include_router(blog.admin, prefix='/api/blog')
     app.dependency_overrides[get_repo] = lambda: repo
     from shop.db import get_session
     app.dependency_overrides[get_session] = lambda: None
@@ -88,6 +89,18 @@ async def test_manager_cannot_read_settings_even_with_ui_permission_forgery(clie
     assert result.status_code == 403
     assert (await client.http.put('/api/settings', json={}, headers=headers(Role.MANAGER))).status_code == 403
     assert (await client.http.get('/api/operators', headers=headers(Role.MANAGER))).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_manager_cannot_manage_blog_with_a_valid_staff_token(client):
+    for method,path in [('GET','/api/blog/posts'),('GET','/api/blog/posts/1'),('POST','/api/blog/posts'),
+                        ('PUT','/api/blog/posts/1'),('GET','/api/blog/comments'),
+                        ('POST','/api/blog/comments/1/moderate'),('POST','/api/blog/posts/1/reply')]:
+        result=await client.http.request(method,path,headers=headers(Role.MANAGER),json={})
+        assert result.status_code==403,(method,path,result.text)
+    for role in [Role.ADMIN,Role.SYSADMIN]:
+        result=await client.http.post('/api/blog/posts',headers=headers(role),json={})
+        assert result.status_code==422
 
 
 @pytest.mark.asyncio

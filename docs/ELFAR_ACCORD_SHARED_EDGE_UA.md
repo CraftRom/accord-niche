@@ -7,6 +7,8 @@
 - Certbot: `deploy-certbot-1`, спільні з Nginx томи `/etc/letsencrypt` і `/var/www/certbot`.
 - ACCORD: `/opt/accord-niche`, `COMPOSE_PROJECT_NAME='accord-niche'`.
 
+Використовуйте v1.8.1 або новішу: frontend-сервіси ACCORD мають імена `accord-website`, `accord-miniapp`, `accord-dashboard`. Це запобігає конфлікту з неявними Docker DNS aliases ELFAR. При оновленні `domains.sh` одноразово замінює тільки старі frontend-контейнери ACCORD, зберігаючи дані; подробиці — [v1.8.1](../ACCORD_NICHE_v1.8.1_UA.md).
+
 ## Простий запуск із наявним Origin CA
 
 Оновіть файли проєкту зі збірки v1.7.0, збережіть `.env.domains` і `/etc/accord-niche/tls`. Від root:
@@ -91,7 +93,7 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py --email YOUR_EMAIL
 ## Дії сценарію
 
 1. Перевіряє live-мітки Compose, шляхи та спільні томи Nginx/Certbot. Відмовляється працювати з іншим namespace, невідомою структурою YAML або стороннім конфігом ACCORD.
-2. Створює зовнішню мережу `accord-shared-edge` і піднімає ACCORD через `deploy/domains.sh --docker-edge up -d --build`. До цієї мережі зі сторони ACCORD підключаються тільки website, miniapp і dashboard.
+2. Створює зовнішню мережу `accord-shared-edge` і піднімає ACCORD через `deploy/domains.sh --docker-edge up -d --build`. До цієї мережі зі сторони ACCORD підключаються тільки accord-website, accord-miniapp і accord-dashboard.
 3. Зберігає копію Compose ELFAR, додає до **його nginx** спільну мережу та mount окремого `nginx/accord-main.conf`. Нові налаштування постійні й застосовуються стандартним деплоєм ELFAR.
 4. Перевіряє Compose та Nginx у helper-контейнері без публікації портів. Для застосування mounts/networks коротко перестворює **тільки nginx і promo-controller** ELFAR. Controller перестворюється разом із проксі, бо ділить із ним PID namespace. Використовує `--no-deps --no-build --pull never`; інші сервіси ELFAR командою не вибираються.
 5. Тимчасовий HTTP-vhost ACCORD віддає тільки ACME challenge, решта HTTP-запитів отримує 404.

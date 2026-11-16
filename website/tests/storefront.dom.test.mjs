@@ -19,10 +19,10 @@ async function waitFor(check) {
   while (Date.now()<until) {if (check()) return; await new Promise(resolve => setTimeout(resolve,15))}
   assert.ok(check(), 'DOM state did not become ready')
 }
-function mount({empty=false, saved={}, failCart=false, failHome=false, path='/'}={}) {
+function mount({empty=false, saved={}, failCart=false, failHome=false, failDetailAfterLoad=false, path='/'}={}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',{url:'https://accordniche.pp.ua'+path,runScripts:'outside-only',pretendToBeVisual:true})
   const window=dom.window
-  let homeFailed=false
+  let homeFailed=false,detailReads=0
   window.scrollTo=()=>{}
   window.localStorage.setItem('accord:niche:cart',JSON.stringify(saved))
   window.fetch=async (input) => {
@@ -33,7 +33,7 @@ function mount({empty=false, saved={}, failCart=false, failHome=false, path='/'}
       if(failHome&&!homeFailed){homeFailed=true;return response({},503)}
       return response(empty?{...home,hits:[],selection:[],total:0,available:0}:home)
     }
-    if(url.pathname==='/api/public/aromas/42') return response({item:aroma,related:[other]})
+    if(['/api/public/aromas/42','/api/public/aromas/43'].includes(url.pathname)){detailReads++;return failDetailAfterLoad&&detailReads>1?response({},404):response({item:aroma,related:[other]})}
     if(url.pathname==='/api/public/products') return failCart?response({},503):response(products.filter(p=>url.searchParams.get('ids').split(',').includes(String(p.id))))
     if(url.pathname==='/api/public/aromas') {
       const items=empty?[]:[aroma,other].filter(g=>!url.searchParams.get('brand')||g.brand===url.searchParams.get('brand'))
@@ -110,4 +110,16 @@ test('catalog filters request the server and retain a shareable URL',async()=>{
   assert.equal(app.document.querySelector('.product-card h3').textContent,'Other Real Aroma')
   assert.equal(app.window.location.search,'?brand=OTHER')
  } finally {app.close()}
+})
+
+
+test('a removed product does not remain buyable after a definitive not-found refresh',async()=>{
+ const app=mount({path:'/aroma/42',failDetailAfterLoad:true})
+ try{
+  await waitFor(()=>button(app.document,'ДОДАТИ В КОШИК'))
+  app.document.dispatchEvent(new app.window.Event('visibilitychange'))
+  await waitFor(()=>app.document.querySelector('[role="alert"] h2')?.textContent==='Товар недоступний')
+  assert.equal(button(app.document,'ДОДАТИ В КОШИК'),undefined)
+  assert.equal(app.document.querySelector('.detail-buy'),null)
+ }finally{app.close()}
 })

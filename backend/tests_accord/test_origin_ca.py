@@ -118,7 +118,13 @@ def test_origin_workflow_skips_acme_and_verifies_with_explicit_ca(tmp_path, cert
             checked.append(host)
         return b'elfar-original' if host == 'elfar.pp.ua' else b'origin'
     monkeypatch.setattr(edge, 'peer_certificate', peer)
-    monkeypatch.setattr(edge, 'check_local_http', lambda host, **kwargs: checked.append('HTTP ' + host) if kwargs.get('cafile') else pytest.fail('missing Origin CA trust'))
+    def check_http(host, **kwargs):
+        if host != 'elfar.pp.ua':
+            assert kwargs.get('cafile'), 'missing Origin CA trust'
+        else:
+            assert not kwargs.get('cafile'), 'ELFAR must use its original trust chain'
+        checked.append('HTTP ' + host)
+    monkeypatch.setattr(edge, 'check_local_http', check_http)
     monkeypatch.setattr(edge.subprocess, 'run', lambda *args, **kw: subprocess.CompletedProcess(args[0], 0))
     calls = []
     monkeypatch.setattr(edge, 'run', lambda args, **kw: calls.append(args) or '')

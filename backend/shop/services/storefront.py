@@ -56,6 +56,7 @@ def group_catalog(products, sales, serialize):
         group['variants'].sort(key=lambda p: (p.stock <= 0, p.volume_ml or 100000, p.price, p.id))
         buyable = [p for p in group['variants'] if p.stock > 0]
         prices = buyable or group['variants']
+        group['default_product_id'] = min(prices, key=lambda p:(p.price,p.id)).id
         group['stock'] = sum(max(0, p.stock) for p in group['variants'])
         group['min_price'] = min(p.price for p in prices)
         units = [p.price / p.volume_ml for p in prices if p.volume_ml and p.volume_ml > 0]

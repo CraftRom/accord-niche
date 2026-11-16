@@ -1,4 +1,5 @@
 import { canAccessPage } from './roles'
+import {navigationFor} from './commerce'
 import { Component, Suspense, lazy, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
@@ -50,6 +51,7 @@ const Support = page(() => import('./pages/Support'))
 const Catalog = page(() => import('./pages/Catalog'))
 const CatalogProduct = page(() => import('./pages/CatalogProduct'))
 const Customers = page(() => import('./pages/Customers'))
+const Blog = page(() => import('./pages/Blog'))
 const Promos = page(() => import('./pages/Promos'))
 const LandingPages = page(() => import('./pages/LandingPages'))
 const Broadcasts = page(() => import('./pages/Broadcasts'))
@@ -127,21 +129,6 @@ const PageContent = memo(function PageContent({ children }) {
   )
 })
 
-const NAV = [
-  { to: '/', label: 'Огляд', end: true },
-  { to: '/orders', label: 'Замовлення', badge: 'orders' },
-  { to: '/support', label: 'Підтримка', badge: 'support' },
-  { to: '/catalog', label: 'Каталог' },
-  { to: '/customers', label: 'Клієнти' },
-  { to: '/promos', label: 'Промокоди' },
-  { to: '/landing-pages', label: 'Промо-сторінки' },
-  { to: '/broadcasts', label: 'Розсилки' },
-  { to: '/operators', label: 'Команда та доступ', adminOnly: true },
-  { to: '/logs', label: 'Журнал', sysadminOnly: true },
-  { to: '/backups', label: 'Копії', sysadminOnly: true },
-  { to: '/settings', label: 'Налаштування', adminOnly: true },
-  { to: '/instructions', label: 'Інструкції' },
-]
 
 function Shell({ children }) {
   const navigate = useNavigate()
@@ -218,7 +205,7 @@ function Shell({ children }) {
         <div className="sidebar-head">
           <div className="brand" title="Панель магазину">
             <span className="dot" />
-            <span className="brand-label">Панель магазину</span>
+            <span className="brand-label">ACCORD NICHE</span>
           </div>
           <NotificationCenter />
           <button
@@ -233,18 +220,8 @@ function Shell({ children }) {
             <span>{mobileNavOpen ? 'Закрити' : 'Меню'}</span>
           </button>
         </div>
-        <nav className="nav" id="main-navigation" aria-label="Основна навігація">
-          {NAV.filter((item) => {
-            return canAccessPage(session.role, item.to)
-          }).map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end}>
-              {item.label}
-              {item.badge === 'orders' && badges.orders > 0 && <span className="badge">{badges.orders}</span>}
-              {item.badge === 'support' && badges.support > 0 && (
-                <span className="badge">{badges.support}</span>
-              )}
-            </NavLink>
-          ))}
+        <nav className="nav commerce-navigation" id="main-navigation" aria-label="Основна навігація">
+          {navigationFor(session.role).map(group=><section className="nav-group" key={group.title} aria-label={group.title}><h2>{group.title}</h2>{group.items.map(item=><NavLink key={item.to} to={item.to} end={item.end}>{item.label}{item.badge && badges[item.badge]>0 && <span className="badge">{badges[item.badge]}</span>}</NavLink>)}</section>)}
         </nav>
         <div className="mobile-session">
           <div>
@@ -317,6 +294,7 @@ export default function App() {
         <Route path="/catalog" element={<Protected><Catalog /></Protected>} />
         <Route path="/catalog/products/:id" element={<Protected><CatalogProduct /></Protected>} />
         <Route path="/customers" element={<Protected><Customers /></Protected>} />
+        <Route path="/blog" element={<Protected><Blog /></Protected>} />
         <Route path="/promos" element={<Protected><Promos /></Protected>} />
         <Route path="/landing-pages" element={<Protected><LandingPages /></Protected>} />
         <Route path="/broadcasts" element={<Protected><Broadcasts /></Protected>} />

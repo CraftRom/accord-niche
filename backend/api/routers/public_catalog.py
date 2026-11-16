@@ -165,6 +165,7 @@ async def photo(product_id: int, repo: Repository = Depends(get_repo)):
 
 class PublicAroma(BaseModel):
     id: int
+    default_product_id: int
     key: str
     name: str
     brand: str
@@ -243,6 +244,20 @@ async def aromas(
         (kind != 'sets' or g['is_set']) and (kind != 'new' or g['is_new']) and
         (kind != 'hits' or g['bestseller_rank'] is not None) and
         (kind != 'recommended' or g['is_featured'])]
+    if volume:
+        # A 10 ml filter must not advertise the unrelated 2 ml starting price.
+        # Copy groups: snapshot is cached and also serves the unfiltered store.
+        selected=[]
+        for group in groups:
+            variants=[p for p in group['variants'] if p.volume_ml == volume]
+            buyable=[p for p in variants if p.stock > 0]
+            priced=buyable or variants
+            choice=min(priced,key=lambda p:(p.price,p.id))
+            selected.append({**group,'default_product_id':choice.id,'variants':variants,
+                'stock':sum(max(0,p.stock) for p in variants),
+                'min_price':choice.price,'price_per_ml':choice.price/volume,'volumes':[volume],
+                'image':next((p.photo_url or p.photo_endpoint for p in priced if p.photo_url or p.photo_endpoint),group['image'])})
+        groups=selected
     groups = sorted_groups(groups, 'popular' if kind == 'hits' else sort)
     categories = {c['id']: c for g in all_groups for c in g['categories']}
     response.headers['Cache-Control'] = 'no-store'
@@ -277,7 +292,7 @@ async def cart_products(ids: str = Query('', max_length=600), repo: Repository =
     if not re.fullmatch(r'[1-9][0-9]{0,18}(?:,[1-9][0-9]{0,18}){0,29}', ids):
         raise HTTPException(422, 'Дозволено до 30 ідентифікаторів товарів')
     selected = {int(value) for value in ids.split(',')}
-    if max(selected) > 2**63 - 1:
+    if max(selected) > 2**31 - 1:
         raise HTTPException(422, 'Некоректний ідентифікатор товару')
     products = await repo.products_by_ids(list(selected))
     return [public_product(p) for p in products if p.is_active and p.price > 0]

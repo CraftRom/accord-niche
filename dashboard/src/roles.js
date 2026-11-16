@@ -11,7 +11,7 @@ export function canAccessPage(role, pathname) {
   if (!Object.hasOwn(ROLE_TITLES, role)) return false
   try { pathname = decodeURIComponent(String(pathname)).toLowerCase() } catch { return false }
   if (/^\/(logs|backups)(\/|$)/.test(pathname)) return role === 'admin'
-  if (/^\/(settings|operators)(\/|$)/.test(pathname)) return isAdministrativeRole(role)
+  if (/^\/(settings|operators|blog)(\/|$)/.test(pathname)) return isAdministrativeRole(role)
   return true
 }
 export function filterSettingGroups(groups, allowedKeys = []) {

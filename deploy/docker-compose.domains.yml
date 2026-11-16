@@ -98,7 +98,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
 
-  website:
+  accord-website:
+    image: ${COMPOSE_PROJECT_NAME:-accord-niche-test}-website
     build:
       context: ../website
       args:
@@ -120,7 +121,8 @@ services:
     cap_drop: ["ALL"]
     cap_add: ["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "NET_BIND_SERVICE", "KILL"]
 
-  dashboard:
+  accord-dashboard:
+    image: ${COMPOSE_PROJECT_NAME:-accord-niche-test}-dashboard
     build: ../dashboard
     restart: unless-stopped
     volumes:
@@ -139,7 +141,8 @@ services:
     cap_drop: ["ALL"]
     cap_add: ["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "NET_BIND_SERVICE", "KILL"]
 
-  miniapp:
+  accord-miniapp:
+    image: ${COMPOSE_PROJECT_NAME:-accord-niche-test}-miniapp
     build:
       context: ../miniapp
       args:

@@ -7,7 +7,7 @@ const products=[
  {id:3,brand:'NASOMATTO',name:'Black Afgano',gender:'male',volume_ml:null,price:300,stock:0},
 ]
 test('site cart links include SKUs+absolute quantities only',()=>{
- const cart={1:2,2:1,3:3};assert.equal(cartStartParam(cart,products),'cart_1x2-2x1');assert.equal(telegramCheckoutUrl('https://t.me/elfarshop_bot/elfar',cart,products),'https://t.me/elfarshop_bot/elfar?startapp=cart_1x2-2x1')
+ const cart={1:2,2:1};assert.equal(cartStartParam(cart,products),'cart_1x2-2x1');assert.equal(telegramCheckoutUrl('https://t.me/elfarshop_bot/elfar',cart,products),'https://t.me/elfarshop_bot/elfar?startapp=cart_1x2-2x1')
 })
 test('invalid cart quantities and untrusted hosts cannot create links',()=>{
  assert.equal(cartStartParam({1:100},products),'');assert.equal(telegramCheckoutUrl('https://evil.example/tg', {1:1},products),'')
@@ -28,4 +28,8 @@ test('website cart is bounded to the server limit of 30 lines',()=>{
  const items=Array.from({length:35},(_,i)=>({id:i+1,stock:1}))
  const cart=Object.fromEntries(items.map(p=>[p.id,1]))
  assert.equal(Object.keys(sanitizeCart(cart,items)).length,30)
+})
+
+test('handoff rejects missing, out-of-stock and excessive lines as a whole',()=>{
+ for(const cart of [{1:1,999:1},{1:1,3:1},{1:6}])assert.equal(cartStartParam(cart,products),'')
 })

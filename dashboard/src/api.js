@@ -210,6 +210,15 @@ async function download(path, filename) {
 }
 
 export const api = {
+  blog: {
+    posts: (params) => request('/blog/posts', {params}),
+    post: (id) => request('/blog/posts/' + id),
+    create: (body) => request('/blog/posts', {method:'POST',body}),
+    update: (id,body) => request('/blog/posts/' + id, {method:'PUT',body}),
+    comments: (params) => request('/blog/comments', {params}),
+    moderate: (id,body) => request('/blog/comments/' + id + '/moderate', {method:'POST',body}),
+    reply: (id,body) => request('/blog/posts/' + id + '/reply', {method:'POST',body}),
+  },
   health: () => request('/health'),
 
 
@@ -274,6 +283,7 @@ export const api = {
   },
 
   orders: {
+    operations: () => request('/orders/operations'),
     list: (params) => request('/orders', { params }),
     get: (id) => request(`/orders/${id}`),
     patch: (id, data) => request(`/orders/${id}`, { method: 'PATCH', body: data }),

@@ -139,7 +139,7 @@ def test_domain_security_is_enforced_at_api_startup(project, monkeypatch):
 
 
 def prepare_wrapper(project):
-    for filename in ['scripts/setup_domains.py', 'backend/shop/domain_security.py', 'deploy/domains.sh']:
+    for filename in ['scripts/setup_domains.py', 'scripts/retire_legacy_frontends.py', 'backend/shop/domain_security.py', 'deploy/domains.sh']:
         path = project / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / filename, path)
@@ -165,11 +165,22 @@ def test_deploy_uses_checked_env_and_clears_shell_overrides(project):
                             env=env, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in (project / 'calls.jsonl').read_text().splitlines()]
-    assert len(calls) == 2
+    assert len(calls) == 5
     assert all(call['project'] is None and call['password'] is None for call in calls)
     assert calls[0]['args'][-2:] == ['config', '--quiet']
-    assert calls[1]['args'][-3:] == ['up', '-d', '--build']
+    assert calls[-1]['args'][-3:] == ['up', '-d', '--build']
     assert 'shell-override' not in result.stdout + result.stderr
+
+
+def test_frontend_migration_runs_for_profile_up_too(project):
+    make_config(project)
+    env = prepare_wrapper(project)
+    args = ['--profile', 'workers', 'up', '-d', '--build']
+    result = subprocess.run(['bash', str(project / 'deploy/domains.sh'), *args], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in (project / 'calls.jsonl').read_text().splitlines()]
+    assert sum(call['args'][:2] == ['ps','-aq'] for call in calls) == 3
+    assert calls[-1]['args'][-5:] == args
 
 
 @pytest.mark.parametrize('args', [['down', '-v'], ['down', '--volumes=true'], ['down', '-vt0'], ['--project-name=wrong', 'up'], ['-pwrong', 'up'], ['--file=other.yml', 'up']])

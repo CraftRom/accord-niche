@@ -277,6 +277,7 @@ def main(argv=None):
     restart = compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', '--force-recreate', 'nginx', 'promo-controller']
     changed = False
     live_changed = False
+    recreated = False
     try:
         if subprocess.run(['docker', 'network', 'inspect', NETWORK], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
             run(['docker', 'network', 'create', NETWORK])
@@ -289,6 +290,7 @@ def main(argv=None):
         run(compose + ['run', '--rm', '--no-deps', '--pull', 'never', 'nginx', 'nginx', '-t'], cwd=elfar)
         if patched != original or not old_edge:
             live_changed = True
+            recreated = True
             run(restart, cwd=elfar)
             for attempt in range(15):
                 try:
@@ -312,6 +314,8 @@ def main(argv=None):
                 if attempt == 7: raise
                 time.sleep(1)
         for host in HOSTS: check_local_http(host, **verification)
+        # Certificate equality alone cannot detect a wrong Docker upstream.
+        check_local_http('elfar.pp.ua')
         after = hashlib.sha256(peer_certificate('elfar.pp.ua', verified=False)).hexdigest()
         if before != after:
             raise RuntimeError('Сертифікат ELFAR змінився під час операції; потрібна перевірка')
@@ -328,7 +332,12 @@ def main(argv=None):
             else: edge_path.write_text(old_edge)
             if live_changed:
                 print('Відновлюю попередню конфігурацію проксі ELFAR.', file=sys.stderr)
-                try: run(restart, cwd=elfar)
+                try:
+                    if recreated:
+                        run(restart, cwd=elfar)
+                    else:
+                        run(['docker', 'exec', 'deploy-nginx-1', 'nginx', '-t'])
+                        run(['docker', 'exec', 'deploy-nginx-1', 'nginx', '-s', 'reload'])
                 except Exception: print('Автоматичний відкат не завершився; резервна копія: ' + str(backup), file=sys.stderr)
         raise
 

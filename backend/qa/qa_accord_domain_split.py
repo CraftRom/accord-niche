@@ -53,7 +53,7 @@ def test_split_compose_never_publishes_backend_or_database():
     compose=yaml.safe_load((ROOT/'deploy/docker-compose.domains.yml').read_text())
     for name in ('api','db','redis','bot'):
         assert 'ports' not in compose['services'][name]
-    for name in ('website','miniapp','dashboard'):
+    for name in ('accord-website','accord-miniapp','accord-dashboard'):
         assert all(p.startswith('127.0.0.1:') for p in compose['services'][name]['ports'])
     assert compose['services']['bot']['profiles'] == ['bot']
 
@@ -71,12 +71,18 @@ def test_no_public_admin_api_in_storefront_configs():
     ('accordniche.pp.ua','/api/auth/browser-login',404),
     ('accordniche.pp.ua','/api/public/catalog',200),
     ('accordniche.pp.ua','/api/web/session',200),
+    ('accordniche.pp.ua','/api/public/blog/example',200),
+    ('accordniche.pp.ua','/api/web/blog/posts/1/mine',200),
+    ('accordniche.pp.ua','/api/blog/posts',404),
     ('shop.accordniche.pp.ua','/api/orders',404),
+    ('shop.accordniche.pp.ua','/api/blog/posts',404),
     ('shop.accordniche.pp.ua','/api/shop/config',200),
     ('shop.accordniche.pp.ua','/api/telegram/abcdef/12345678',200),
     ('dashboard.accordniche.pp.ua','/api/web/profile',404),
     ('dashboard.accordniche.pp.ua','/api/auth/login',404),
     ('dashboard.accordniche.pp.ua','/api/orders',200),
+    ('dashboard.accordniche.pp.ua','/api/blog/posts',200),
+    ('dashboard.accordniche.pp.ua','/api/web/blog/posts/1/mine',404),
     ('localhost','/api/health',200),
     ('localhost','/api/auth/browser-login',404),
     ('203.0.113.10','/api/orders',404),

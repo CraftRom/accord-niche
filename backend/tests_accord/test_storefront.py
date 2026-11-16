@@ -45,6 +45,7 @@ def test_group_price_uses_buyable_variants_and_preserves_real_identity():
     aroma = next(g for g in groups if g['name'] == 'Aroma')
     assert len(aroma['variants']) == 2
     assert aroma['min_price'] == 100 and aroma['price_per_ml'] == 20
+    assert aroma['id']==1 and aroma['default_product_id']==2
     assert aroma['bestseller_rank'] == 1 and aroma['is_new']
     assert set(p.id for g in groups for p in g['variants']) == {1, 2, 3}
 
@@ -114,6 +115,28 @@ async def test_empty_database_has_no_fabricated_products_brands_or_hits(client):
     catalog = (await client.get('/api/public/aromas')).json()
     assert catalog['items'] == [] and catalog['brands'] == []
     assert (await client.get('/api/public/aromas/1')).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_volume_filter_uses_selected_sku_prices_stock_and_does_not_mutate_cached_catalog(client):
+    client,session,_=client
+    session.add_all([
+        m.Product(id=1,sku='FILTER-1',brand='A',name='First 2 мл',volume_ml=2,price=10,stock=4),
+        m.Product(id=2,sku='FILTER-2',brand='A',name='First 10 мл',volume_ml=10,price=200,stock=0),
+        m.Product(id=3,sku='FILTER-3',brand='B',name='Second 10 мл',volume_ml=10,price=150,stock=3),
+    ])
+    await session.commit()
+    filtered=(await client.get('/api/public/aromas?volume=10&sort=price_asc')).json()
+    assert [item['name'] for item in filtered['items']]==['Second','First']
+    first=next(item for item in filtered['items'] if item['name']=='First')
+    assert first['min_price']=='200.00' and first['stock']==0 and first['default_product_id']==2
+    assert first['volumes']==[10] and [p['id'] for p in first['variants']]==[2]
+    available=(await client.get('/api/public/aromas?volume=10&available=true')).json()
+    assert [item['name'] for item in available['items']]==['Second']
+    regular=(await client.get('/api/public/aromas')).json()
+    original=next(item for item in regular['items'] if item['name']=='First')
+    assert original['min_price']=='10.00' and original['stock']==4 and len(original['variants'])==2
+    assert (await client.get('/api/public/products?ids=2147483648')).status_code==422
 
 
 @pytest.mark.asyncio

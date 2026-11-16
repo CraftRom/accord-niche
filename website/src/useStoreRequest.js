@@ -15,11 +15,16 @@ export function useStoreRequest(url, interval = 60000) {
       setState(old => ({url, data: old.url === url ? old.data : null, loading: true, error: ''}))
       try {
         const response = await fetch(url, {signal: controller.signal, cache: 'no-store'})
-        if (!response.ok) throw new Error(response.status === 404 ? 'Товар більше недоступний.' : 'Не вдалося отримати дані магазину. Спробуйте ще раз.')
+        if(!response.ok){
+          const error=new Error([404,410].includes(response.status)?'Товар більше недоступний.':response.status===422?'Некоректні параметри відбору. Скиньте фільтри та повторіть пошук.':'Не вдалося отримати дані магазину. Спробуйте ще раз.')
+          error.status=response.status
+          throw error
+        }
         const data = await response.json()
         if (!disposed) setState({url, data, loading: false, error: ''})
       } catch (error) {
-        if (!disposed) setState(old => ({...old, url, loading: false, error: error.name === 'AbortError' ? 'Сервер відповідає надто довго. Спробуйте ще раз.' : error.message}))
+        if (!disposed) setState(old => ({...old,url,data:[404,410].includes(error.status)?null:old.data,
+          loading:false,errorStatus:error.status || 0,error:error.name==='AbortError'?'Сервер відповідає надто довго. Спробуйте ще раз.':error.message}))
       } finally {
         clearTimeout(timeout)
         running = false

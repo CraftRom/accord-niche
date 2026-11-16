@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { genderName, sanitizeCart, telegramCheckoutUrl } from './catalog'
 import { useStoreRequest } from './useStoreRequest'
+import { BlogList, BlogArticle } from './Blog'
+import {rememberCampaign} from './checkout'
+import {useDialog} from './useDialog'
 import { useCommerce, CheckoutPage, CheckoutSuccess, ProfilePage } from './commerce'
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -15,9 +18,9 @@ function useRoute() {
     window.addEventListener('popstate', pop)
     return () => window.removeEventListener('popstate', pop)
   }, [])
-  function go(to) {
+  function go(to, options = {}) {
     const next = BASE + to
-    if (location.pathname + location.search !== next) history.pushState(null, '', next)
+    if (location.pathname + location.search !== next) history[options.replace ? 'replaceState' : 'pushState'](null, '', next)
     setRoute(to)
     window.scrollTo({top: 0, behavior: 'instant'})
   }
@@ -38,19 +41,30 @@ function Logo({dark = false, onClick}) {
   return <button className={'brandmark' + (dark ? ' inverse' : '')} onClick={onClick} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong><span className="brandmark-bottom"><i/>NICHE<i/></span></button>
 }
 
-function Header({go, onCart, count, account}) {
+function Header({go, onCart, count, account, route}) {
   const [search, setSearch] = useState(false)
   const [query, setQuery] = useState('')
   const [menu, setMenu] = useState(false)
-  const nav = [['/catalog','Каталог'],['/catalog?kind=hits','Хіти'],['/catalog?kind=new','Новинки'],['/sets','Набори'],['/brands','Бренди']]
+  const menuButton=useRef(null),searchButton=useRef(null)
+  const previousRoute=useRef(route)
+  useEffect(()=>{
+    if(previousRoute.current!==route){previousRoute.current=route;setMenu(false);setSearch(false)}
+  },[route])
+  useEffect(()=>{
+    if(!menu && !search)return
+    const close=event=>{if(event.key==='Escape' && !document.querySelector('[aria-modal="true"]')){event.preventDefault();setMenu(false);setSearch(false);(search?searchButton:menuButton).current?.focus()}}
+    document.addEventListener('keydown',close)
+    return()=>document.removeEventListener('keydown',close)
+  },[menu,search])
+  const nav = [['/catalog','Каталог'],['/catalog?kind=hits','Хіти'],['/catalog?kind=new','Новинки'],['/sets','Набори'],['/brands','Бренди'],['/blog','Блог']]
   function navigate(path) {go(path); setMenu(false); setSearch(false)}
   return <header className="header"><div className="shell header-inner"><Logo onClick={() => navigate('/')}/>
-    <nav className={'header-nav' + (menu ? ' open' : '')} aria-label="Головна навігація">{nav.map(([path,label]) => <button key={path} onClick={() => navigate(path)}>{label}</button>)}</nav>
+    <nav className={'header-nav' + (menu ? ' open' : '')} id="store-navigation" aria-label="Головна навігація">{nav.map(([path,label]) => <button key={path} onClick={() => navigate(path)}>{label}</button>)}</nav>
     <div className="header-actions"><button className="icon-btn" aria-label="Профіль" title={account?.signed_in ? 'Мій профіль' : 'Увійти'} onClick={() => navigate('/profile')}><Icon name="user"/></button>
-      <button className="icon-btn" aria-label="Пошук" onClick={() => setSearch(value => !value)}><Icon name="search"/></button>
-      <button className="icon-btn cart-button" aria-label={'Кошик, товарів ' + count} onClick={onCart}><Icon name="bag"/>{count > 0 && <span className="cart-count">{count}</span>}</button>
-      <button className="icon-btn menu-btn" aria-label="Меню" aria-expanded={menu} onClick={() => setMenu(value => !value)}><Icon name={menu ? 'close' : 'menu'}/></button></div></div>
-    {search && <form className="search-strip shell" role="search" onSubmit={event => {event.preventDefault(); navigate('/catalog?q=' + encodeURIComponent(query.trim()))}}><Icon name="search"/><input aria-label="Знайти аромат або бренд" autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Знайти аромат або бренд…"/><button className="text-action" type="submit">Знайти →</button></form>}
+      <button className="icon-btn" ref={searchButton} aria-label="Пошук" aria-expanded={search} aria-controls="store-search" onClick={() => {setMenu(false);setSearch(value => !value)}}><Icon name="search"/></button>
+      <button className="icon-btn cart-button" aria-label={'Кошик, товарів ' + count} onClick={()=>{setMenu(false);setSearch(false);onCart()}}><Icon name="bag"/>{count > 0 && <span className="cart-count">{count}</span>}</button>
+      <button className="icon-btn menu-btn" ref={menuButton} aria-label="Меню" aria-expanded={menu} aria-controls="store-navigation" onClick={() => {setSearch(false);setMenu(value => !value)}}><Icon name={menu ? 'close' : 'menu'}/></button></div></div>
+    {search && <form id="store-search" className="search-strip shell" role="search" onSubmit={event => {event.preventDefault(); navigate('/catalog?q=' + encodeURIComponent(query.trim()))}}><Icon name="search"/><input aria-label="Знайти аромат або бренд" maxLength={120} autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Знайти аромат або бренд…"/><button className="text-action" type="submit">Знайти →</button></form>}
   </header>
 }
 
@@ -65,13 +79,13 @@ function ImageTile({item, className = '', priority = false}) {
 
 function RequestStatus({request, empty, children}) {
   if (!request.data && request.loading) return <div className="store-loading" role="status"><span className="loading-dot"/>Завантажуємо товари…</div>
-  if (!request.data && request.error) return <div className="store-state" role="alert"><h2>Магазин тимчасово недоступний</h2><p>{request.error}</p><button className="btn outline" onClick={request.retry}>Спробувати ще раз</button></div>
+  if (!request.data && request.error) return <div className="store-state" role="alert"><h2>{[404,410].includes(request.errorStatus)?'Товар недоступний':'Не вдалося завантажити дані'}</h2><p>{request.error}</p><button className="btn outline" onClick={request.retry}>Спробувати ще раз</button></div>
   return <>{request.error && <div className="notice" role="alert">Не вдалося оновити дані. Показуємо останню завантажену версію. <button onClick={request.retry}>Оновити</button></div>}{empty ? <div className="store-state"><h2>Поки немає товарів</h2><p>Перегляньте інші добірки або завітайте пізніше.</p></div> : children}</>
 }
 
 function ProductCard({item, go}) {
   const hit = item.bestseller_rank > 0 && item.bestseller_rank <= 8
-  return <article className="product-card available"><button className="product-link" onClick={() => go('/aroma/' + item.id)} aria-label={[item.brand,item.name,'— переглянути'].filter(Boolean).join(' ')}>
+  return <article className="product-card available"><button className="product-link" onClick={() => go('/aroma/' + (item.default_product_id || item.id))} aria-label={[item.brand,item.name,'— переглянути'].filter(Boolean).join(' ')}>
     <div className="product-visual"><ImageTile item={item}/><div className="product-badges">{item.stock <= 0 ? <span>Немає в наявності</span> : <>{hit && <span className="hit-badge">Хіт продажів</span>}{item.is_new && <span>Новинка</span>}</>}</div></div>
     <div className="product-meta">{item.brand && <span className="product-brand">{item.brand}</span>}<h3>{item.name}</h3><p>{genderName[item.gender] || 'унісекс'}{item.volumes?.length > 0 ? ' · ' + item.volumes.join(' / ') + ' мл' : ''}</p>
       <strong>від {money(item.min_price)}</strong>{item.price_per_ml != null && <span className="unit-price">від {money(item.price_per_ml)} / мл</span>}
@@ -86,7 +100,7 @@ function ProductSection({title, description, items, go, to = '/catalog'}) {
 
 function Hero({go, item}) {
   return <section className="hero shell" aria-labelledby="hero-title"><div className="hero-content"><p className="eyebrow">НІШЕВА ПАРФУМЕРІЯ У ТВОЄМУ ФОРМАТІ</p><h1 id="hero-title">Знайди аромат,<br/>який стане<br/>твоїм</h1><p className="hero-description">Обирай аромат і доступний об’єм. Знайомся з парфумерією у власному ритмі — перед рішенням про повний флакон.</p><div className="hero-cta"><button className="btn primary" onClick={() => go('/catalog')}>ОБРАТИ АРОМАТ</button><button className="btn outline" onClick={() => go('/catalog?kind=new')}>НОВИНКИ</button></div></div>
-    {item?.image ? <button className="hero-product" onClick={() => go('/aroma/' + item.id)}><ImageTile item={item} className="hero-tile" priority/><span>{item.brand} · {item.name}</span></button> : <div className="hero-lettering" aria-hidden="true"><span>A</span><p>ACCORD NICHE</p><i>Твій аромат. Твій формат.</i></div>}</section>
+    {item?.image ? <button className="hero-product" onClick={() => go('/aroma/' + (item.default_product_id || item.id))}><ImageTile item={item} className="hero-tile" priority/><span>{item.brand} · {item.name}</span></button> : <div className="hero-lettering" aria-hidden="true"><span>A</span><p>ACCORD NICHE</p><i>Твій аромат. Твій формат.</i></div>}</section>
 }
 
 function HowItWorks() {
@@ -138,7 +152,7 @@ function Catalog({route, go, sets = false}) {
   const pages = Math.ceil((data?.total || 0) / 24)
   return <main><PageTitle label="КОЛЕКЦІЯ АРОМАТІВ" title={titles[kind] || 'Каталог'} detail={kind === 'hits' ? 'Добірка за фактичними продажами за останні 90 днів. Нові, скасовані та повернені замовлення не впливають на рейтинг.' : 'Актуальні ціни, доступні об’єми та наявність.'}/>
     <section className="shell catalog-layout" aria-label="Каталог ароматів"><div className="catalog-filters">
-      <label>ПОШУК<input value={search} onChange={event => {setSearch(event.target.value); setTyping(true)}} placeholder="Назва, бренд…"/></label>
+      <label>ПОШУК<input maxLength={120} value={search} onChange={event => {setSearch(event.target.value); setTyping(true)}} placeholder="Назва, бренд…"/></label>
       <label>БРЕНД<select value={params.get('brand') || ''} onChange={event => update('brand', event.target.value)}><option value="">Усі бренди</option>{(data?.brands || facets.brands).map(brand => <option key={brand}>{brand}</option>)}</select></label>
       <label>КАТЕГОРІЯ<select value={params.get('category') || ''} onChange={event => update('category', event.target.value)}><option value="">Усі категорії</option>{(data?.categories || facets.categories).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label>АРОМАТ ДЛЯ<select value={params.get('gender') || ''} onChange={event => update('gender', event.target.value)}><option value="">Для всіх</option><option value="female">Жіночий</option><option value="male">Чоловічий</option><option value="unisex">Унісекс</option></select></label>
@@ -157,13 +171,13 @@ function Detail({id, go, add}) {
   const group = request.data?.item
   const [sku, setSku] = useState(id)
   useEffect(() => {
-    if (group) setSku(group.variants.find(product => product.id === id && product.stock > 0)?.id || group.variants.find(product => product.stock > 0)?.id || group.variants[0].id)
+    if (group) setSku(group.variants.find(product => product.id === id)?.id || group.id)
   }, [group?.id, id])
   const current = group?.variants.find(product => product.id === Number(sku)) || group?.variants[0]
   return <main><div className="shell detail-back"><button onClick={() => go('/catalog')}>← Усі аромати</button></div><div className="shell"><RequestStatus request={request}/></div>
     {group && current && <><section className="shell detail-grid"><ImageTile item={{...current, image: current.photo_url || current.photo_endpoint || group.image, brand:group.brand}} priority/><div className="detail-text"><p className="eyebrow">{group.brand}</p><h1>{group.name}</h1><p className="detail-kind">{genderName[group.gender] || 'унісекс'}</p>
       {group.bestseller_rank && group.bestseller_rank <= 8 && <p className="detail-hit">Хіт продажів · за останні 90 днів</p>}{group.description && <p className="detail-description">{group.description}</p>}
-      <div className="variant-group"><h2>Обери об’єм</h2><div className="variant-buttons">{group.variants.map(product => <button key={product.id} disabled={product.stock <= 0} aria-pressed={current.id === product.id} className={current.id === product.id ? 'selected' : ''} onClick={() => setSku(product.id)}>{product.volume_ml ? product.volume_ml + ' мл' : product.name}{product.stock <= 0 && <small>Немає</small>}</button>)}</div></div>
+      <div className="variant-group"><h2>Обери об’єм</h2><div className="variant-buttons">{group.variants.map(product => <button key={product.id} aria-pressed={current.id === product.id} className={current.id === product.id ? 'selected' : ''} onClick={() => {setSku(product.id);go('/aroma/'+product.id)}}>{product.volume_ml ? product.volume_ml + ' мл' : product.name}{product.stock <= 0 && <small>Немає</small>}</button>)}</div></div>
       <div className="detail-buy"><div><span>ЦІНА ЗА ОБРАНИЙ ОБ’ЄМ</span>{current.is_sale && current.old_price && <del>{money(current.old_price)}</del>}<strong>{money(current.price)}</strong>{current.volume_ml > 0 && <p>{money(Number(current.price) / current.volume_ml)} / мл</p>}</div><button className="btn primary" disabled={current.stock <= 0} onClick={() => add({...current, brand:group.brand})}>{current.stock > 0 ? 'ДОДАТИ В КОШИК' : 'НЕМАЄ В НАЯВНОСТІ'}</button></div><p className="microcopy">Ціна й наявність перевіряються повторно під час оформлення.</p></div></section>
       <ProductSection title="Схожі аромати" items={request.data.related} go={go}/></>}</main>
 }
@@ -173,44 +187,38 @@ function Brands({go}) {
   return <main><PageTitle label="ПАРФУМЕРНІ БУДИНКИ" title="Бренди" detail="Бренди, представлені в актуальному каталозі."/><section className="shell"><RequestStatus request={request} empty={request.data?.brands?.length === 0}><div className="brand-grid">{request.data?.brands.map(brand => <button key={brand} onClick={() => go('/catalog?brand=' + encodeURIComponent(brand))}><span>{brand}</span><Icon name="arrow" size={17}/></button>)}</div></RequestStatus></section></main>
 }
 
-function Guides() {
-  return <main><PageTitle label="ЗНАЙОМСТВО З ПАРФУМЕРІЄЮ" title="Про аромати"/><section className="shell stories"><article><p className="eyebrow">ПЕРШЕ ЗНАЙОМСТВО</p><h2>Дай аромату час</h2><p>Спробуй аромат на шкірі й поспостерігай, як він розкривається протягом дня. Температура, погода та власне сприйняття впливають на враження.</p></article><article><p className="eyebrow">ТВІЙ ФОРМАТ</p><h2>Обирай зручний об’єм</h2><p>Невеликий об’єм підходить для першого знайомства, більший — для аромату, який уже став улюбленим. Доступні формати та їхні ціни вказані в картці кожного товару.</p></article></section></main>
-}
-
 function Basket({open, close, cart, products, change, go, site, request}) {
-  useEffect(() => {
-    if (!open) return
-    const key = event => {if (event.key === 'Escape') close()}
-    const old = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', key)
-    return () => {document.body.style.overflow = old; window.removeEventListener('keydown', key)}
-  }, [open])
+  const dialog=useRef(null)
+  useDialog(dialog,open,close)
   if (!open) return null
   const lines = Object.entries(cart).map(([id,qty]) => ({product:products.find(product => product.id === Number(id)), qty:Number(qty)})).filter(line => line.product)
+  const unresolved=Object.keys(cart).filter(id=>!products.some(product=>product.id===Number(id)))
   const total = lines.reduce((sum,line) => sum + Number(line.product.price) * line.qty, 0)
   const link = telegramCheckoutUrl(site.miniapp_url || '', cart, products)
   const blocked = Boolean(request.loading || request.error || Object.keys(cart).length !== lines.length)
-  return <div className="drawer-backdrop" onMouseDown={event => {if (event.target === event.currentTarget) close()}}><aside role="dialog" aria-modal="true" aria-label="Кошик" className="basket"><div className="basket-head"><h2>Кошик</h2><button className="icon-btn" aria-label="Закрити кошик" onClick={close}><Icon name="close"/></button></div>
+  return <div className="drawer-backdrop" onMouseDown={event => {if (event.target === event.currentTarget) close()}}><aside ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Кошик" className="basket"><div className="basket-head"><h2>Кошик</h2><button className="icon-btn" aria-label="Закрити кошик" onClick={close}><Icon name="close"/></button></div>
     <div className="basket-lines">{Object.keys(cart).length > 0 && request.error && <div role="alert" className="notice">Не вдалося перевірити кошик. <button onClick={request.retry}>Спробувати ще раз</button></div>}{request.loading && <p role="status" className="shop-hint">Перевіряємо ціни й наявність…</p>}
-      {lines.map(({product,qty}) => <div className="basket-line" key={product.id}><div className="basket-thumb"><ImageTile item={product}/></div><div className="basket-info"><h3>{product.brand && product.brand + ' · '}{product.name}</h3><p>{product.volume_ml ? product.volume_ml + ' мл' : ''}</p><strong>{money(Number(product.price) * qty)}</strong><div className="qty-control"><button aria-label="Зменшити кількість" onClick={() => change(product.id, qty - 1)}>−</button><span>{qty}</span><button aria-label="Збільшити кількість" disabled={qty >= product.stock || qty >= 99} onClick={() => change(product.id, qty + 1)}>+</button><button className="remove-btn" onClick={() => change(product.id, 0)}>Видалити</button></div></div></div>)}
+      {unresolved.map(id=><div className="basket-line" key={id}><p>Товар потребує перевірки наявності.</p><button className="remove-btn" onClick={()=>change(Number(id),0)}>Прибрати з кошика</button></div>)}{lines.map(({product,qty}) => <div className="basket-line" key={product.id}><div className="basket-thumb"><ImageTile item={product}/></div><div className="basket-info"><h3>{product.brand && product.brand + ' · '}{product.name}</h3><p>{product.volume_ml ? product.volume_ml + ' мл' : ''}</p><strong>{money(Number(product.price) * qty)}</strong><div className="qty-control"><button aria-label="Зменшити кількість" onClick={() => change(product.id, qty - 1)}>−</button><span>{qty}</span><button aria-label="Збільшити кількість" disabled={qty >= product.stock || qty >= 99} onClick={() => change(product.id, qty + 1)}>+</button><button className="remove-btn" onClick={() => change(product.id, 0)}>Видалити</button></div></div></div>)}
       {!Object.keys(cart).length && <div className="empty-basket"><p>У кошику поки порожньо</p><button className="btn outline" onClick={() => {close(); go('/catalog')}}>Переглянути аромати</button></div>}</div>
-    {lines.length > 0 && <div className="basket-bottom"><div className="basket-total"><span>Разом</span><strong>{money(total)}</strong></div><button className="btn primary checkout-link" disabled={blocked} onClick={() => {close(); go('/checkout')}}>ОФОРМИТИ ЗАМОВЛЕННЯ →</button>{link && <a className="basket-telegram-link" href={link} target="_blank" rel="noopener noreferrer">Продовжити в Telegram Mini App</a>}<p>Кошик зберігається на цьому пристрої. Остаточну суму розрахуємо під час оформлення.</p></div>}</aside></div>
+    {lines.length > 0 && <div className="basket-bottom"><div className="basket-total"><span>Разом</span><strong>{money(total)}</strong></div><button className="btn primary checkout-link" disabled={blocked} onClick={() => {close(); go('/checkout')}}>ОФОРМИТИ ЗАМОВЛЕННЯ →</button>{!blocked && link && <a className="basket-telegram-link" href={link} target="_blank" rel="noopener noreferrer">Продовжити в Telegram Mini App</a>}<p>Кошик зберігається на цьому пристрої. Остаточну суму розрахуємо під час оформлення.</p></div>}</aside></div>
 }
 
 function Footer({go, setInfo, site}) {
-  return <footer className="footer"><div className="shell footer-inner"><div className="footer-brand"><Logo dark onClick={() => go('/')}/><span>accordniche.pp.ua</span>{site.seller_name && <span>{site.seller_name}</span>}</div><div className="footer-links"><div><button onClick={() => setInfo('delivery')}>Доставка й оплата</button><button onClick={() => setInfo('returns')}>Повернення</button><button onClick={() => go('/how')}>Як це працює</button><button onClick={() => go('/blog')}>Про аромати</button></div><div>{site.instagram_url && <a href={site.instagram_url} target="_blank" rel="noopener noreferrer">Instagram</a>}{site.tiktok_url && <a href={site.tiktok_url} target="_blank" rel="noopener noreferrer">TikTok</a>}{site.phone && <a href={'tel:' + site.phone.replace(/[^+\d]/g,'')}>{site.phone}</a>}{site.email && <a href={'mailto:' + site.email}>{site.email}</a>}</div></div></div></footer>
+  return <footer className="footer"><div className="shell footer-inner"><div className="footer-brand"><Logo dark onClick={() => go('/')}/><span>accordniche.pp.ua</span>{site.seller_name && <span>{site.seller_name}</span>}</div><div className="footer-links"><div><button onClick={() => setInfo('delivery')}>Доставка й оплата</button><button onClick={() => setInfo('returns')}>Повернення</button><button onClick={() => go('/how')}>Як це працює</button><button onClick={() => go('/blog')}>Блог</button></div><div>{site.instagram_url && <a href={site.instagram_url} target="_blank" rel="noopener noreferrer">Instagram</a>}{site.tiktok_url && <a href={site.tiktok_url} target="_blank" rel="noopener noreferrer">TikTok</a>}{site.phone && <a href={'tel:' + site.phone.replace(/[^+\d]/g,'')}>{site.phone}</a>}{site.email && <a href={'mailto:' + site.email}>{site.email}</a>}</div></div></div></footer>
 }
 
 function InfoModal({name, close, site}) {
+  const dialog=useRef(null)
+  useDialog(dialog,Boolean(name),close)
   const content = {delivery:['Доставка й оплата','Оформлюй замовлення на сайті, обирай доступний спосіб доставки та оплати. Підсумкова сума, знижки й умови показані перед підтвердженням. Статус і дані відправлення зберігаються в особистому кабінеті.'], returns:['Повернення та скасування','До відправлення замовлення можна скасувати в особистому кабінеті, якщо для його статусу доступне скасування. Із питаннями щодо отриманого товару звертайся до магазину за контактами нижче.']}
   if (!name) return null
-  return <div className="modal-mask" onMouseDown={event => {if (event.target === event.currentTarget) close()}}><section className="info-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="icon-btn modal-close" onClick={close} aria-label="Закрити"><Icon name="close"/></button><p className="eyebrow">ACCORD NICHE</p><h2 id="modal-title">{content[name]?.[0]}</h2><p>{content[name]?.[1]}</p>{site.phone && <p>{site.phone}</p>}{site.email && <p>{site.email}</p>}<button className="btn outline" onClick={close}>Зрозуміло</button></section></div>
+  return <div className="modal-mask" onMouseDown={event => {if (event.target === event.currentTarget) close()}}><section ref={dialog} tabIndex={-1} className="info-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="icon-btn modal-close" onClick={close} aria-label="Закрити"><Icon name="close"/></button><p className="eyebrow">ACCORD NICHE</p><h2 id="modal-title">{content[name]?.[0]}</h2><p>{content[name]?.[1]}</p>{site.phone && <p>{site.phone}</p>}{site.email && <p>{site.email}</p>}<button className="btn outline" onClick={close}>Зрозуміло</button></section></div>
 }
 
 export default function App() {
   const [route, go] = useRoute()
-  const path = route.split('?')[0]
+  useEffect(()=>rememberCampaign(location.search),[route])
+  const path = route.split('?')[0].replace(/\/+$/, '') || '/'
   const commerce = useCommerce()
   const [orderResult, setOrderResult] = useState(null)
   const [products, setProducts] = useState([])
@@ -228,8 +236,12 @@ export default function App() {
   useEffect(() => {try {localStorage.setItem('accord:niche:cart', JSON.stringify(cart))} catch {}}, [cart])
   useEffect(() => {
     if (Array.isArray(cartRequest.data)) {
+      const next=sanitizeCart(cart,cartRequest.data)
+      const changed=JSON.stringify(next)!==JSON.stringify(cart)
+      const repriced=cartRequest.data.some(product=>products.some(previous=>previous.id===product.id && Number(previous.price)!==Number(product.price)))
       setProducts(cartRequest.data)
-      setCart(old => sanitizeCart(old, cartRequest.data))
+      if(changed){setCart(next);setNotice('Наявність змінилася. Недоступні позиції прибрано, кількість обмежено поточним залишком. Перевірте кошик.')}
+      else if(repriced)setNotice('Ціни в кошику оновлено. Перевірте підсумок перед підтвердженням замовлення.')
     }
   }, [cartRequest.data])
   function change(id, qty) {
@@ -242,10 +254,17 @@ export default function App() {
     setBasketOpen(true)
   }
   const detail = path.match(/^\/aroma\/(\d+)$/)
+  const blogMatch = path.match(/^\/blog\/([^/]+)$/)
+  let blogSlug = blogMatch?.[1] || ''
+  try { blogSlug = decodeURIComponent(blogSlug) } catch {}
+  useEffect(() => {
+    const destination = new URLSearchParams(route.split('?')[1] || '').get('returnTo') || ''
+    if (path === '/profile' && (commerce.account.signed_in || commerce.account.phone_verified || commerce.account.telegram_linked) && /^\/blog\/[^/?#]+$/.test(destination)) go(destination, {replace:true})
+  }, [route, commerce.account.signed_in, commerce.account.phone_verified, commerce.account.telegram_linked])
   const count = Object.values(cart).reduce((sum,qty) => sum + Number(qty), 0)
-  return <><Header go={go} onCart={() => setBasketOpen(true)} count={count} account={commerce.account}/>
+  return <><Header route={route} go={go} onCart={() => setBasketOpen(true)} count={count} account={commerce.account}/>
     {notice && <div className="shell notice" role="alert">{notice}<button onClick={() => setNotice('')}>Закрити</button></div>}
-    {path === '/' ? <Home go={go}/> : path === '/catalog' || path === '/sets' ? <Catalog key={path} route={route} go={go} sets={path === '/sets'}/> : path === '/brands' ? <Brands go={go}/> : path === '/blog' ? <Guides/> : detail ? <Detail id={Number(detail[1])} go={go} add={add}/> : path === '/checkout' ? <>{cartRequest.error || (ids && !cartRequest.data) ? <main className="shell commerce-page"><RequestStatus request={cartRequest}/></main> : <CheckoutPage shop={commerce} cart={cart} products={products} go={go} complete={result => {setOrderResult(result); setCart({})}}/>}</> : path === '/profile' ? <ProfilePage shop={commerce} go={go}/> : path === '/order/success' ? <CheckoutSuccess result={orderResult} go={go}/> : path === '/how' ? <main><PageTitle label="ПРОСТО І ЗРОЗУМІЛО" title="Як це працює"/><HowItWorks/></main> : <main><PageTitle label="404" title="Сторінку не знайдено"/><div className="shell"><button className="btn outline" onClick={() => go('/')}>На головну</button></div></main>}
+    {path === '/' ? <Home go={go}/> : path === '/catalog' || path === '/sets' ? <Catalog key={path} route={route} go={go} sets={path === '/sets'}/> : path === '/brands' ? <Brands go={go}/> : path === '/blog' ? <BlogList route={route} go={go}/> : blogMatch ? <BlogArticle key={blogSlug} slug={blogSlug} shop={commerce} go={go}/> : detail ? <Detail id={Number(detail[1])} go={go} add={add}/> : path === '/checkout' ? <CheckoutPage shop={commerce} cart={cart} products={products} cartRequest={cartRequest} change={change} go={go} complete={result => {setOrderResult(result); setNotice(''); setCart({})}}/> : path === '/profile' ? <ProfilePage key={commerce.account.account_key || 'guest'} shop={commerce} go={go}/> : path === '/order/success' ? <CheckoutSuccess result={commerce.account.has_session?orderResult:null} go={go}/> : path === '/how' ? <main><PageTitle label="ПРОСТО І ЗРОЗУМІЛО" title="Як це працює"/><HowItWorks/></main> : <main><PageTitle label="404" title="Сторінку не знайдено"/><div className="shell"><button className="btn outline" onClick={() => go('/')}>На головну</button></div></main>}
     <Footer go={go} setInfo={setInfo} site={site}/><Basket open={basketOpen} close={() => setBasketOpen(false)} cart={cart} products={products} change={change} go={go} site={site} request={cartRequest}/><InfoModal name={info} close={() => setInfo('')} site={site}/>
   </>
 }

@@ -1,3 +1,4 @@
+import {customerContact} from '../commerce'
 import { usePagedResource } from '../components/usePagedResource'
 import { Pagination, PAGE_SIZE, pageNumber } from '../components/Pagination'
 import { useCallback, useEffect, useState } from 'react'
@@ -103,7 +104,7 @@ function CustomerOrders({ customer, onClose }) {
   }, [customer.id, loadOrders])
 
   return (
-    <Modal title={`Замовлення: ${customer.first_name || customer.tg_id}`} onClose={onClose}>
+    <Modal title={`Замовлення: ${customer.first_name || customerContact(customer)}`} onClose={onClose}>
       <ErrorBar error={identityError} />
       {identity?.linked && <div className="notice" role="status" style={{marginBottom:12}}>
         <strong>Пов’язаний профіль ACCORD</strong>

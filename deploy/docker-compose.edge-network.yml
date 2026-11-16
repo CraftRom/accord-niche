@@ -2,17 +2,17 @@
 # docker network create accord-shared-edge
 # Add this with -f after deploy/docker-compose.domains.yml.
 services:
-  website:
+  accord-website:
     networks:
       default:
       accord_edge:
         aliases: [accord-website]
-  miniapp:
+  accord-miniapp:
     networks:
       default:
       accord_edge:
         aliases: [accord-miniapp]
-  dashboard:
+  accord-dashboard:
     networks:
       default:
       accord_edge:

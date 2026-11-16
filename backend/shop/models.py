@@ -783,3 +783,56 @@ class FinancialPeriod(Base):
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict] = mapped_column(JsonType, nullable=False)
+
+
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+    __table_args__ = (Index("ix_blog_posts_public", "status", "published_at", "id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(180), unique=True)
+    title: Mapped[str] = mapped_column(String(200))
+    excerpt: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    search_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    body: Mapped[str] = mapped_column(Text)
+    cover_url: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    author_name: Mapped[str] = mapped_column(String(120), default="Редакція ACCORD NICHE", server_default="Редакція ACCORD NICHE")
+    status: Mapped[str] = mapped_column(String(16), default="draft", server_default="draft")
+    comments_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[str] = mapped_column(String(64))
+    updated_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BlogSlug(Base):
+    """Reserve past slugs to keep existing links and prevent URL reassignment."""
+    __tablename__ = "blog_slugs"
+    slug: Mapped[str] = mapped_column(String(180), primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("blog_posts.id", ondelete="CASCADE"), index=True)
+
+
+class BlogComment(Base):
+    __tablename__ = "blog_comments"
+    __table_args__ = (
+        Index("ix_blog_comments_public", "post_id", "parent_id", "status", "id"),
+        Index("ix_blog_comments_moderation", "status", "created_at", "id"),
+        Index("ix_blog_comments_author_time", "author_user_id", "created_at"),
+        UniqueConstraint("post_id", "client_key", name="uq_blog_comment_retry"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("blog_posts.id", ondelete="CASCADE"))
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("blog_comments.id", ondelete="CASCADE"))
+    author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    author_name: Mapped[str] = mapped_column(String(120))
+    is_staff: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    body: Mapped[str] = mapped_column(String(2000))
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    client_key: Mapped[str | None] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    moderation_note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    moderated_by: Mapped[str | None] = mapped_column(String(64))
+    moderated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

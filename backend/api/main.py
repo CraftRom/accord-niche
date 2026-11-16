@@ -12,7 +12,7 @@ from api.routers import (
     backups as backups_router, broadcasts, catalog, customers,
     logs as logs_router, media as media_router,
     integrations, orders, promos, support, shop_support, notifications, realtime,
-    settings as settings_router, operators, shop as shop_router, stats, telegram, landing_pages, public_catalog, website_shop,
+    settings as settings_router, operators, shop as shop_router, stats, telegram, landing_pages, public_catalog, website_shop, blog,
 )
 from api.schemas import LoginIn, TokenOut
 from shop.config import settings
@@ -323,3 +323,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
         {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
         for error in exc.errors()
     ]})
+
+app.include_router(blog.admin, prefix='/api/blog', tags=['blog-admin'])
+app.include_router(blog.public, prefix='/api/public/blog', tags=['blog'])
+app.include_router(blog.web, prefix='/api/web/blog', tags=['blog-comments'])

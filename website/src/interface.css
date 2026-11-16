@@ -1,0 +1,13 @@
+/* Interface corrections load after the storefront's base rules. */
+.info-modal{max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
+.drawer-backdrop .basket{height:100vh;height:100dvh;max-height:100dvh}.basket-lines{min-height:0;overscroll-behavior:contain}.basket-bottom{flex-shrink:0;max-height:50vh;max-height:50dvh;overflow:auto;overscroll-behavior:contain}.basket-info{min-width:0}.basket-info h3{overflow-wrap:anywhere}.qty-control{flex-wrap:wrap}.shop-error{white-space:pre-line;overflow-wrap:anywhere}.shop-success,.notice{overflow-wrap:anywhere}
+.comment-form textarea:focus-visible,.shop-field textarea:focus-visible{outline:2px solid #8b7558;outline-offset:3px}
+@media(max-width:930px){
+ .header .header-inner{min-height:68px;gap:12px}.header .brandmark{width:105px}.header .brandmark strong{font-size:18px}.header .header-actions{gap:3px;flex-shrink:0}.header .icon-btn{width:44px;height:44px;flex-shrink:0}.header .menu-btn{display:inline-flex}
+ .header .header-nav{display:none;position:absolute;top:68px;left:0;right:0;background:#fff;box-shadow:0 15px 28px #0001;padding:16px 24px 24px;align-items:stretch;max-height:calc(100dvh - 68px);overflow-y:auto;overscroll-behavior:contain}
+ .header .header-nav.open{display:flex;flex-direction:column;gap:5px}.header .header-nav button{padding:14px 0;text-align:left;font-size:14px}
+}
+@media(max-width:430px){
+ .header .header-inner{gap:8px}.header .brandmark{width:90px}.header .brandmark strong{font-size:16px}.header .brandmark-bottom{font-size:6px;letter-spacing:.4em}
+ .info-modal{padding:28px 22px}.info-modal h2{font-size:28px}.basket-lines{padding:18px}.basket-bottom{padding:18px}.basket .qty-control button{min-height:40px;min-width:36px}
+}

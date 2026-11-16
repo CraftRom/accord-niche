@@ -144,7 +144,7 @@ def test_failure_after_recreation_rolls_back_only_proxy_services(tmp_path, monke
 
 def test_root_nginx_frontends_keep_required_worker_and_bind_capabilities():
     compose = yaml.safe_load((ROOT / 'deploy/docker-compose.domains.yml').read_text())
-    for name in ('website', 'dashboard', 'miniapp'):
+    for name in ('accord-website', 'accord-dashboard', 'accord-miniapp'):
         assert 'ALL' in compose['services'][name]['cap_drop']
         assert {'CHOWN', 'SETUID', 'SETGID', 'NET_BIND_SERVICE'} <= set(compose['services'][name]['cap_add'])
 
@@ -152,13 +152,21 @@ def test_root_nginx_frontends_keep_required_worker_and_bind_capabilities():
 def test_edge_network_contains_only_frontends_and_keeps_host_ports_local():
     base = yaml.safe_load((ROOT / 'deploy/docker-compose.domains.yml').read_text())
     edge_network = yaml.safe_load((ROOT / 'deploy/docker-compose.edge-network.yml').read_text())
-    assert set(edge_network['services']) == {'website', 'miniapp', 'dashboard'}
-    for name, alias in [('website', 'accord-website'), ('miniapp', 'accord-miniapp'), ('dashboard', 'accord-dashboard')]:
+    assert set(edge_network['services']) == {'accord-website', 'accord-miniapp', 'accord-dashboard'}
+    for name, alias in [('accord-website', 'accord-website'), ('accord-miniapp', 'accord-miniapp'), ('accord-dashboard', 'accord-dashboard')]:
         assert edge_network['services'][name]['networks']['accord_edge']['aliases'] == [alias]
         assert all(port.startswith('127.0.0.1:') for port in base['services'][name]['ports'])
     for name in ('api', 'db', 'redis'):
         assert name not in edge_network['services']
         assert not base['services'][name].get('ports')
+
+
+def test_implicit_compose_dns_names_cannot_shadow_elfar_services():
+    elfar = yaml.safe_load((ROOT / 'deploy/docker-compose.prod.yml').read_text())
+    edge_network = yaml.safe_load((ROOT / 'deploy/docker-compose.edge-network.yml').read_text())
+    for name, service in edge_network['services'].items():
+        effective_aliases = {name, *service['networks']['accord_edge'].get('aliases', [])}
+        assert effective_aliases.isdisjoint(elfar['services']), effective_aliases
 
 
 def test_successful_workflow_keeps_elfar_and_persists_accord_edge(tmp_path, monkeypatch):
@@ -190,3 +198,37 @@ def test_successful_workflow_keeps_elfar_and_persists_accord_edge(tmp_path, monk
     assert any('certonly' in args for args in calls[:reload_index])
     restarts = [args for args in calls if '--force-recreate' in args]
     assert len(restarts) == 1 and restarts[0][-2:] == ['nginx', 'promo-controller']
+
+
+def test_failed_elfar_http_check_rolls_back_existing_edge_with_reload_only(tmp_path, monkeypatch):
+    project, elfar = tmp_path / 'accord', tmp_path / 'elfar/deploy'
+    (project / 'deploy/nginx').mkdir(parents=True)
+    (elfar / 'nginx').mkdir(parents=True)
+    (project / 'deploy/nginx/accord-elfar-docker-edge.conf.template').write_text(
+        (ROOT / 'deploy/nginx/accord-elfar-docker-edge.conf.template').read_text())
+    original = edge.patch_compose((ROOT / 'deploy/docker-compose.prod.yml').read_text())
+    compose = elfar / 'docker-compose.prod.yml'
+    compose.write_text(original)
+    old_edge = edge.MARKER + 'server { listen 443 ssl; }\n'
+    edge_path = elfar / 'nginx/accord-main.conf'
+    edge_path.write_text(old_edge)
+    (project / '.env.domains').write_text('COMPOSE_PROJECT_NAME=accord-niche\n')
+    monkeypatch.setattr(edge, 'ROOT', project)
+    monkeypatch.setattr(edge.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(edge, 'inspect_container', lambda *args: {})
+    monkeypatch.setattr(edge, 'validate_layout', lambda *args: None)
+    monkeypatch.setattr(edge, 'peer_certificate', lambda *args, **kwargs: b'elfar-original')
+    monkeypatch.setattr(edge.subprocess, 'run', lambda *args, **kw: subprocess.CompletedProcess(args[0],0))
+    monkeypatch.setattr(edge, 'probe_http', lambda: None)
+    def http(host, **kwargs):
+        if host == 'elfar.pp.ua':
+            raise RuntimeError('ELFAR returns 502')
+    monkeypatch.setattr(edge, 'check_local_http', http)
+    calls=[]
+    monkeypatch.setattr(edge, 'run', lambda args, **kwargs: calls.append(args) or '')
+    with pytest.raises(RuntimeError, match='ELFAR returns 502'):
+        edge.main(['--elfar-dir',str(elfar)])
+    assert compose.read_text() == original
+    assert edge_path.read_text() == old_edge
+    assert not any('--force-recreate' in args for args in calls)
+    assert sum(args[-2:] == ['-s','reload'] for args in calls) == 2

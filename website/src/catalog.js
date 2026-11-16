@@ -3,10 +3,11 @@ export const genderName = { male: 'чоловічий', female: 'жіночий'
 
 /** Link payload has no prices or personally identifiable info. Prices are server-authoritative. */
 export function cartStartParam(cart, products) {
-  const valid = Object.entries(cart).map(([id, qty]) => ({ id:Number(id), qty:Number(qty) }))
+  const entries=Object.entries(cart)
+  const valid = entries.map(([id, qty]) => ({ id:Number(id), qty:Number(qty) }))
     .filter(p => Number.isSafeInteger(p.id) && p.id > 0 && Number.isInteger(p.qty) && p.qty > 0 && p.qty <= 99
-      && products.some(item => item.id === p.id && item.stock > 0))
-  if (valid.length > 20) return ''
+      && products.some(item => item.id === p.id && item.stock >= p.qty))
+  if (valid.length !== entries.length || valid.length > 20) return ''
   const data = valid.map(({id,qty}) => `${id}x${qty}`).join('-')
   const param = `cart_${data}`
   return data && param.length <= 512 ? param : ''

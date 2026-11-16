@@ -45,12 +45,11 @@ jobs:
           QA_TIMEOUT_SECONDS: '120'
         run: bash backend/qa/run_all.sh
       - name: System groups UI policy
-        run: node --test dashboard/tests/roles.mjs
+        run: npm test --prefix dashboard
       - name: Live storefront UI and cart
         run: npm test --prefix website
       - name: Production builds
         run: |
-          npm run build --prefix dashboard
           npm run build --prefix miniapp
           WEBSITE_BASE=/ npm run build --prefix website
       - name: System groups browser regression

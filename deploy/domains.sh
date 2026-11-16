@@ -29,4 +29,17 @@ for arg in "$@"; do
     esac
 done
 "${compose[@]}" config --quiet
+compose_command=''
+skip_next=0
+for arg in "$@"; do
+    if [[ $skip_next == 1 ]]; then skip_next=0; continue; fi
+    case "$arg" in
+        --profile|--parallel|--ansi|--progress) skip_next=1 ;;
+        -*) ;;
+        *) compose_command=$arg; break ;;
+    esac
+done
+if [[ $compose_command == up ]]; then
+    python3 scripts/retire_legacy_frontends.py "$edge" -- "$@"
+fi
 exec "${compose[@]}" "$@"

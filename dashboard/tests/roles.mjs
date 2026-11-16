@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { canAccessPage, canManageAccount, assignableRoles, filterSettingGroups } from '../src/roles.js'
 
 test('manager direct routes deny settings, team and infrastructure', () => {
-  for (const path of ['/settings', '/SETTINGS', '/%73ettings', '/settings/security', '/operators', '/operators/5', '/logs', '/backups']) {
+  for (const path of ['/settings', '/SETTINGS', '/%73ettings', '/settings/security', '/operators', '/operators/5', '/logs', '/backups', '/blog', '/BLOG', '/%62log', '/blog/5']) {
     assert.equal(canAccessPage('operator', path), false, path)
   }
   for (const path of ['/orders', '/orders/12', '/support', '/customers', '/catalog']) assert.equal(canAccessPage('operator', path), true, path)
 })
 test('administrator retains store settings but cannot enter infrastructure', () => {
-  for (const path of ['/settings', '/operators', '/orders']) assert.equal(canAccessPage('shop_admin', path), true)
+  for (const path of ['/settings', '/operators', '/orders', '/blog']) assert.equal(canAccessPage('shop_admin', path), true)
   for (const path of ['/logs', '/backups']) assert.equal(canAccessPage('shop_admin', path), false)
   for (const path of ['/settings', '/operators', '/logs', '/backups']) assert.equal(canAccessPage('admin', path), true)
   assert.equal(canAccessPage('unknown', '/orders'), false)
