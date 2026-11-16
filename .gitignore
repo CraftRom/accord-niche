@@ -16,3 +16,5 @@ qa/output/
 !.env.domains.example
 
 .edge-backups/
+
+/backups/

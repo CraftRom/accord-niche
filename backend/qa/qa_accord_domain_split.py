@@ -63,7 +63,8 @@ def test_no_public_admin_api_in_storefront_configs():
     assert 'location ^~ /api/ { return 404; }' in public
     assert 'location /api/ { return 404; }' in mini
     assert 'location ^~ /api/web/' in public
-    assert 'location ^~ /api/shop/' in mini
+    assert 'location /api/shop/' in mini
+    assert 'location ~ ^/api/shop/orders/[0-9]+/chat/photo$' in mini
     assert 'location = /api/auth/login { return 404; }' in (ROOT/'deploy/nginx/accord-domain-dashboard.conf').read_text()
 
 @pytest.mark.asyncio

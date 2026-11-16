@@ -4,6 +4,7 @@ Requires system nginx; no external networking or API server is needed.
 """
 from __future__ import annotations
 import http.client
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -13,8 +14,10 @@ import time
 BASE=Path(__file__).resolve().parents[1]/'deploy/nginx'
 
 def run():
+    executable = os.environ.get('QA_NGINX_BIN', 'nginx')
     with tempfile.TemporaryDirectory() as tmp:
         d=Path(tmp)
+        (d/'logs').mkdir()
         d.chmod(0o755)
         (d/'html').mkdir()
         (d/'html/index.html').write_text('<title>ACCORD test</title>')
@@ -35,13 +38,13 @@ def run():
             (d/name).write_text(s)
         config=d/'nginx.conf'
         config.write_text('''pid '''+str(d/'nginx.pid')+''';\nevents {}\nhttp {
-  include /etc/nginx/mime.types;
+  include '''+str(BASE.parents[1]/'qa/nginx-mime.types')+''';
   access_log off;
   error_log stderr warn;
 '''+''.join(f'include {d}/{name};\n' for name in files)+"}\n")
-        test=subprocess.run(['nginx','-t','-c',str(config),'-p',str(d)],capture_output=True,text=True)
+        test=subprocess.run([executable,'-t','-c',str(config),'-p',str(d)],capture_output=True,text=True)
         assert test.returncode==0, test.stderr
-        proc=subprocess.Popen(['nginx','-c',str(config),'-p',str(d),'-g','daemon off;'],stderr=subprocess.PIPE)
+        proc=subprocess.Popen([executable,'-c',str(config),'-p',str(d),'-g','daemon off;'],stderr=subprocess.PIPE)
         try:
             time.sleep(0.2)
             assert proc.poll() is None, f'Nginx exited: {proc.stderr.read()}'

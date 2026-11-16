@@ -6,4 +6,4 @@
 
 Число міняйте вручну при кожній збірці, яку віддаєте на деплой.
 """
-BUILD = "2026-11-15-accord-domains-security-v1.4"
+BUILD = "2026-11-16-accord-stage2-recovery-bundle-v1.15.0"

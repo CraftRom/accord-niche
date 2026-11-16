@@ -11,3 +11,17 @@
  .header .header-inner{gap:8px}.header .brandmark{width:90px}.header .brandmark strong{font-size:16px}.header .brandmark-bottom{font-size:6px;letter-spacing:.4em}
  .info-modal{padding:28px 22px}.info-modal h2{font-size:28px}.basket-lines{padding:18px}.basket-bottom{padding:18px}.basket .qty-control button{min-height:40px;min-width:36px}
 }
+
+/* Full-height document: the footer follows long pages and fills short ones. */
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+#root > .header, #root > .notice, #root > .footer { flex-shrink: 0; }
+#root > main { flex: 1 0 auto; min-width: 0; }
+#root > .footer {
+  margin-top: auto;
+  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+}

@@ -1,0 +1,89 @@
+/* Quiet, short motion. Content is visible without animations or JavaScript. */
+:root {
+  --motion-ease: cubic-bezier(.22, .61, .36, 1);
+  --motion-fast: 180ms;
+  --motion-soft: 320ms;
+}
+
+.btn, .icon-btn, .variant-buttons button, .qty-control button,
+.catalog-filters input, .catalog-filters select, .shop-field input,
+.shop-field textarea, .blog-search input, .comment-form textarea {
+  transition: background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease, border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+.product-card, .blog-card {
+  transition: border-color var(--motion-soft) ease,
+    box-shadow var(--motion-soft) ease, transform var(--motion-soft) var(--motion-ease);
+}
+.product-card .photo-tile > img {
+  transition: transform 420ms var(--motion-ease);
+}
+/* Touch devices keep a stable card after tapping; lift is for precise pointers. */
+.product-card.available:hover { transform: none; box-shadow: none; }
+.product-card:hover .photo-tile > img { transform: none; }
+.header-nav button { position: relative; }
+.header-nav button::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #a79375;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+.header-nav button:focus-visible::after { transform: scaleX(1); }
+.footer-links button, .footer-links a {
+  transition: color var(--motion-fast) ease;
+  text-underline-offset: 4px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-card.available:hover, .blog-card:hover {
+    border-color: #d7cebf;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px #1b181408;
+  }
+  .product-card:hover .photo-tile > img { transform: scale(1.025); }
+  .header-nav button:hover::after { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #root > main { animation: accord-page-in 320ms ease-out; }
+  .hero-content { animation: accord-rise-in 440ms var(--motion-ease); }
+  .hero-product, .hero-lettering { animation: accord-rise-in 560ms var(--motion-ease); }
+  .product-card, .blog-card { animation: accord-page-in 360ms ease-out; }
+  .search-strip, .header-nav.open { animation: accord-rise-in 200ms var(--motion-ease); }
+  .drawer-backdrop, .modal-mask { animation: accord-shade-in 180ms ease-out; }
+  .basket { animation: accord-drawer-in 320ms var(--motion-ease); }
+  .info-modal { animation: accord-rise-in 240ms var(--motion-ease); }
+}
+
+@keyframes accord-page-in { from { opacity: .65; } to { opacity: 1; } }
+@keyframes accord-rise-in {
+  from { opacity: .65; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes accord-drawer-in {
+  from { opacity: .85; transform: translateX(20px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes accord-shade-in {
+  from { background-color: #0000; }
+  to { background-color: #0000006b; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .product-card.available:hover, .blog-card:hover,
+  .product-card:hover .photo-tile > img, .btn:active:not(:disabled) {
+    transform: none;
+  }
+}

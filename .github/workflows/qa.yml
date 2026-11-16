@@ -30,6 +30,7 @@ jobs:
       - name: Domain deployment security
         run: |
           export QA_POSTGRES_BIN="$(python -c 'from pathlib import Path; import pgserver; print(Path(pgserver.__file__).parent / "pginstall" / "bin")')"
+          export QA_BACKUP_POSTGRES_PORT=32775
           PYTHONPATH=backend python -m pytest backend/tests_accord backend/qa/qa_accord_domain_split.py -q
       - name: JavaScript dependencies
         run: |

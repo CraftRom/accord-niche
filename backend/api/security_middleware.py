@@ -48,10 +48,12 @@ class SecurityMiddleware:
             limit = 16 * 1024
         elif path.startswith(("/api/telegram/", "/api/integrations/salesdrive/webhook/")):
             limit = 256 * 1024
-        elif path == "/api/media" or re.fullmatch(r"/api/shop/orders/[0-9]+/chat/photo", path) or path in ("/api/catalog/product-transfer", "/api/catalog/products/import", "/api/catalog/product-transfer/import"):
+        elif path == "/api/media" or re.fullmatch(r"/api/shop/orders/[0-9]+/chat/photo", path):
+            limit = 9 * 1024 * 1024
+        elif path in ("/api/catalog/product-transfer", "/api/catalog/products/import", "/api/catalog/product-transfer/import"):
             limit = 11 * 1024 * 1024
         elif path == "/api/backups/upload":
-            limit = 201 * 1024 * 1024
+            limit = 65 * 1024 * 1024
         try:
             declared = int(headers.get(b"content-length", b"0"))
             if declared < 0:
@@ -87,7 +89,7 @@ class SecurityMiddleware:
             finally:
                 await generator.aclose()
         # Small JSON stays in memory; large backup bodies spool to the backup volume,
-        # avoiding 200 MB of RAM per upload and the container's small /tmp budget.
+        # avoiding large amounts of RAM per upload and the container's small /tmp budget.
         spool = None
         if path == "/api/backups/upload":
             from shop.paths import backups_dir
