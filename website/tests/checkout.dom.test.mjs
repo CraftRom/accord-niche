@@ -93,6 +93,12 @@ test('changed server prices need another explicit confirmation',async()=>{
     const posted=app.calls.filter(call=>call.url.pathname==='/api/web/checkout').map(call=>JSON.parse(call.options.body))
     assert.notEqual(posted[0].quote_token,posted[1].quote_token)
     assert.notEqual(posted[0].checkout_key,posted[1].checkout_key)
+    // A07: the order carries the same anonymous visit id the tab recorded.
+    const visit=app.calls.find(call=>call.url.pathname==='/api/web/analytics/visit')
+    assert.ok(visit,'the tab records its visit')
+    const visitId=JSON.parse(visit.options.body).session_id
+    assert.match(visitId,/^[A-Za-z0-9_-]{16,64}$/)
+    assert.ok(posted.every(body=>body.attribution.session_id===visitId))
   }finally{app.close()}
 })
 

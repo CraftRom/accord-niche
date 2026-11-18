@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import case, delete, func, or_, select, update
 
-from api.routers.shop import CheckoutIn, _orders_payload
+from api.routers.shop import AttributionIn, CheckoutIn, _orders_payload
 from api.webapp_auth import InitDataError, parse_init_data
 from shop import models as m
 from shop.config import settings
@@ -338,6 +339,36 @@ async def checkout_status(request: Request, checkout_key: str = Query(min_length
     return {'found':True,'order_id':order.id,'total':order.total,'payment_method':order.payment_method,'replayed':True}
 
 
+_VISIT_BOT_RE = re.compile(r"bot|crawler|spider|slurp|facebookexternalhit|preview|monitor|uptime|headless", re.I)
+
+
+class WebsiteVisitIn(BaseModel):
+    session_id: str = Field(..., min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    attribution: AttributionIn = Field(default_factory=AttributionIn)
+
+
+@router.post('/analytics/visit', status_code=204)
+async def website_visit(data: WebsiteVisitIn, request: Request, repo: Repository = Depends(get_repo)):
+    """First-party visit of the main website: the conversion denominator (A07).
+
+    Anonymous by design: no cookie, IP or user agent is stored, only the
+    random per-tab id and the UTM labels. Only the site's own origin may
+    record a visit; crawlers are acknowledged but not counted; a repeated
+    POST of the same visit is a no-op. Nginx rate-limits the route.
+    """
+    origin = request.headers.get('origin', '').rstrip('/')
+    if not origin or not hmac.compare_digest(origin, _website_origin(request)):
+        raise HTTPException(403, 'Запит із непідтвердженого сайту')
+    if _VISIT_BOT_RE.search(request.headers.get('user-agent', '')):
+        return Response(status_code=204)
+    from shop.services.analytics import record_website_visit
+    attribution = data.attribution.model_dump(exclude={'session_id'})
+    if not attribution.get('source') or attribution['source'] == 'unknown':
+        attribution = {**attribution, 'source': 'accord_website', 'medium': attribution.get('medium') or 'website'}
+    await record_website_visit(repo.s, data.session_id, attribution)
+    return Response(status_code=204)
+
+
 @router.post('/checkout')
 async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository = Depends(get_repo)):
     _require_csrf(request)
@@ -362,7 +393,10 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
         raise HTTPException(422, 'Для курʼєрської доставки не передавайте код відділення')
     if data.delivery_warehouse_ref and not data.delivery_city_ref:
         raise HTTPException(422, 'Для вибраного відділення потрібен населений пункт із довідника')
-    # Website attribution must be distinct from Telegram analytics.
+    # Website attribution must be distinct from Telegram analytics. The visit
+    # id is kept only when that visit was really recorded (A07 funnel).
+    from shop.services.analytics import website_checkout_session
+    visit_id = await website_checkout_session(repo.s, data.attribution.session_id if data.attribution else None)
     order, error = await svc.create_order(
         repo, user, contact_surname=data.contact_surname, contact_name=data.contact_name,
         contact_patronymic=data.contact_patronymic, contact_phone=data.contact_phone,
@@ -372,7 +406,8 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
         promo_code=data.promo_code, use_bonus=data.use_bonus, comment=data.comment,
         checkout_key=data.checkout_key, expected_quote=data.quote_token,
         attribution={**clean_attribution(data.attribution.model_dump() if data.attribution else
-            {'source':'accord_website','medium':'website'}),'channel':'accord_website'},
+            {'source':'accord_website','medium':'website'}),'channel':'accord_website',
+            **({'session_id': visit_id} if visit_id else {})},
     )
     if error or order is None:
         return JSONResponse(status_code=409,content={

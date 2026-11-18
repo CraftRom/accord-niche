@@ -44,10 +44,43 @@ export function campaignFromSearch(search) {
     key,(params.get('utm_'+key) || (key==='source'?'accord_website':'')).replace(/[\u0000-\u001f]/g,'').trim().slice(0,key==='source'?80:160)]))
 }
 export function rememberCampaign(search) {try{const data=campaignFromSearch(search);if(data)sessionStorage.setItem('accord:campaign',JSON.stringify(data))}catch{}}
-export function checkoutCampaign() {
+function storedCampaign() {
   try{
     const data=JSON.parse(sessionStorage.getItem('accord:campaign'))
     if(data && typeof data.source==='string')return Object.fromEntries(['source','medium','campaign','content','term'].map(key=>[key,String(data[key] || '').slice(0,key==='source'?80:160)]))
   }catch{}
   return {source:'accord_website',medium:'website',campaign:'',content:'',term:''}
+}
+
+// One anonymous first-party visit per browser tab (A07 funnel). Only a random
+// id lives in sessionStorage: no cookie, nothing personal, gone with the tab.
+const VISIT='accord:visit'
+export function visitId(storage=sessionStorage, random=()=>crypto.randomUUID()) {
+  try{
+    const known=storage.getItem(VISIT)
+    if(/^[A-Za-z0-9_-]{16,64}$/.test(known || ''))return known
+    const fresh=String(random()).replaceAll('-','')
+    storage.setItem(VISIT,fresh)
+    return fresh
+  }catch{return ''}
+}
+
+// Sends the visit once per tab. A failed POST is retried on the next route
+// change; the server deduplicates, so a repeat never counts twice.
+export async function recordVisit(send=fetch, storage=sessionStorage) {
+  const id=visitId(storage)
+  if(!id)return false
+  try{if(storage.getItem(VISIT+':sent')===id)return true}catch{return false}
+  try{
+    const response=await send('/api/web/analytics/visit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:id,attribution:storedCampaign()}),keepalive:true,credentials:'same-origin'})
+    if(!response.ok)return false
+    try{storage.setItem(VISIT+':sent',id)}catch{}
+    return true
+  }catch{return false}
+}
+
+export function checkoutCampaign() {
+  const id=visitId()
+  return {...storedCampaign(),...(id?{session_id:id}:{})}
 }

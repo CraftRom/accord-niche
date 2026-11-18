@@ -170,7 +170,7 @@ def test_token_expiry_indexes_upgrade_and_downgrade(postgres):
         CREATE TABLE website_sessions (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
         CREATE TABLE website_telegram_links (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
     """)
-    postgres(upgrade_sql('bc1a8f723f9d:head'))
+    postgres(upgrade_sql('bc1a8f723f9d:e2a6c4f81b37'))
     result=postgres("SELECT indexname FROM pg_indexes WHERE indexname LIKE 'ix_website_%_expires_at' ORDER BY 1; SELECT version_num FROM alembic_version;")
     assert 'ix_website_sessions_expires_at' in result.stdout and 'ix_website_telegram_links_expires_at' in result.stdout
     assert 'e2a6c4f81b37' in result.stdout
@@ -181,6 +181,35 @@ def test_token_expiry_indexes_upgrade_and_downgrade(postgres):
     postgres(downgrade.stdout)
     result=postgres("SELECT count(*) AS n FROM pg_indexes WHERE indexname LIKE 'ix_website_%_expires_at';")
     assert 'n = "0"' in result.stdout
+
+
+def test_website_visits_migration_allows_anonymous_unique_visits(postgres):
+    blog_baseline(postgres)
+    postgres("""
+        CREATE TABLE website_sessions (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
+        CREATE TABLE website_telegram_links (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
+        CREATE TABLE analytics_sessions (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+            session_id VARCHAR(64) NOT NULL, started_at TIMESTAMPTZ NOT NULL, attribution JSONB,
+            CONSTRAINT uq_analytics_user_session UNIQUE (user_id, session_id));
+        INSERT INTO users (id,bonus_balance,orders_count,total_spent) VALUES (1,0,0,0);
+        INSERT INTO analytics_sessions (user_id,session_id,started_at) VALUES (1,'miniapp-old-visit',now());
+    """)
+    postgres(upgrade_sql('bc1a8f723f9d:head'))
+    result=postgres("""
+        INSERT INTO analytics_sessions (user_id,channel,session_id,started_at) VALUES (NULL,'accord_website','web-visit-1',now());
+        SELECT channel FROM analytics_sessions WHERE session_id='miniapp-old-visit';
+        SELECT version_num FROM alembic_version;
+    """)
+    assert 'channel = "telegram_miniapp"' in result.stdout and 'f4c8e2a17d59' in result.stdout
+    duplicate=postgres("INSERT INTO analytics_sessions (user_id,channel,session_id,started_at) VALUES (NULL,'accord_website','web-visit-1',now());",expect_error=True)
+    assert 'ux_analytics_website_session' in duplicate.stderr
+    downgrade=subprocess.run([sys.executable,'-m','alembic','downgrade','f4c8e2a17d59:e2a6c4f81b37','--sql'],
+        cwd=BACKEND,env={**os.environ,'PYTHONPATH':str(BACKEND),'DATABASE_URL':'postgresql+asyncpg://qa:qa@localhost/qa'},
+        text=True,capture_output=True,timeout=30)
+    assert downgrade.returncode==0,downgrade.stderr
+    postgres(downgrade.stdout)
+    result=postgres("SELECT count(*) AS n FROM analytics_sessions; SELECT version_num FROM alembic_version;")
+    assert 'n = "1"' in result.stdout and 'e2a6c4f81b37' in result.stdout
 
 
 def test_commerce_channel_and_queue_expressions_on_real_postgres(postgres):

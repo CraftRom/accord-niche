@@ -548,6 +548,10 @@ class Repository(ABC):
         """
 
     @abstractmethod
+    async def prune_website_visits(self, before: datetime) -> int:
+        """Видаляє анонімні візити сайту, старші за строк зберігання (A07)."""
+
+    @abstractmethod
     async def prune_panel_notifications(self, older_than_days: int = 90) -> int:
         """Прибирає старі оперативні сповіщення панелі."""
         ...

@@ -767,12 +767,27 @@ class CatalogImport(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+WEBSITE_CHANNEL = "accord_website"
+MINIAPP_CHANNEL = "telegram_miniapp"
+
+
 class AnalyticsSession(Base):
+    """One storefront visit: the conversion denominator (A07).
+
+    Mini App visits belong to an authenticated Telegram user. Main-website
+    visits are anonymous first-party rows (user_id NULL, channel
+    accord_website) keyed only by the random per-tab session id, so a guest
+    who later signs in with Google is still the same single visit.
+    """
     __tablename__ = "analytics_sessions"
     __table_args__ = (UniqueConstraint("user_id", "session_id", name="uq_analytics_user_session"),
-                      Index("ix_analytics_sessions_started", "started_at"),)
+                      Index("ix_analytics_sessions_started", "started_at"),
+                      Index("ux_analytics_website_session", "session_id", unique=True,
+                            postgresql_where=text("channel = 'accord_website'"),
+                            sqlite_where=text("channel = 'accord_website'")),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    channel: Mapped[str] = mapped_column(String(24), default=MINIAPP_CHANNEL, server_default=MINIAPP_CHANNEL)
     session_id: Mapped[str] = mapped_column(String(64))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attribution: Mapped[dict | None] = mapped_column(JsonType)

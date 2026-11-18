@@ -81,7 +81,8 @@ test('authenticated comment uses existing CSRF session and stays pending, outsid
     await waitFor(()=>app.document.querySelector('.own-comment'))
     assert.match(app.document.querySelector('.own-comment').textContent,/На модерації.*Мій новий коментар/s)
     assert.equal(app.document.querySelectorAll('.blog-comment').length,1)
-    const sent=app.calls.find(call=>call.method==='POST')
+    // The tab's anonymous visit POST (A07) is a separate request.
+    const sent=app.calls.find(call=>call.method==='POST' && call.url.pathname!=='/api/web/analytics/visit')
     assert.equal(sent.options.credentials,'include')
     assert.equal(sent.options.headers['X-CSRF-Token'],'a'.repeat(48))
     assert.match(JSON.parse(sent.options.body).client_key,/^[a-z0-9-]{36}$/)

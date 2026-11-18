@@ -69,6 +69,10 @@ async def main():
                 check('migration downgrade removes only analytics additions', 'attribution' not in {c['name'] for c in inspect(connection).get_columns('orders')})
                 module.upgrade()
                 check('migration upgrade restores attribution and visit/spend tables', 'attribution' in {c['name'] for c in inspect(connection).get_columns('orders')} and 'marketing_spend' in inspect(connection).get_table_names())
+            # Later revisions (f4c8e2a17d59: website visits) also shape this
+            # table; the empty table is brought back to the current head form.
+            m.AnalyticsSession.__table__.drop(connection)
+            m.AnalyticsSession.__table__.create(connection)
         await conn.run_sync(migration_roundtrip)
     maker=async_sessionmaker(engine,expire_on_commit=False)
     async with maker() as s:

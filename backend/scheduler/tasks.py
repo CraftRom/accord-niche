@@ -214,6 +214,10 @@ async def run_housekeeping() -> dict:
     try:
         async with open_repo() as repo:
             tokens_removed = await repo.prune_expired_tokens(datetime.now(timezone.utc))
+            # A07: anonymous website visits have a bounded retention.
+            from shop.services.analytics import WEBSITE_VISIT_RETENTION_DAYS
+            tokens_removed["website_visits"] = await repo.prune_website_visits(
+                datetime.now(timezone.utc) - timedelta(days=WEBSITE_VISIT_RETENTION_DAYS))
     except Exception:
         log.exception("Не вдалося прибрати прострочені токени")
 
