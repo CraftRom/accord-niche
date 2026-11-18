@@ -1,0 +1,39 @@
+/*
+ * ACCORD Admin design tokens — the single source of colour truth.
+ *
+ * Name tokens by role, not by hue: a component asks for "the text on a
+ * primary action", never for "white". Every foreground/background pair
+ * used by the panel is checked for WCAG 2.2 AA (4.5:1 for normal text) in
+ * tests/contrast.mjs against the production build.
+ *
+ * Legacy names (--violet, --mint, --faint, ...) live in styles.css as
+ * aliases of these tokens until the remaining rules are migrated.
+ */
+:root {
+  /* Surfaces */
+  --bg-app: #0A0A0A;
+  --surface-1: #181715;       /* cards, panels */
+  --surface-2: #262420;       /* controls, nested cards */
+  --border-strong: #3A3630;
+  --border-subtle: #302D28;
+
+  /* Text on surfaces (contrast on --surface-2 in brackets) */
+  --text-primary: #F5F1EB;    /* 13.9:1 */
+  --text-secondary: #B6ACA0;  /* 6.9:1 */
+  --text-tertiary: #A0978B;   /* 5.4:1; ≥4.5:1 even on --border-subtle */
+
+  /* Actions */
+  --action-primary-bg: #D9C8AE;  /* brand beige */
+  --action-primary-fg: #19150F;  /* 11.1:1 on the beige — never white */
+  --action-selected-bg: #A79375; /* active tab / current navigation */
+  --action-selected-fg: #19150F; /* 6.1:1 */
+  --focus-ring: #D9C8AE;
+
+  /* Status: text, icon and border colour on dark surfaces */
+  --status-success: #A8C0A8;
+  --status-warning: #E4C698;
+  --status-danger: #E5A49D;
+  --status-info: #A8C7E8;
+  /* Text placed on a filled status/brand badge */
+  --on-status-fg: #19150F;
+}
