@@ -235,6 +235,9 @@ def setup_restore(tmp_path, monkeypatch):
         events.append(command)
         return json.dumps([{'State': {'Running': False}}]).encode() if command[1] == 'inspect' else b''
     obj.run = run
+    # The real single-transaction schema replacement is exercised against
+    # PostgreSQL in test_backup_postgres.py; here only the ordering matters.
+    obj.replace_database = lambda handle: events.append(['replace_database'])
     return obj, source, events
 
 
@@ -246,18 +249,15 @@ def test_restore_safety_failure_restarts_original_writers_without_restore(tmp_pa
     with pytest.raises(files.BackupError):
         obj.restore(source, source.name)
     assert ['docker', 'start', 'api-owned'] in events
-    assert not any(isinstance(e, list) and 'pg_restore' in e for e in events)
+    assert ['replace_database'] not in events
 
 
 def test_restore_failure_keeps_writers_stopped(tmp_path, monkeypatch):
     obj, source, events = setup_restore(tmp_path, monkeypatch)
-    original = obj.run
-    def run(command, **kw):
-        if 'pg_restore' in command:
-            events.append(command)
-            raise files.BackupError('restore failed')
-        return original(command, **kw)
-    obj.run = run
+    def replace(handle):
+        events.append(['replace_database'])
+        raise files.BackupError('restore failed')
+    obj.replace_database = replace
     with pytest.raises(files.BackupError):
         obj.restore(source, source.name)
     assert 'safety' in events
@@ -267,8 +267,8 @@ def test_restore_failure_keeps_writers_stopped(tmp_path, monkeypatch):
 def test_successful_restore_is_transactional_and_restarts_only_original_writers(tmp_path, monkeypatch):
     obj, source, events = setup_restore(tmp_path, monkeypatch)
     obj.restore(source, source.name)
-    command = next(e for e in events if isinstance(e, list) and 'pg_restore' in e)
-    assert '--single-transaction' in command and '--exit-on-error' in command
+    command = ['replace_database']
+    assert command in events
     assert events.index('safety') < events.index(command)
     assert ['docker', 'start', 'api-owned'] in events
     assert not any(isinstance(e, list) and 'bot-owned' in e for e in events)

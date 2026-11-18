@@ -21,7 +21,8 @@ checks = {
     "public client-log endpoint": '@router.post("/client-log"' in shop,
     "storefront own log": 'storefront.log' in client,
     "logs UI service allowed": '"storefront"' in logs,
-    "budget includes storefront": 'SERVICES_COUNT = 4' in logging_setup,
+    # api, bot, scheduler, storefront and (since v1.14) maintenance.
+    "budget includes storefront": 'SERVICES_COUNT = 5' in logging_setup and '"storefront"' in logs,
     "raw initData field absent": 'x_telegram_init_data' not in shop[shop.index('class ClientLogIn'):shop.index('# ------------------------------------------------------------------ схеми')],
     "www alias normalized": 'www.elfar.pp.ua' in config and 'elfar.pp.ua' in config,
     "nginx telemetry rate": 'zone=storefront_log' in rate and 'limit_req zone=storefront_log' in nginx,
@@ -29,7 +30,8 @@ checks = {
     "telemetry schema forbids extras": 'ConfigDict(extra="forbid")' in shop,
     "api request log keeps telemetry quiet": '"/api/shop/client-log"' in (ROOT / "api/request_log.py").read_text(),
     "polling refreshes telegram menu url": 'sync_menu' in bot_main and 'canonical_public_url' in menu,
-    "public links use canonical named app url": 'NAMED_MINIAPP_URL = "https://t.me/elfarshop_bot/elfar"' in links and '?startapp=' in links,
+    # The named app is configurable per deployment; the default stays canonical.
+    "public links use canonical named app url": 'NAMED_MINIAPP_URL = os.getenv("NAMED_MINIAPP_URL", "https://t.me/' in links and '?startapp=' in links,
     "deploy renderer canonicalizes stale www": 'domain_config.py' in render and "primary = 'elfar.pp.ua'" in domains,
     "miniapp self-heals stale www before React": 'legacyHostRedirectUrl' in mini_main and 'window.location.replace' in mini_main,
     "miniapp accepts launch data from query": 'fromSearch()' in mini_tg and 'window.location.search' in mini_tg,

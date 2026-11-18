@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth import Principal, require_staff, require_admin
+from api.auth import Principal, require_admin
 from shop import security_log as security
 from shop.db import get_session
 from shop.secret_crypto import encrypt_secret, decrypt_secret
@@ -651,7 +651,7 @@ async def cloudflare_enable_strict(
 
 @router.get("")
 async def list_pages(
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     rows = (await db.execute(select(PromoLandingPage).order_by(PromoLandingPage.updated_at.desc()))).scalars().all()
@@ -661,7 +661,7 @@ async def list_pages(
 @router.post("", status_code=201)
 async def create_page(
     data: LandingPageIn,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     exists = await db.scalar(select(PromoLandingPage.id).where(PromoLandingPage.domain == data.domain))
@@ -696,7 +696,7 @@ class SeoGenerateIn(BaseModel):
 async def generate_page_seo(
     page_id: int,
     data: SeoGenerateIn,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -715,7 +715,7 @@ async def generate_page_seo(
 @router.get("/{page_id}")
 async def get_page(
     page_id: int,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -728,7 +728,7 @@ async def get_page(
 async def update_page(
     page_id: int,
     data: LandingPageIn,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -757,7 +757,7 @@ async def update_page(
 @router.post("/{page_id}/publish")
 async def publish_page(
     page_id: int,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -782,7 +782,7 @@ async def publish_page(
 @router.post("/{page_id}/unpublish")
 async def unpublish_page(
     page_id: int,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -799,7 +799,7 @@ async def unpublish_page(
 @router.delete("/{page_id}", status_code=204)
 async def remove_page(
     page_id: int,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -819,7 +819,7 @@ async def remove_page(
 async def domain_status(
     page_id: int,
     domain: str | None = None,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)
@@ -886,7 +886,7 @@ async def domain_disconnect(
 async def page_stats(
     page_id: int,
     days: int = 30,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     if not await db.get(PromoLandingPage, page_id):
@@ -919,7 +919,7 @@ def _html_response(document: str, headers: dict) -> HTMLResponse:
 @router.get("/{page_id}/preview", response_class=HTMLResponse)
 async def preview_page(
     page_id: int,
-    who: Principal = Depends(require_staff),
+    who: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
 ):
     row = await db.get(PromoLandingPage, page_id)

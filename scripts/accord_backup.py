@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'backend'))
 from setup_domains import parse_env, validate_domain_environment
-from shop.backup_files import BackupError, backup_lock, staging_file, unique_name, publish, SIGNATURE
+from shop.backup_files import (BackupError, backup_lock, staging_file, unique_name, publish, SIGNATURE,
+                               DUMP_ARGS, SESSION_TABLES)
 
 WRITERS = {'api', 'bot', 'scheduler', 'maintenance'}
 SERVICES = WRITERS | {'db', 'redis', 'migrate', 'data-init', 'accord-website', 'accord-dashboard', 'accord-miniapp'}
@@ -105,7 +106,7 @@ class HostBackup:
         self.directory.mkdir(parents=True, exist_ok=True)
         with staging_file(self.directory) as temporary:
             with temporary.open('wb') as handle:
-                self.run(self.db_command('pg_dump', ['-d', self.database, '-Fc']), stdout=handle, timeout=1800)
+                self.run(self.db_command('pg_dump', ['-d', self.database, '-Fc', *DUMP_ARGS]), stdout=handle, timeout=1800)
             with temporary.open('rb', buffering=0) as handle:
                 self.validate(handle)
             return publish(temporary, self.directory / unique_name(prefix))
@@ -135,6 +136,52 @@ class HostBackup:
             self.run(self.db_command('dropdb', ['--maintenance-db=postgres', '--if-exists', temporary]))
         handle.seek(0)
         return revisions[0]
+
+    def replace_database(self, handle, timeout=3600):
+        """Make the live schema exactly the archive, in one transaction.
+
+        ``pg_restore --clean`` drops only objects listed in the archive. After
+        an upgrade, restoring an older copy left newer tables behind and the
+        following ``alembic upgrade`` collided with them. Here the whole
+        ``public`` schema is replaced, sessions are emptied, and COMMIT is sent
+        only after pg_restore itself finished successfully; any failure leaves
+        the transaction open and PostgreSQL rolls it back on disconnect.
+        """
+        handle.seek(0)
+        purge = ''.join(f"IF to_regclass('public.{t}') IS NOT NULL THEN DELETE FROM public.{t}; END IF; "
+                        for t in SESSION_TABLES)
+        try:
+            psql = subprocess.Popen(self.db_command('psql', ['-d', self.database, '-X', '-q', '-v', 'ON_ERROR_STOP=1']),
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=self.env)
+            source = subprocess.Popen(self.db_command('pg_restore', ['--no-owner', '--no-privileges', '-f', '-']),
+                stdin=handle, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
+        except OSError:
+            raise BackupError('Команда відновлення не запустилася. БД не змінено.') from None
+        broken = False
+        try:
+            try:
+                psql.stdin.write(b'BEGIN;\nDROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public;\n')
+                for chunk in iter(lambda: source.stdout.read(1 << 16), b''):
+                    psql.stdin.write(chunk)
+                restored = source.wait(timeout=timeout) == 0
+                if restored:
+                    psql.stdin.write(('\nDO $accord$ BEGIN ' + purge + 'END $accord$;\nCOMMIT;\n').encode())
+            except BrokenPipeError:
+                broken = True; restored = False
+            finally:
+                try: psql.stdin.close()
+                except BrokenPipeError: broken = True
+            code = psql.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            source.kill(); psql.kill()
+            raise BackupError('Відновлення не завершилося вчасно; транзакцію скасовано.') from None
+        finally:
+            if source.poll() is None:
+                source.kill(); source.wait()
+            source.stdout.close(); source.stderr.close(); psql.stderr.close()
+        if not restored or code or broken:
+            # Never print raw provider output: it can contain connection details.
+            raise BackupError(f'pg_restore/psql завершилися помилкою (код {source.returncode}/{code}); транзакцію скасовано')
 
     def revisions(self):
         known, parents = set(), set()
@@ -187,9 +234,7 @@ class HostBackup:
                 print('Перевірена запобіжна копія:', safety, flush=True)
                 handle.seek(0)
                 changed = True
-                self.run(self.db_command('pg_restore', ['-d', self.database, '--clean', '--if-exists',
-                    '--exit-on-error', '--single-transaction', '--no-owner', '--no-privileges']),
-                    stdin=handle, timeout=3600)
+                self.replace_database(handle)
                 self.run(self.compose + ['run', '--rm', '--no-deps', '--pull', 'never', 'migrate'], timeout=1800)
                 _, expected = self.revisions()
                 current = set(self.query(self.database, 'SELECT version_num FROM alembic_version').splitlines())

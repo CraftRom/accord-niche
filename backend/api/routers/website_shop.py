@@ -20,7 +20,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import delete, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 
 from api.routers.shop import CheckoutIn, _orders_payload
 from api.webapp_auth import InitDataError, parse_init_data
@@ -555,17 +555,30 @@ async def phone_send(data: PhoneIn, request: Request, repo: Repository = Depends
     if not _secure(request) and urlsplit(_website_origin(request)).hostname not in {'localhost','127.0.0.1'}:
         raise HTTPException(403, 'Підтвердження номера доступне лише через HTTPS')
     phone = _phone(data.phone)
+    account_id = account.id
     now = _now()
-    if account.phone_send_at and (now-account.phone_send_at.replace(tzinfo=timezone.utc) if account.phone_send_at.tzinfo is None else now-account.phone_send_at).total_seconds() < 60:
-        raise HTTPException(429, 'Повторіть запит через хвилину')
-    window = account.phone_window_at
-    if window is None or (now - (window if window.tzinfo else window.replace(tzinfo=timezone.utc))).total_seconds() > 3600:
-        account.phone_window_at = now
-        account.phone_window_count = 0
-    if (account.phone_window_count or 0) >= 5:
+    minute_ago, hour_ago = now - timedelta(seconds=60), now - timedelta(hours=1)
+    # One compare-and-set UPDATE: two parallel requests can no longer both pass
+    # the minute gate after reading the same row, and the hourly counter
+    # cannot lose an increment (lost update) between them.
+    window = m.WebsiteAccount.phone_window_at
+    fresh_window = or_(window.is_(None), window < hour_ago)
+    claimed = await repo.s.execute(update(m.WebsiteAccount).where(
+        m.WebsiteAccount.id == account_id,
+        or_(m.WebsiteAccount.phone_send_at.is_(None), m.WebsiteAccount.phone_send_at <= minute_ago),
+        or_(fresh_window, func.coalesce(m.WebsiteAccount.phone_window_count, 0) < 5),
+    ).values(
+        phone_send_at=now,
+        phone_window_at=case((fresh_window, now), else_=window),
+        phone_window_count=case((fresh_window, 1), else_=func.coalesce(m.WebsiteAccount.phone_window_count, 0) + 1),
+    ).execution_options(synchronize_session=False))
+    if claimed.rowcount != 1:
+        await repo.s.rollback()
+        current = await repo.s.get(m.WebsiteAccount, account_id, populate_existing=True)
+        sent_at = current.phone_send_at if current else None
+        if sent_at is not None and (sent_at if sent_at.tzinfo else sent_at.replace(tzinfo=timezone.utc)) > minute_ago:
+            raise HTTPException(429, 'Повторіть запит через хвилину')
         raise HTTPException(429, 'Ліміт SMS на годину вичерпано')
-    account.phone_send_at = now
-    account.phone_window_count = (account.phone_window_count or 0) + 1
     await repo.s.commit()  # limiter persists even if provider fails
     await _twilio('POST', 'Verifications', {'To':phone,'Channel':'sms'})
     return {'sent':True}

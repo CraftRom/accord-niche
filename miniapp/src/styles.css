@@ -1543,6 +1543,8 @@ input, textarea, select {
   white-space: nowrap;
 }
 
+.link-box-site { display: block; margin-bottom: 18px; }
+.link-box-hint { margin: 10px 0; }
 .link-box-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 
 .link-box-actions button { min-height: 44px; padding: 0 var(--s3); font-size: 15px; }

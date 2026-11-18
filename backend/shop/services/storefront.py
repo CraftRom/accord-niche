@@ -31,7 +31,7 @@ def aroma_name(product):
 def group_catalog(products, sales, serialize):
     groups = {}
     for product in products:
-        if not product.is_active or not product.name.strip() or product.price <= 0:
+        if not product.is_published or not product.name.strip() or product.price <= 0:
             continue
         name, brand = aroma_name(product), product.brand.strip()
         key = normalized(brand) + ':' + normalized(name)

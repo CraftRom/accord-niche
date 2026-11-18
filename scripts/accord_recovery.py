@@ -14,7 +14,7 @@ import uuid
 
 from accord_backup import HostBackup, ROOT, WRITERS
 from setup_domains import parse_env, validate_domain_environment
-from shop.backup_files import BackupError, backup_lock
+from shop.backup_files import BackupError, backup_lock, DUMP_ARGS
 from shop.build import BUILD
 from recovery_archive import (open_bundle, private_copy, inspect_media, make_bundle,
                               write_state, recovery_states)
@@ -82,7 +82,10 @@ class Recovery:
     def validate_tls(self, directory):
         h = self.host; cert = directory/'tls/origin.pem'; key = directory/'tls/origin.key'
         for name in ('accordniche.pp.ua','shop.accordniche.pp.ua','dashboard.accordniche.pp.ua'):
-            h.run(['openssl','x509','-in',str(cert),'-noout','-checkhost',name])
+            # OpenSSL 3.0 (Ubuntu 24.04) exits 0 even on a mismatch; trust only the verdict line.
+            verdict = h.run(['openssl','x509','-in',str(cert),'-noout','-checkhost',name]).decode(errors='replace')
+            if f'Hostname {name} does match certificate' not in verdict:
+                raise BackupError(f'TLS-сертифікат не покриває {name}')
         public_cert = h.run(['openssl','x509','-in',str(cert),'-pubkey','-noout'])
         public_key = h.run(['openssl','pkey','-in',str(key),'-passin','pass:','-pubout'])
         if public_cert != public_key: raise BackupError('TLS-сертифікат та приватний ключ не утворюють пару')
@@ -109,7 +112,7 @@ class Recovery:
             payload = Path(tmp); self.config(payload)
             with (payload/'database.dump').open('xb') as output:
                 os.chmod(output.name, 0o600)
-                h.run(h.db_command('pg_dump', ['-d', h.database, '-Fc']), stdout=output, timeout=1800)
+                h.run(h.db_command('pg_dump', ['-d', h.database, '-Fc', *DUMP_ARGS]), stdout=output, timeout=1800)
             with (payload/'database.dump').open('rb', buffering=0) as handle: h.validate(handle)
             with (payload/'media.tar').open('xb') as output:
                 os.chmod(output.name, 0o600)
@@ -170,8 +173,7 @@ class Recovery:
                 with (payload/'database.dump').open('rb', buffering=0) as handle:
                     self.record('changing_database')
                     changed = True
-                    h.run(h.db_command('pg_restore', ['-d',h.database,'--clean','--if-exists','--exit-on-error',
-                          '--single-transaction','--no-owner','--no-privileges']), stdin=handle, timeout=3600)
+                    h.replace_database(handle)
                 h.run(h.compose+['run','--rm','--no-deps','--pull','never','migrate'], timeout=1800)
                 _,expected = h.revisions()
                 if set(h.query(h.database,'SELECT version_num FROM alembic_version').splitlines()) != expected:

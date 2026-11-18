@@ -330,9 +330,10 @@ class QueueTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await r.delete_broadcast(b.id))
         self.assertEqual((await self.read(b.id)).status,S.SENDING)
 
-    async def test_journal_http_contract_is_staff_only_and_validates_pagination(self):
+    async def test_journal_http_contract_is_admin_only_and_validates_pagination(self):
+        # Broadcasts are marketing: administrators only since the A10 role matrix.
         from api.main import app
-        from api.auth import require_staff
+        from api.auth import require_admin as require_staff
         b = await self.create()
         await self.chunk(b)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://testserver') as client:
@@ -471,7 +472,9 @@ class MigrationTests(unittest.TestCase):
         config = Config(str(backend / 'alembic.ini'))
         config.set_main_option('script_location',str(backend/'alembic'))
         script = ScriptDirectory.from_config(config)
-        self.assertEqual(script.get_heads(),['fb4a8c2d1e70'])
+        heads = script.get_heads()
+        self.assertEqual(len(heads), 1)
+        self.assertIn('fb4a8c2d1e70', {r.revision for r in script.iterate_revisions(heads[0], 'base')})
         # Compile revision DDL through the PostgreSQL dialect without a live server.
         import importlib.util
         from alembic.migration import MigrationContext

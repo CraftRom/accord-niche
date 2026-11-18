@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.auth import require_staff
+from api.auth import require_admin
 from api.schemas import PromoIn, PromoOut
 from shop.repo.base import PromoCodeConflict, Repository
 from shop.repo.factory import get_repo
 
-router = APIRouter(dependencies=[Depends(require_staff)])
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 async def validate_categories(data: PromoIn, repo: Repository):

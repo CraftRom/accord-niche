@@ -84,15 +84,81 @@ def test_real_archive_restores_data_and_safety_preserves_previous_state(tool):
     assert not tool.query('postgres', "SELECT datname FROM pg_database WHERE datname LIKE 'accord_check_%'")
 
 
-def test_real_transaction_rolls_back_drop_failures(tool):
+def test_restore_makes_schema_exactly_the_archive(tool):
     archive = tool.dump()
     tool.query(tool.database, 'INSERT INTO orders VALUES(3);CREATE TABLE extra(order_id int REFERENCES orders(id));INSERT INTO extra VALUES(3);')
+    tool.restore(archive, archive.name)
+    assert tool.query(tool.database, 'SELECT count(*) FROM orders') == '2'
+    assert tool.query(tool.database, "SELECT to_regclass('public.extra')") == ''
+
+
+def test_failed_pg_restore_rolls_back_the_whole_replacement(tool, monkeypatch):
+    archive = tool.dump()
+    tool.query(tool.database, 'INSERT INTO orders VALUES(3);CREATE TABLE extra(order_id int REFERENCES orders(id));INSERT INTO extra VALUES(3);')
+    real = tool.db_command
+    def broken(name, args):
+        if name == 'pg_restore' and '-f' in args:
+            # Emits valid destructive SQL, then dies: nothing may be committed.
+            return ['sh', '-c', 'cat >/dev/null; echo "CREATE TABLE orders(id int); INSERT INTO orders VALUES(9);"; exit 1']
+        return real(name, args)
+    monkeypatch.setattr(tool, 'db_command', broken)
     with pytest.raises(host.BackupError):
         tool.restore(archive, archive.name)
     assert tool.query(tool.database, 'SELECT count(*) FROM orders') == '3'
     assert tool.query(tool.database, 'SELECT count(*) FROM users') == '1'
     assert tool.query(tool.database, 'SELECT count(*) FROM extra') == '1'
     assert list(tool.directory.glob('accord-before-restore-*.dump'))
+
+
+def test_sql_error_inside_restore_rolls_back(tool, monkeypatch):
+    archive = tool.dump()
+    tool.query(tool.database, 'INSERT INTO orders VALUES(3)')
+    real = tool.db_command
+    def broken(name, args):
+        if name == 'pg_restore' and '-f' in args:
+            return ['sh', '-c', 'cat >/dev/null; echo "CREATE TABLE orders(id int); SELECT broken_sql_here;"']
+        return real(name, args)
+    monkeypatch.setattr(tool, 'db_command', broken)
+    with pytest.raises(host.BackupError):
+        tool.restore(archive, archive.name)
+    assert tool.query(tool.database, 'SELECT count(*) FROM orders') == '3'
+
+
+def test_older_revision_restore_removes_newer_tables_before_upgrade(tool):
+    archive = tool.dump()
+    (tool.root/'backend/alembic/versions/future.py').write_text("revision = 'future'\ndown_revision = 'current'\n")
+    tool.query(tool.database, "CREATE TABLE future_table(id int primary key);UPDATE alembic_version SET version_num='future';INSERT INTO orders VALUES(3)")
+    previous = tool.run
+    upgraded = []
+    def run(command, **kwargs):
+        if command[0] == 'test-migration-step':
+            # The real upgrade creates the newer table; it must not exist yet.
+            tool.query(tool.database, 'CREATE TABLE future_table(id int primary key)')
+            tool.query(tool.database, "UPDATE alembic_version SET version_num='future'")
+            upgraded.append(True)
+            return b''
+        return previous(command, **kwargs)
+    tool.run = run
+    tool.restore(archive, archive.name)
+    assert upgraded
+    assert tool.query(tool.database, 'SELECT version_num FROM alembic_version') == 'future'
+    assert tool.query(tool.database, 'SELECT count(*) FROM orders') == '2'
+
+
+def test_copies_never_carry_sessions_and_restore_revokes_newer_ones(tool):
+    tool.query(tool.database, "CREATE TABLE dashboard_sessions(digest text primary key);"
+        "CREATE TABLE website_sessions(digest text primary key);"
+        "INSERT INTO dashboard_sessions VALUES('revoked-later');INSERT INTO website_sessions VALUES('customer');")
+    archive = tool.dump()
+    tool.query(tool.database, "DELETE FROM dashboard_sessions;INSERT INTO dashboard_sessions VALUES('after-dump')")
+    tool.restore(archive, archive.name)
+    assert tool.query(tool.database, 'SELECT count(*) FROM dashboard_sessions') == '0'
+    assert tool.query(tool.database, 'SELECT count(*) FROM website_sessions') == '0'
+    # The safety copy is a dump as well: it must not hold the live bearer rows.
+    safety = next(tool.directory.glob('accord-before-restore-*.dump'))
+    tool.query(tool.database, "INSERT INTO dashboard_sessions VALUES('x')")
+    tool.restore(safety, safety.name)
+    assert tool.query(tool.database, 'SELECT count(*) FROM dashboard_sessions') == '0'
 
 
 def test_unknown_revision_is_rejected_before_target_changes(tool):
@@ -207,3 +273,18 @@ def test_wrong_encryption_key_is_rejected_before_stopping_the_store(tool,tmp_pat
     assert not events
     assert tool.query(tool.database,'SELECT count(*) FROM orders')=='2'
     assert rows['api']['State']['Running']
+
+
+def test_restore_of_a_copy_taken_after_a_restore_still_works(tool):
+    # The replaced public schema is no longer the built-in one; a later dump
+    # may then carry CREATE SCHEMA public and must still restore cleanly.
+    first = tool.dump()
+    tool.restore(first, first.name)
+    tool.query(tool.database, 'INSERT INTO orders VALUES(7)')
+    second = tool.dump()
+    tool.query(tool.database, 'INSERT INTO orders VALUES(8)')
+    tool.restore(second, second.name)
+    assert tool.query(tool.database, 'SELECT count(*) FROM orders') == '3'
+    third = tool.dump()
+    tool.restore(third, third.name)
+    assert tool.query(tool.database, 'SELECT count(*) FROM orders') == '3'

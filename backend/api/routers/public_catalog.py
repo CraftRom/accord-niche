@@ -121,14 +121,14 @@ async def catalog(
 @router.get("/catalog/{product_id}", response_model=PublicProduct)
 async def detail(product_id: int, repo: Repository = Depends(get_repo)):
     p = await repo.get_product(product_id)
-    if not p or not p.is_active or p.price <= 0:
+    if not p or not p.is_published or p.price <= 0:
         raise HTTPException(404, "Аромат не знайдено")
     return public_product(p)
 
 @router.get("/catalog/{product_id}/photo")
 async def photo(product_id: int, repo: Repository = Depends(get_repo)):
     p = await repo.get_product(product_id)
-    if not p or not p.is_active:
+    if not p or not p.is_published:
         raise HTTPException(404, "Фото немає")
     local_name = local_product_media_name(p.photo_url)
     if local_name:
@@ -295,4 +295,4 @@ async def cart_products(ids: str = Query('', max_length=600), repo: Repository =
     if max(selected) > 2**31 - 1:
         raise HTTPException(422, 'Некоректний ідентифікатор товару')
     products = await repo.products_by_ids(list(selected))
-    return [public_product(p) for p in products if p.is_active and p.price > 0]
+    return [public_product(p) for p in products if p.is_published and p.price > 0]

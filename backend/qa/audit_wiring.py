@@ -171,7 +171,11 @@ for _script in ("deploy/backup.sh", "deploy/restore.sh"):
     _src = read(_script)
     check("source ../.env" not in _src,
           f"{_script} не виконує .env як скрипт — значення з пробілами його ламають")
-    check("env_value" in _src, f"{_script} читає .env безпечно")
+    # ACCORD wrappers only delegate to the Python host tool, which parses
+    # .env.domains as data (parse_env) instead of executing it.
+    _code = "\n".join(l for l in _src.splitlines() if not l.lstrip().startswith("#"))
+    check("scripts/accord_backup.py" in _code and not re.search(r"(^|[;&|\s])(source|\.)\s", _code),
+          f"{_script} читає .env безпечно")
 
 _api = _compose["services"]["api"]
 check("--workers 1" in _api["command"],
@@ -262,7 +266,10 @@ check("require_sysadmin" in _logs_py, "журнал закритий для вс
 check("SERVICES = (" in _logs_py,
       "імʼя сервісу з білого списку — воно підставляється у шлях до файлу")
 check("/logs" in read("dashboard/src/App.jsx"), "сторінка журналу є в маршрутах")
-check("sysadminOnly" in read("dashboard/src/App.jsx"), "пункт меню видно лише системному адміністратору")
+_roles_js = read("dashboard/src/roles.js")
+check("navigationFor" in read("dashboard/src/App.jsx") and "(logs|backups)" in _roles_js
+      and "return role === 'admin'" in _roles_js,
+      "пункт меню видно лише системному адміністратору")
 check("/api/logs" in read("backend/api/request_log.py"),
       "перегляд журналу не засмічує журнал")
 
@@ -296,7 +303,9 @@ check("require_sysadmin" in _backups_py, "копії бази закриті д�
 check("PGDUMP_SIGNATURE" in _backups_py, "формат дампа перевіряється за підписом, а не за розширенням")
 check("confirm.strip() != name" in _backups_py,
       "відновлення вимагає переписати назву — кнопка «так» натискається рефлекторно")
-check("elfar-before-restore" in _backups_py,
+# Browser restore is refused; the host tool takes the verified safety copy.
+_host_backup = read("scripts/accord_backup.py")
+check("security.backup.restore.blocked" in _backups_py and "accord-before-restore" in _host_backup,
       "перед відновленням знімається запобіжна копія")
 check("/backups" in read("dashboard/src/App.jsx"), "сторінка копій є в маршрутах")
 check("since" in read("backend/api/routers/logs.py"), "журнал фільтрується по днях")
@@ -706,7 +715,9 @@ before(dockerfile, "pip install", "USER shop",
 check("APP_UID" in compose, "UID передається у збірку через compose")
 
 restore = read("deploy/restore.sh")
-check(".dump" in restore and ".sql.gz" in restore,
+# The scheduler writes pg_dump -Fc (.dump); restore validates exactly that signature.
+check("accord_backup.py" in restore and "SIGNATURE" in _host_backup
+      and "'-Fc'" in read("backend/shop/backup_files.py"),
       "restore розуміє формат, у якому пише планувальник")
 
 # Робочий конфіг генерується render-nginx.sh у nginx/generated/ і в архів
