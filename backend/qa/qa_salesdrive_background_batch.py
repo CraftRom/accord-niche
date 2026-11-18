@@ -9,7 +9,8 @@ scheduler_main = (ROOT / "backend/scheduler/__main__.py").read_text(encoding="ut
 config = (ROOT / "backend/shop/config.py").read_text(encoding="utf-8")
 env = (ROOT / ".env.example").read_text(encoding="utf-8")
 repo = (ROOT / "backend/shop/repo/sql.py").read_text(encoding="utf-8")
-compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+# The root compose file only includes the validated domain stack.
+compose = (ROOT / "deploy/docker-compose.domains.yml").read_text(encoding="utf-8")
 
 checks = [
     ("batch helper exists", "async def pull_orders_batch" in sales),

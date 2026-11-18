@@ -138,6 +138,13 @@ run_node deep-actions-ui tests/deep-actions.mjs dashboard
 run_node promo-domain-ux tests/promo-domain-ux.mjs dashboard
 run_node promo-form tests/promo-form.mjs dashboard
 run_node settings-model tests/settings-model.mjs dashboard
+run_node commerce tests/commerce.mjs dashboard
+run_node commerce-dom tests/commerce.dom.mjs dashboard
+run_node catalog-import tests/catalog-import.dom.mjs dashboard
+run_node backups-ui tests/backups.dom.mjs dashboard
+run_node blog-ui tests/blog.dom.mjs dashboard
+run_node dialog tests/dialog.mjs dashboard
+run_node styles tests/styles.mjs dashboard
 run_node scroll tests/scroll.mjs
 
 echo

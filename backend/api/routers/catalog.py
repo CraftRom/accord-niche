@@ -1,4 +1,7 @@
 from __future__ import annotations
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
 
 from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel
 from fastapi.responses import Response
 
-from api.auth import Principal, require_staff
+from api.auth import Principal, require_admin, require_staff
 from api.schemas import CategoryIn, CategoryOut, SubcategoryIn, SubcategoryOut, ProductIn, ProductOut, ProductPatch, StockDeltaIn, StockIn
 from shop.repo.base import Repository
 from shop.repo.factory import get_repo
@@ -19,7 +22,7 @@ async def list_categories(repo: Repository = Depends(get_repo)):
     return await repo.list_categories()
 
 
-@router.post("/categories", response_model=CategoryOut, status_code=201)
+@router.post("/categories", response_model=CategoryOut, status_code=201, dependencies=[Depends(require_admin)])
 async def create_category(data: CategoryIn, repo: Repository = Depends(get_repo)):
     return await repo.create_category(data.model_dump())
 
@@ -32,7 +35,7 @@ async def get_category(category_id: int, repo: Repository = Depends(get_repo)):
     return found
 
 
-@router.put("/categories/{category_id}", response_model=CategoryOut)
+@router.put("/categories/{category_id}", response_model=CategoryOut, dependencies=[Depends(require_admin)])
 async def update_category(
     category_id: int, data: CategoryIn, repo: Repository = Depends(get_repo)
 ):
@@ -42,7 +45,7 @@ async def update_category(
     return category
 
 
-@router.delete("/categories/{category_id}")
+@router.delete("/categories/{category_id}", dependencies=[Depends(require_admin)])
 async def delete_category(category_id: int, repo: Repository = Depends(get_repo)):
     """М'яке видалення: категорія та її товари зникають з бота, але лишаються в базі."""
     if not await repo.get_category(category_id):
@@ -51,7 +54,7 @@ async def delete_category(category_id: int, repo: Repository = Depends(get_repo)
     return {"hidden_products": hidden}
 
 
-@router.delete("/categories/{category_id}/purge")
+@router.delete("/categories/{category_id}/purge", dependencies=[Depends(require_admin)])
 async def purge_category(category_id: int, repo: Repository = Depends(get_repo)):
     """Остаточне видалення: категорія та її товари стираються з бази назавжди.
 
@@ -64,7 +67,7 @@ async def purge_category(category_id: int, repo: Repository = Depends(get_repo))
     return {"purged_products": await repo.purge_category(category_id)}
 
 
-@router.delete("/products/{product_id}/purge", status_code=204)
+@router.delete("/products/{product_id}/purge", status_code=204, dependencies=[Depends(require_admin)])
 async def purge_product(product_id: int, repo: Repository = Depends(get_repo)):
     if not await repo.purge_product(product_id):
         raise HTTPException(404, "Товар не знайдено")
@@ -75,7 +78,7 @@ async def list_subcategories(category_id: int | None = None, repo: Repository = 
     return await repo.list_subcategories(category_id=category_id)
 
 
-@router.post("/subcategories", response_model=SubcategoryOut, status_code=201)
+@router.post("/subcategories", response_model=SubcategoryOut, status_code=201, dependencies=[Depends(require_admin)])
 async def create_subcategory(data: SubcategoryIn, repo: Repository = Depends(get_repo)):
     try:
         return await repo.create_subcategory(data.model_dump())
@@ -83,7 +86,7 @@ async def create_subcategory(data: SubcategoryIn, repo: Repository = Depends(get
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.put("/subcategories/{subcategory_id}", response_model=SubcategoryOut)
+@router.put("/subcategories/{subcategory_id}", response_model=SubcategoryOut, dependencies=[Depends(require_admin)])
 async def update_subcategory(subcategory_id: int, data: SubcategoryIn, repo: Repository = Depends(get_repo)):
     try:
         found = await repo.update_subcategory(subcategory_id, data.model_dump())
@@ -94,14 +97,14 @@ async def update_subcategory(subcategory_id: int, data: SubcategoryIn, repo: Rep
     return found
 
 
-@router.delete("/subcategories/{subcategory_id}")
+@router.delete("/subcategories/{subcategory_id}", dependencies=[Depends(require_admin)])
 async def delete_subcategory(subcategory_id: int, repo: Repository = Depends(get_repo)):
     if not await repo.get_subcategory(subcategory_id):
         raise HTTPException(404, "Субкатегорію не знайдено")
     return {"hidden_products": await repo.delete_subcategory(subcategory_id)}
 
 
-@router.delete("/subcategories/{subcategory_id}/purge")
+@router.delete("/subcategories/{subcategory_id}/purge", dependencies=[Depends(require_admin)])
 async def purge_subcategory(subcategory_id: int, repo: Repository = Depends(get_repo)):
     if not await repo.get_subcategory(subcategory_id):
         raise HTTPException(404, "Субкатегорію не знайдено")
@@ -132,7 +135,7 @@ async def list_products(category_id: int | None = None, subcategory_id: int | No
 
 
 @router.post("/products", response_model=ProductOut, status_code=201)
-async def create_product(data: ProductIn, who: Principal = Depends(require_staff), repo: Repository = Depends(get_repo)):
+async def create_product(data: ProductIn, who: Principal = Depends(require_admin), repo: Repository = Depends(get_repo)):
     payload = data.model_dump()
     payload.pop("sku", None)
     try:
@@ -181,14 +184,14 @@ async def _save_product(product_id, payload, repo):
     return product
 
 
-@router.put("/products/{product_id}", response_model=ProductOut)
+@router.put("/products/{product_id}", response_model=ProductOut, dependencies=[Depends(require_admin)])
 async def update_product(product_id: int, data: ProductIn, repo: Repository = Depends(get_repo)):
     payload = data.model_dump()
     payload.pop("sku", None)
     return await _save_product(product_id, payload, repo)
 
 
-@router.patch("/products/{product_id}", response_model=ProductOut)
+@router.patch("/products/{product_id}", response_model=ProductOut, dependencies=[Depends(require_admin)])
 async def patch_product(product_id: int, data: ProductPatch, repo: Repository = Depends(get_repo)):
     payload = data.model_dump(exclude_unset=True)
     if "photo_url" in payload:
@@ -196,7 +199,7 @@ async def patch_product(product_id: int, data: ProductPatch, repo: Repository = 
     return await _save_product(product_id, payload, repo)
 
 
-@router.patch("/products/{product_id}/stock", response_model=ProductOut)
+@router.patch("/products/{product_id}/stock", response_model=ProductOut, dependencies=[Depends(require_admin)])
 async def set_stock(product_id: int, data: StockIn, repo: Repository = Depends(get_repo)):
     product = await repo.set_stock(product_id, data.stock)
     if not product:
@@ -204,7 +207,7 @@ async def set_stock(product_id: int, data: StockIn, repo: Repository = Depends(g
     return product
 
 
-@router.patch("/products/{product_id}/stock-delta", response_model=ProductOut)
+@router.patch("/products/{product_id}/stock-delta", response_model=ProductOut, dependencies=[Depends(require_admin)])
 async def adjust_stock(product_id: int, data: StockDeltaIn, repo: Repository = Depends(get_repo)):
     if data.delta == 0:
         product = await repo.get_product(product_id)
@@ -217,7 +220,7 @@ async def adjust_stock(product_id: int, data: StockDeltaIn, repo: Repository = D
     return product
 
 
-@router.delete("/products/{product_id}", status_code=204)
+@router.delete("/products/{product_id}", status_code=204, dependencies=[Depends(require_admin)])
 async def delete_product(product_id: int, repo: Repository = Depends(get_repo)):
     # М'яке видалення — історія замовлень має лишитись читабельною
     if not await repo.update_product(product_id, {"is_active": False}):
@@ -228,13 +231,26 @@ from fastapi import File, Form, UploadFile
 from fastapi.responses import Response
 from shop.services.product_io import export_xlsx, parse_salesdrive_xlsx
 
+IMPORT_REPLAY_WINDOW = timedelta(hours=24)
+IMPORT_STALE_AFTER = timedelta(minutes=15)
+
+
 @router.post('/product-transfer/import')
 async def import_products(
     file: UploadFile = File(...),
     mode: str = Form('upsert'),
     prices: str = Form('none'),
+    force: bool = Form(False),
+    who: Principal = Depends(require_admin),
     repo: Repository = Depends(get_repo),
 ):
+    """Застосовує XLSX один раз.
+
+    Файл містить абсолютні залишки. Повтор того самого запиту (загублена
+    відповідь, подвійне натискання) раніше перезаписував продажі, зроблені між
+    двома запусками. Тепер повтор у межах доби повертає збережений підсумок
+    без змін; свідомий повторний імпорт — лише з явним force.
+    """
     if mode not in {'add','update','upsert'}:
         raise HTTPException(400, 'Невідомий режим імпорту')
     if prices not in {'none','regular','discount','both'}:
@@ -245,11 +261,44 @@ async def import_products(
     if len(raw) > 10*1024*1024: raise HTTPException(413, 'Файл завеликий (максимум 10 МБ)')
     try: rows=await run_in_threadpool(parse_salesdrive_xlsx, raw)
     except Exception as exc: raise HTTPException(400, str(exc)) from exc
+    # Digest of the parsed content, not file bytes: XLSX writers embed save
+    # timestamps, so a re-exported identical sheet must count as the same import.
+    canonical=json.dumps({'mode':mode,'prices':prices,'rows':rows}, sort_keys=True, ensure_ascii=False, default=str)
+    digest=hashlib.sha256(canonical.encode()).hexdigest()
+    now=datetime.now(timezone.utc)
+    if force:  # an explicit re-apply never interrupts an import that is still running
+        await repo.forget_catalog_import(digest, only_done=True)
+    receipt=await repo.claim_catalog_import(digest, who.login, stale_before=now-IMPORT_STALE_AFTER,
+                                            forget_before=now-IMPORT_REPLAY_WINDOW)
+    if receipt is not None:
+        if receipt['status']!='done' or not receipt.get('result'):
+            raise HTTPException(409, 'Цей файл уже імпортується. Дочекайтеся завершення й оновіть каталог.')
+        imported_at=receipt['created_at']
+        if imported_at is not None and imported_at.tzinfo is None:
+            imported_at=imported_at.replace(tzinfo=timezone.utc)
+        return {**receipt['result'], 'replayed':True,
+                'imported_at':imported_at.isoformat() if imported_at else None}
+    try:
+        stats=await _apply_import(rows, mode, prices, repo)
+    except BaseException:
+        try: await repo.forget_catalog_import(digest)
+        except Exception: pass
+        raise
+    await repo.finish_catalog_import(digest, stats)
+    return {**stats, 'replayed':False}
+
+
+async def _apply_import(rows, mode, prices, repo):
     cats={c.name.strip().casefold():c for c in await repo.list_categories()}
     subs={(s.category_id, s.name.strip().casefold()):s for s in await repo.list_subcategories()}
     stats={'rows':len(rows),'created':0,'updated':0,'skipped':0,'sku_generated':0,'prices_changed':0,'errors':[]}
     seen=set()
     for n,item in enumerate(rows,2):
+        n=item.get('row',n)
+        if item.get('error'):
+            stats['skipped']+=1
+            stats['errors'].append({'row':n,'name':item.get('name'),'error':item['error'][:200]})
+            continue
         try:
             source_sku = str(item.get('sku') or '').strip()
             if source_sku and source_sku in seen:

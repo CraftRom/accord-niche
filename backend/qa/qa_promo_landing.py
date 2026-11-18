@@ -18,7 +18,8 @@ def main() -> None:
     assert 'preview=preview' in router and 'return path if preview' in router
     assert '<base href="${window.location.origin}/">' in page
     assert '/public/go/button' in router and '"clicks"' in router
-    assert "require_staff" in router and "domain-connect" in router and "domain-disconnect" in router
+    # Promo pages are marketing: administrators only (A10 role matrix).
+    assert "require_staff" not in router and "require_admin" in router and "domain-connect" in router and "domain-disconnect" in router
     assert "SEO" in page and "Статистика" in page and "Промо-сторінки" in page
     assert "Запустити сайт" in page and "Технічний блок" in page
     assert "Docker socket" in controller and "certbot" in controller

@@ -62,12 +62,17 @@ ADMIN_FIELDS = frozenset({
     'volume_discount_percent',
 })
 
+# A10: менеджер — продажі, клієнти, підтримка й читання каталогу. Зміни
+# каталогу (ціни, публікація, залишки, імпорт, видалення) та весь маркетинг
+# (промокоди, промосторінки, розсилки) — лише адміністратор. API перевіряє це
+# через require_admin; ця таблиця — та сама матриця для UI й тестів.
+_MANAGER = frozenset({'sales.manage', 'customers.manage', 'support.manage', 'catalog.read'})
+_ADMIN = _MANAGER | {'catalog.manage', 'marketing.manage', 'blog.manage', 'settings.manage',
+                     'modules.manage', 'operators.manage'}
 ROLE_PERMISSIONS = {
-    OperatorRole.MANAGER: frozenset({'sales.manage', 'customers.manage', 'support.manage'}),
-    OperatorRole.ADMIN: frozenset({'sales.manage', 'customers.manage', 'support.manage',
-                                   'blog.manage', 'settings.manage', 'modules.manage', 'operators.manage'}),
-    OperatorRole.SYSADMIN: frozenset({'sales.manage', 'customers.manage', 'support.manage',
-                                      'blog.manage', 'settings.manage', 'modules.manage', 'operators.manage', 'system.manage'}),
+    OperatorRole.MANAGER: _MANAGER,
+    OperatorRole.ADMIN: frozenset(_ADMIN),
+    OperatorRole.SYSADMIN: frozenset(_ADMIN | {'system.manage'}),
 }
 
 

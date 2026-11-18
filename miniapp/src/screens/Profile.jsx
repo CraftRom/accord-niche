@@ -152,9 +152,9 @@ export function Profile({ config, profile, profileFailed, orders, ordersState, o
         </>
       )}
 
-      {profile && <div className="link-box" style={{display:'block',marginBottom:18}}>
+      {profile && <div className="link-box link-box-site">
         <b>Зв'язати покупки із сайтом ACCORD NICHE</b>
-        <p className="hint" style={{margin:'10px 0'}}>Створи одноразовий код і введи його у своєму Google-профілі на сайті. Код діє 5 хвилин.</p>
+        <p className="hint link-box-hint">Створи одноразовий код і введи його у своєму Google-профілі на сайті. Код діє 5 хвилин.</p>
         {linkCode && <div className="link-box-actions"><code>{linkCode}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(linkCode).catch(()=>{})}>Копіювати</button></div>}
         {linkError && <p className="hint" role="alert">{linkError}</p>}
         <button className="secondary" disabled={linkBusy} onClick={issueLinkCode}>{linkBusy?'Створюємо…':'Створити код звʼязування'}</button>

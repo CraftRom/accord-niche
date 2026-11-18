@@ -382,7 +382,10 @@ async def scenario():
         r.check(unknown.json()["result"] == "ignored", "заявка, створена в CRM руками, ігнорується")
 
         print("\n--- секрети ---")
-        shown = (await client.get("/api/settings", headers=anna)).json()
+        # Settings are administrative; even the sysadmin sees only "connected" flags.
+        manager_view = await client.get("/api/settings", headers=anna)
+        r.check(manager_view.status_code == 403, "менеджер не читає налаштування", manager_view.status_code)
+        shown = (await client.get("/api/settings", headers={"Authorization": f"Bearer {ROOT}"})).json()
         r.check(not any(k in shown for k in salesdrive_secret_fields()),
                 "ключі SalesDrive не повертаються в панель")
         r.check(shown.get("salesdrive_form_connected") is True, "замість ключа — ознака «підключено»")

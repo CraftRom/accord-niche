@@ -5,7 +5,7 @@ import { useProductImage } from '../components/catalog/useProductImage'
 import NewProductModal from '../components/catalog/NewProductModal'
 import TaxonomyManager from '../components/catalog/TaxonomyManager'
 
-import { api } from '../api'
+import { api, isAdmin } from '../api'
 import { useFilters } from '../components/useFilters'
 import { Empty, ErrorBar, Field, Loading, Modal, confirmPurge, money, useToast } from '../components/ui'
 
@@ -67,16 +67,18 @@ function ImportProductsModal({ onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
-  const run = async () => {
+  const run = async (force = false) => {
     if (!file) return
     if (file.size > 10 * 1024 * 1024) { setError('Файл завеликий (максимум 10 МіБ)'); return }
     setBusy(true); setError(''); setResult(null)
     try {
       const form=new FormData(); form.append('file',file); form.append('mode',mode); form.append('prices',prices)
+      // Repeating the same request returns the stored receipt; re-applying stock needs an explicit choice.
+      if (force) form.append('force','true')
       const res=await api.products.importXlsx(form); setResult(res); onDone()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
-  return <Modal title="Імпорт товарів із SalesDrive" onClose={onClose} footer={<><button className="btn ghost" onClick={onClose}>Закрити</button><button className="btn" disabled={!file||busy} onClick={run}>{busy?'Імпортую…':'Імпортувати'}</button></>}>
+  return <Modal title="Імпорт товарів із SalesDrive" onClose={onClose} footer={<><button className="btn ghost" onClick={onClose}>Закрити</button><button className="btn" disabled={!file||busy} onClick={() => run(false)}>{busy?'Імпортую…':'Імпортувати'}</button></>}>
     <div className="stack">
       <ErrorBar error={error}/>
       <Field label="XLSX файл" hint="Стандартний експорт товарів SalesDrive, до 10 МіБ."><input className="input" type="file" accept=".xlsx" onChange={e=>setFile(e.target.files?.[0]||null)}/></Field>
@@ -87,6 +89,7 @@ function ImportProductsModal({ onClose, onDone }) {
         <select className="input" value={prices} onChange={e=>setPrices(e.target.value)}><option value="none">Не імпортувати ціни</option><option value="regular">Тільки звичайна ціна</option><option value="discount">Ціна зі знижкою + звичайна в поле «Стара ціна»</option><option value="both">Обидві ціни</option></select>
       </Field>
       <div className="muted">Товари звіряються за системним SKU або зовнішнім артикулом. Кожен новий товар отримує автоматичний SKU ELF-…; при оновленні артикул зберігається. Колонка «Категорія» старого експорту SalesDrive стає субкатегорією. Новий товар без імпорту ціни створюється прихованим з ціною 0, щоб випадково не потрапити у продаж.</div>
+      {result?.replayed && <div className="card warn" role="status"><strong>Цей самий файл уже імпортовано{result.imported_at ? ' ' + new Date(result.imported_at).toLocaleString('uk-UA') : ''}.</strong><div>Повтор не застосовано: залишки з файла перезаписали б продажі, зроблені після імпорту. Нижче — підсумок того імпорту.</div><button className="btn ghost small" disabled={busy} onClick={() => { if (window.confirm('Застосувати файл ще раз? Залишки й дані товарів знову будуть перезаписані значеннями з файла.')) run(true) }}>Застосувати ще раз</button></div>}
       {result && <div className="card"><strong>Готово</strong><div>Рядків: {result.rows} · додано: {result.created} · оновлено: {result.updated} · пропущено: {result.skipped}</div><div>Згенеровано SKU: {result.sku_generated} · змінено цін: {result.prices_changed}</div>{result.errors?.length>0 && <div className="bad">Помилок: {result.errors.length}. Перший рядок: {result.errors[0].row} — {result.errors[0].error}</div>}</div>}
     </div>
   </Modal>
@@ -114,6 +117,8 @@ export default function Catalog() {
   const [editing, setEditing] = useState(null)
   const [managingCategories, setManagingCategories] = useState(false)
   const [importing, setImporting] = useState(false)
+  // A10: managers read the catalog; changes are administrative (the API enforces it too).
+  const canEdit = isAdmin()
   const pageSize=[10,20,50].includes(Number(rawSize))?Number(rawSize):20
   const page=Number.isSafeInteger(Number(rawPage))?Math.min(20000,Math.max(1,Number(rawPage))):1
   const setPage=value=>setQuery('page',typeof value==='function'?value(page):value)
@@ -282,7 +287,7 @@ export default function Catalog() {
         </div>
         <div className="catalog-head-actions">
           <button className="btn ghost" onClick={() => api.products.exportXlsx().catch(e => notify(e.message, 'bad'))}>Експорт XLSX</button>
-          <button className="btn ghost" onClick={() => setImporting(true)}>Імпорт XLSX</button>
+          {canEdit && <><button className="btn ghost" onClick={() => setImporting(true)}>Імпорт XLSX</button>
           <button
             className="btn ghost catalog-categories-btn"
             onClick={() => setManagingCategories(true)}
@@ -295,7 +300,7 @@ export default function Catalog() {
             <span aria-hidden="true">＋</span>
             <span className="catalog-add-wide">Додати товар</span>
             <span className="catalog-add-short">Додати</span>
-          </button>
+          </button></>}
         </div>
       </div>
 
@@ -414,7 +419,7 @@ export default function Catalog() {
                   <button
                     className="catalog-stepper"
                     onClick={() => updateStock(p, -1)}
-                    disabled={p.stock <= 0}
+                    disabled={!canEdit || p.stock <= 0}
                     aria-label={`Зменшити залишок ${p.name}`}
                   >
                     −
@@ -423,6 +428,7 @@ export default function Catalog() {
                   <button
                     className="catalog-stepper"
                     onClick={() => updateStock(p, 1)}
+                    disabled={!canEdit}
                     aria-label={`Збільшити залишок ${p.name}`}
                   >
                     +
@@ -437,7 +443,7 @@ export default function Catalog() {
                   <Link className="btn small catalog-edit" to={`/catalog/products/${p.id}`} state={{ catalogBack }}>
                     <span aria-hidden="true">✎</span> Відкрити
                   </Link>
-                  {p.is_active ? (
+                  {canEdit && (p.is_active ? (
                     <button
                       className="btn ghost small catalog-visibility"
                       onClick={() => hide(p)}
@@ -452,21 +458,21 @@ export default function Catalog() {
                     >
                       Показати
                     </button>
-                  )}
-                  <button
+                  ))}
+                  {canEdit && <button
                     className="btn danger small"
                     onClick={() => purgeProduct(p)}
                     title="Стерти з бази назавжди. Необоротно"
                   >
                     Стерти
-                  </button>
+                  </button>}
                 </div>
               </article>
             ))}
           </div>
 
           <footer className="catalog-footer">
-            <div className="catalog-bulk">
+            {canEdit ? <div className="catalog-bulk">
               <span>Вибрано: <strong>{selected.size}</strong></span>
               <select
                 className="input"
@@ -485,7 +491,7 @@ export default function Catalog() {
               >
                 {bulkBusy ? 'Виконую…' : 'Застосувати'}
               </button>
-            </div>
+            </div> : <div className="catalog-bulk faint">Перегляд: змінювати каталог може адміністратор.</div>}
 
             <div className="catalog-pagination">
               <label>

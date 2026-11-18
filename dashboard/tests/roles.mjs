@@ -33,3 +33,14 @@ test('server field allowlist controls module switches and sensitive items indepe
   assert.equal(filterSettingGroups(groups, ['salesdrive_api_key'])[0].toggle, undefined)
   assert.equal(groups[0].items.length, 1, 'source definitions are not mutated')
 })
+test('marketing is administrative and catalog changes need an administrator (A10)', async () => {
+  const { canManageCatalog } = await import('../src/roles.js')
+  for (const path of ['/promos', '/landing-pages', '/broadcasts', '/broadcasts/4', '/%70romos']) {
+    assert.equal(canAccessPage('operator', path), false, path)
+    assert.equal(canAccessPage('shop_admin', path), true, path)
+  }
+  assert.equal(canAccessPage('operator', '/catalog'), true, 'managers still read the catalog')
+  assert.equal(canManageCatalog('operator'), false)
+  assert.equal(canManageCatalog('shop_admin'), true)
+  assert.equal(canManageCatalog('admin'), true)
+})

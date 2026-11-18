@@ -1,7 +1,7 @@
 import {publicationState} from '../commerce'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { api } from '../api'
+import { api, isAdmin } from '../api'
 import { useProductImage } from '../components/catalog/useProductImage'
 import { ErrorBar, Field, Info, Loading, money, useToast } from '../components/ui'
 import { DescriptionField, DisplayFields, PriceFields, ProductImageField, TaxonomyFields, PerfumeFields, perfumePayload, changeField, groupPayload, pricePayload } from '../components/catalog/ProductFields'
@@ -27,7 +27,7 @@ function EditBlock({ title, product, fields, payload, onSaved, children }) {
       setEditing(false); notify(`${title}: збережено`)
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
-  return <section className="catalog-edit-block" aria-label={title}><div className="catalog-block-head"><h2>{title}</h2>{!editing && <button className="btn ghost small" onClick={start}>Редагувати</button>}</div>{editing ? <form onSubmit={save}><ErrorBar error={error} /><fieldset disabled={busy}>{fields(form, setForm)}</fieldset><div className="catalog-block-actions"><button className="btn ghost" type="button" disabled={busy} onClick={() => setEditing(false)}>Скасувати</button><button className="btn" disabled={busy}>{busy ? 'Зберігаємо…' : 'Зберегти блок'}</button></div></form> : children}</section>
+  return <section className="catalog-edit-block" aria-label={title}><div className="catalog-block-head"><h2>{title}</h2>{!editing && isAdmin() && <button className="btn ghost small" onClick={start}>Редагувати</button>}</div>{editing ? <form onSubmit={save}><ErrorBar error={error} /><fieldset disabled={busy}>{fields(form, setForm)}</fieldset><div className="catalog-block-actions"><button className="btn ghost" type="button" disabled={busy} onClick={() => setEditing(false)}>Скасувати</button><button className="btn" disabled={busy}>{busy ? 'Зберігаємо…' : 'Зберегти блок'}</button></div></form> : children}</section>
 }
 function CurrentImage({ product }) {
   const [image, error] = useProductImage(product)

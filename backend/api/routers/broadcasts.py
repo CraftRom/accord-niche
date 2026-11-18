@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
-from api.auth import require_staff
+from api.auth import require_admin
 from api.schemas import BroadcastIn, BroadcastOut, ScheduleIn, SegmentIn
 from shop.config import settings
 from shop.entities import BroadcastStatus
@@ -16,7 +16,7 @@ from shop.services.broadcast_content import validate_content
 from shop.services.broadcast_media import telegram_photo
 from starlette.concurrency import run_in_threadpool
 
-router = APIRouter(dependencies=[Depends(require_staff)])
+router = APIRouter(dependencies=[Depends(require_admin)])
 log = logging.getLogger("broadcast")
 
 SEGMENTS = {

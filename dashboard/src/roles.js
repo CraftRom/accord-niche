@@ -5,13 +5,16 @@ export const ROLE_TITLES = Object.freeze({
   operator: 'Менеджер',
 })
 export const isAdministrativeRole = (role) => role === 'admin' || role === 'shop_admin'
+// Catalog changes (prices, publication, stock, import, removal) are administrative.
+export const canManageCatalog = (role) => isAdministrativeRole(role)
 export const canManageAccount = (role, targetRole) => role === 'admin' || (role === 'shop_admin' && targetRole === 'operator')
 export const assignableRoles = (role) => role === 'admin' ? ['operator', 'shop_admin'] : role === 'shop_admin' ? ['operator'] : []
 export function canAccessPage(role, pathname) {
   if (!Object.hasOwn(ROLE_TITLES, role)) return false
   try { pathname = decodeURIComponent(String(pathname)).toLowerCase() } catch { return false }
   if (/^\/(logs|backups)(\/|$)/.test(pathname)) return role === 'admin'
-  if (/^\/(settings|operators|blog)(\/|$)/.test(pathname)) return isAdministrativeRole(role)
+  // Marketing is administrative (A10); managers keep sales, customers, support and catalog reading.
+  if (/^\/(settings|operators|blog|promos|landing-pages|broadcasts)(\/|$)/.test(pathname)) return isAdministrativeRole(role)
   return true
 }
 export function filterSettingGroups(groups, allowedKeys = []) {

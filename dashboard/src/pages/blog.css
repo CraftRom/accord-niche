@@ -14,3 +14,7 @@
 .blog-prose{line-height:1.85;overflow-wrap:anywhere}.blog-prose h2,.blog-prose h3,.blog-prose h4{margin:1.4em 0 .65em}.blog-prose p,.blog-prose ul,.blog-prose ol{margin:.8em 0}.blog-prose ul,.blog-prose ol{padding-left:26px}.blog-prose img{max-width:100%;height:auto;border-radius:8px}.blog-prose a{color:var(--accent,#94734a);text-decoration:underline}.blog-prose pre{max-width:100%;overflow:auto;padding:16px;background:#80808012;border-radius:6px}.blog-prose blockquote{border-left:3px solid #a78b63;margin:18px 0;padding:5px 20px;background:#a78b630d}
 @media(max-width:1000px){.blog-editor-fields>div{grid-template-columns:1fr}.blog-editor-side .btn.primary{position:static}.blog-admin-posts .card{align-items:flex-start;flex-direction:column}}
 @media(max-width:600px){.blog-admin-filters{flex-direction:column}.blog-admin-filters .input{max-width:none}.blog-editor-preview{padding:15px}.blog-admin .actions{align-items:stretch}.blog-admin-pagination{gap:12px}}
+
+/* Structural hooks: the editor column and the inline image picker. */
+.blog-admin-editor{min-width:0}
+.blog-inline-image{display:grid;gap:8px;margin:8px 0}

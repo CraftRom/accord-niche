@@ -43,6 +43,10 @@ class CartSession:
         return ScalarRows(self.products)
 
     async def execute(self, query):
+        from sqlalchemy.sql import Select
+        if isinstance(query, Select):  # parent category/subcategory activity (A08)
+            self.calls.append('check_parents')
+            return [(p.id, getattr(p, 'parents_active', True)) for p in self.products]
         self.calls.append('delete_previous_cart')
 
     def add_all(self, objects):
@@ -58,8 +62,9 @@ class CartSession:
         self.calls.append('rollback')
 
 
-def product(id, stock, brand='CREED', active=True, price=Decimal('100')):
-    return SimpleNamespace(id=id, stock=stock, brand=brand, is_active=active, price=price, name=f'Aroma {id}')
+def product(id, stock, brand='CREED', active=True, price=Decimal('100'), parents_active=True):
+    return SimpleNamespace(id=id, stock=stock, brand=brand, is_active=active, price=price, name=f'Aroma {id}',
+                           parents_active=parents_active)
 
 
 @pytest.mark.asyncio
@@ -68,7 +73,7 @@ async def test_replace_cart_writes_both_lines_in_one_transaction():
     await SqlRepository(session).replace_cart(1, [(3, 2), (7, 3)])
     assert session.commits == 1 and session.rollbacks == 0
     assert [(x.product_id, x.qty, x.user_id) for x in session.new_lines] == [(3, 2, 1), (7, 3, 1)]
-    assert session.calls == ['lock_user', 'lock_products', 'delete_previous_cart', 'insert_replacement_cart', 'commit']
+    assert session.calls == ['lock_user', 'lock_products', 'check_parents', 'delete_previous_cart', 'insert_replacement_cart', 'commit']
 
 
 @pytest.mark.asyncio
@@ -76,6 +81,7 @@ async def test_replace_cart_writes_both_lines_in_one_transaction():
     ([product(3, 1)], [(3, 2)]),
     ([product(3, 10, price=Decimal('0'))], [(3, 1)]),
     ([product(3, 10, active=False)], [(3, 1)]),
+    ([product(3, 10, parents_active=False)], [(3, 1)]),
     ([product(3, 10)], [(3, 1), (4, 1)]),
     ([product(3, 10)], [(3, 1), (3, 2)]),
 ])

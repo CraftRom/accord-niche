@@ -85,22 +85,31 @@ async def scenario():
         resp = await c.get("/api/orders", headers=head(temp_token))
         r.check(resp.status_code == 200, "новий вхід відновлює доступ", resp.status_code)
 
-        print("\n--- зниження ролі діє негайно ---")
-        # Токен усе ще каже «адміністратор». База каже інше, і слухаємо базу.
+        print("\n--- зміна ролі відкликає стару сесію ---")
+        # A10: зміна ролі підвищує auth_version. Старий токен не продовжує
+        # працювати з новими правами — потрібен новий вхід.
         async with open_repo() as repo:
-            await repo.update_operator(boss.id, {"role": OperatorRole.MANAGER})
+            demoted = await repo.update_operator(boss.id, {"role": OperatorRole.MANAGER})
         resp = await c.get("/api/operators", headers=head(boss_token))
-        r.check(resp.status_code == 403,
+        r.check(resp.status_code == 401,
                 "знижений адміністратор більше не керує менеджерами",
                 resp.status_code)
+        boss_token = create_token("boss", OperatorRole.MANAGER, boss.id, "Ольга",
+                                  auth_version=demoted.auth_version)
+        resp = await c.get("/api/operators", headers=head(boss_token))
+        r.check(resp.status_code == 403, "новий вхід застосовує права менеджера", resp.status_code)
         resp = await c.get("/api/orders", headers=head(boss_token))
         r.check(resp.status_code == 200,
                 "але замовлення йому доступні — він лишився менеджером",
                 resp.status_code)
 
-        print("\n--- підвищення теж діє негайно ---")
+        print("\n--- підвищення теж вимагає нового входу ---")
         async with open_repo() as repo:
-            await repo.update_operator(boss.id, {"role": OperatorRole.ADMIN})
+            promoted = await repo.update_operator(boss.id, {"role": OperatorRole.ADMIN})
+        resp = await c.get("/api/operators", headers=head(boss_token))
+        r.check(resp.status_code == 401, "сесія з попередньою роллю відкликана", resp.status_code)
+        boss_token = create_token("boss", OperatorRole.ADMIN, boss.id, "Ольга",
+                                  auth_version=promoted.auth_version)
         resp = await c.get("/api/operators", headers=head(boss_token))
         r.check(resp.status_code == 200, "повернуті права працюють",
                 resp.status_code)
