@@ -9,7 +9,7 @@ from shop.repo.base import Repository
 from shop.repo.factory import get_repo
 from shop.services import order_business
 from shop import models as m
-from shop.services.website_identity import _order_time, _owned_user_ids
+from shop.services.website_identity import _owned_user_ids
 
 router = APIRouter(dependencies=[Depends(require_staff)])
 
@@ -120,13 +120,9 @@ async def customer_orders(customer_id: int, limit: int = Query(200, ge=1, le=500
         raise HTTPException(404, 'Клієнта не знайдено')
     account = await _website_identity(repo, customer_id)
     ids = await _owned_user_ids(repo, account) if account else [customer_id]
-    # Bounded per-source fetch to merge a deterministic page. Order owner IDs
-    # remain unchanged for accounting, only the read model is unified.
-    orders = []
-    for uid in ids:
-        orders.extend(await repo.list_orders(user_id=uid, limit=offset + limit + 1, offset=0))
-    orders.sort(key=lambda o: (_order_time({'created_at': o.created_at}), o.id), reverse=True)
-    orders = orders[offset:offset + limit]
+    # One database-paged timeline over all proven identities (A12). Order
+    # owner IDs remain unchanged for accounting, only the read model is unified.
+    orders = await repo.list_orders(user_id=ids, limit=limit, offset=offset)
     items = [
         {
             "id": o.id, "status": o.status.value, "total": o.total,
@@ -142,6 +138,6 @@ async def customer_orders(customer_id: int, limit: int = Query(200, ge=1, le=500
 
     if not paginated:
         return items
-    total = sum([await repo.count_filtered_orders(user_id=uid) for uid in ids])
+    total = await repo.count_filtered_orders(user_id=ids)
     return dict(items=items, total=total, limit=limit, offset=offset,
                 has_more=offset + len(items) < total)
