@@ -17,7 +17,9 @@ try {
   await page.route('**/api/**',async route=>{
     const path=new URL(route.request().url()).pathname
     let data={}
-    if(path==='/api/auth/session') data={role:'admin',name:'QA',csrf_token:'qa-csrf'}
+    // The panel renders only the fields the session may edit (system groups);
+    // a system administrator may edit every stored setting.
+    if(path==='/api/auth/session') data={role:'admin',name:'QA',csrf_token:'qa-csrf',editable_settings:Object.keys(settings)}
     else if(path==='/api/settings') {
       if(route.request().method()==='PUT'){const body=route.request().postDataJSON();updates.push(body);settings={...settings,...body}}
       data=settings
