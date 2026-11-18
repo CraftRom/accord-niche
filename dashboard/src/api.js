@@ -419,31 +419,6 @@ export const api = {
     },
   },
 
-  landingPages: {
-    list: () => request('/landing-pages'),
-    get: (id) => request(`/landing-pages/${id}`),
-    create: (data) => request('/landing-pages', { method: 'POST', body: data }),
-    update: (id, data) => request(`/landing-pages/${id}`, { method: 'PUT', body: data }),
-    publish: (id) => request(`/landing-pages/${id}/publish`, { method: 'POST' }),
-    unpublish: (id) => request(`/landing-pages/${id}/unpublish`, { method: 'POST' }),
-    remove: (id) => request(`/landing-pages/${id}`, { method: 'DELETE' }),
-    stats: (id, days = 30) => request(`/landing-pages/${id}/stats`, { params: { days } }),
-    domainStatus: (id, domain) => request(`/landing-pages/${id}/domain-status`, { params: { domain } }),
-    domainConnect: (id) => request(`/landing-pages/${id}/domain-connect`, { method: 'POST' }),
-    domainDisconnect: (id) => request(`/landing-pages/${id}/domain-disconnect`, { method: 'POST' }),
-    generateSeo: (id, data) => request(`/landing-pages/${id}/seo-generate`, { method: 'POST', body: data }),
-    cloudflareConfig: () => request('/landing-pages/cloudflare/config'),
-    cloudflareSave: (apiToken, accountId = '') => request('/landing-pages/cloudflare/config', { method: 'PUT', body: { api_token: apiToken, account_id: accountId } }),
-    cloudflareRemove: () => request('/landing-pages/cloudflare/config', { method: 'DELETE' }),
-    cloudflareDomain: (domain) => request('/landing-pages/cloudflare/domain', { params: { domain } }),
-    cloudflareSync: (domain) => request('/landing-pages/cloudflare/domain/sync', { method: 'POST', params: { domain } }),
-    cloudflareStrict: (domain) => request('/landing-pages/cloudflare/domain/strict', { method: 'POST', params: { domain } }),
-    preview: async (id) => {
-      const response = await authorizedFetch(new URL(`${BASE}/landing-pages/${id}/preview`, window.location.origin))
-      if (!response.ok) throw new ApiError(`Помилка ${response.status}`, response.status)
-      return response.text()
-    },
-  },
 
   media: {
     list: (params = {}) => request('/media', { params }),

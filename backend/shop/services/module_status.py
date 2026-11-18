@@ -1,4 +1,4 @@
-"""Стан модулів: «увімкнено» ≠ «працює» (A04, A09).
+"""Стан модулів: «увімкнено» ≠ «працює» (A04).
 
 Кожен модуль отримує один із станів:
 
@@ -30,10 +30,6 @@ def _needs(worker_states, worker, key, title, ready_detail, absent_detail):
     running = worker_states[worker]["running"]
     return _module(key, title, "ready" if running else "no_worker",
                    ready_detail if running else absent_detail, worker)
-
-
-def promo_controller_configured() -> bool:
-    return bool(os.environ.get("PROMO_CONTROLLER_TOKEN", "").strip())
 
 
 def twilio_configured() -> bool:
@@ -80,12 +76,6 @@ async def module_report(repo, *, heartbeat_directory=None, now=None) -> dict:
                               "Відправка йде одразу; повтори й фонове читання — у планувальнику.",
                               "Нові заявки відправляються одразу, але повтори після збою й фонове "
                               "читання не працюватимуть без планувальника."))
-    modules.append(_module(
-        "promo_domains", "Домени промосторінок",
-        "ready" if promo_controller_configured() else "not_configured",
-        "Контролер промодоменів налаштований." if promo_controller_configured() else
-        "PROMO_CONTROLLER_TOKEN не задано: редактор і перегляд працюють, підключення власного "
-        "домену недоступне.", None))
     modules.append(_module(
         "sms_verification", "SMS-підтвердження телефону",
         "ready" if twilio_configured() else "not_configured",

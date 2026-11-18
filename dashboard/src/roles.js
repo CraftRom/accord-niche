@@ -14,7 +14,7 @@ export function canAccessPage(role, pathname) {
   try { pathname = decodeURIComponent(String(pathname)).toLowerCase() } catch { return false }
   if (/^\/(logs|backups)(\/|$)/.test(pathname)) return role === 'admin'
   // Marketing is administrative (A10); managers keep sales, customers, support and catalog reading.
-  if (/^\/(settings|operators|blog|promos|landing-pages|broadcasts)(\/|$)/.test(pathname)) return isAdministrativeRole(role)
+  if (/^\/(settings|operators|blog|promos|broadcasts)(\/|$)/.test(pathname)) return isAdministrativeRole(role)
   return true
 }
 export function filterSettingGroups(groups, allowedKeys = []) {

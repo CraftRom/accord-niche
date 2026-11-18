@@ -110,7 +110,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
-    networks: [internal, promo_control]
+    networks: [internal]
 
   bot:
     volumes:
@@ -194,6 +194,8 @@ services:
   nginx:
     image: nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
     restart: always
+    # Re-reads certificates renewed by the certbot helper twice a day.
+    command: ["sh", "-c", "while :; do sleep 43200; nginx -s reload; done & exec nginx -g 'daemon off;'"]
     ports:
       - "80:80"
       - "443:443"
@@ -203,7 +205,6 @@ services:
       # бани працюють з адресою вузла Cloudflare, спільною для всіх.
       - ./nginx/cloudflare-realip.conf:/etc/nginx/conf.d/01-cloudflare-realip.conf:ro
       - ./nginx/generated/app.conf:/etc/nginx/conf.d/default.conf:ro
-      - promo-nginx-conf:/etc/nginx/promo.d:ro
       # Читання, не запис: nginx лише віддає файли, кладе їх API.
       - ./data/media:/data/media:ro
       # HSTS вмикається лише після появи справжнього сертифіката.
@@ -218,49 +219,14 @@ services:
     logging: *default-logging
     networks: [internal]
 
-  # Ізольований контролер промо-доменів. Він НЕ має Docker socket,
-  # не бачить основну БД і не приймає зовнішні з’єднання. API звертається
-  # до нього тільки через окрему internal network. Для reload він ділить
-  # PID namespace лише з nginx і має єдину capability KILL.
-  promo-controller:
-    build: ./promo-controller
-    restart: always
-    environment:
-      PROMO_CONTROLLER_TOKEN: ${PROMO_CONTROLLER_TOKEN}
-      CERTBOT_EMAIL: ${CERTBOT_EMAIL}
-      PROMO_PUBLIC_IPV4: ${PROMO_PUBLIC_IPV4:-}
-      PROMO_PUBLIC_IPV6: ${PROMO_PUBLIC_IPV6:-}
-      PROMO_PUBLIC_IP_CACHE_SECONDS: ${PROMO_PUBLIC_IP_CACHE_SECONDS:-600}
-      PROMO_CONTROLLER_PORT: 8787
-    volumes:
-      - promo-nginx-conf:/promo-conf
-      - certbot-www:/var/www/certbot
-      - certbot-conf:/etc/letsencrypt
-    pid: "service:nginx"
-    depends_on: [nginx]
-    networks: [promo_control, promo_egress]
-    security_opt:
-      - no-new-privileges:true
-    cap_drop: ["ALL"]
-    cap_add: ["KILL"]
-    read_only: true
-    tmpfs:
-      - /tmp:size=32m,mode=1777
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    logging: *default-logging
-
   certbot:
     image: certbot/certbot
     volumes:
       - certbot-www:/var/www/certbot
       - certbot-conf:/etc/letsencrypt
-    # Helper-контейнер для bootstrap/certbot-init.sh. Автоматичне renew +
-    # reload nginx тепер виконує ізольований promo-controller.
-    entrypoint: ["sh", "-c", "trap exit TERM; while :; do sleep 86400 & wait $${!}; done"]
+    # Helper для bootstrap/certbot-init.sh і автоматичне renew двічі на добу;
+    # nginx перечитує поновлені сертифікати власним періодичним reload.
+    entrypoint: ["sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet || true; sleep 43200 & wait $${!}; done"]
     logging: *default-logging
 
 volumes:
@@ -268,11 +234,6 @@ volumes:
   redisdata:
   certbot-www:
   certbot-conf:
-  promo-nginx-conf:
 
 networks:
   internal:
-  promo_control:
-    internal: true
-  promo_egress:
-    # Лише вихід promo-controller до DNS/Let's Encrypt. Портів назовні немає.

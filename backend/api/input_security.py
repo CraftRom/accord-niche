@@ -5,7 +5,6 @@ from urllib.parse import parse_qsl
 
 
 LOGIN_PATHS = {'/api/auth/login', '/api/auth/browser-login'}
-PUBLIC_PROMO_PATHS = {'/api/landing-pages/public/render/page', '/api/landing-pages/public/go/button'}
 
 
 def credentials_body(path: str, method: str) -> bool:
@@ -26,8 +25,6 @@ def check_url(path: str, query: bytes, method: str) -> None:
         raise ValueError('Адреса запиту надто довга')
     if query and (path.rstrip('/') in LOGIN_PATHS or credentials_body(path, method)):
         raise ValueError('Облікові дані передаються лише в JSON-тілі запиту, без параметрів URL')
-    if path in PUBLIC_PROMO_PATHS:
-        return
     try:
         raw = query.decode('ascii')
         if re.search(r'%(?![0-9A-Fa-f]{2})', raw):

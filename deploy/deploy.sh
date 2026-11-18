@@ -85,7 +85,7 @@ echo "==> Preflight docker compose"
 "${COMPOSE[@]}" config --quiet
 
 # Старі image SHA/refs потрібні для автоматичного rollback, якщо новий API не підніметься.
-for svc in api bot scheduler dashboard miniapp promo-controller; do
+for svc in api bot scheduler dashboard miniapp; do
     cid="$("${COMPOSE[@]}" ps -q "$svc" 2>/dev/null || true)"
     if [[ -n "$cid" ]]; then
         old_sha="$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)"
@@ -97,18 +97,6 @@ for svc in api bot scheduler dashboard miniapp promo-controller; do
     fi
 done
 [[ -f nginx/generated/app.conf ]] && cp nginx/generated/app.conf "$ROLLBACK_DIR/app.conf" || true
-
-# Старі інсталяції: генеруємо внутрішній promo secret лише у канонічному ../.env.
-promo_token=$(grep -E '^PROMO_CONTROLLER_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-if [[ -z "$promo_token" || "$promo_token" == change_this* ]]; then
-    promo_token=$(openssl rand -hex 32)
-    if grep -q '^PROMO_CONTROLLER_TOKEN=' "$ENV_FILE"; then
-        sed -i "s|^PROMO_CONTROLLER_TOKEN=.*|PROMO_CONTROLLER_TOKEN=${promo_token}|" "$ENV_FILE"
-    else
-        printf '\nPROMO_CONTROLLER_TOKEN=%s\n' "$promo_token" >> "$ENV_FILE"
-    fi
-    echo "==> Згенеровано внутрішній секрет Promo Controller"
-fi
 
 echo "==> Бекап бази перед оновленням"
 BACKUP_CREATED=0
@@ -142,8 +130,6 @@ rollback_core_runtime() {
     echo "==> Основний реліз не пройшов health gate. Rollback CORE runtime..." >&2
     if [[ -f "$ROLLBACK_DIR/images.tsv" ]]; then
         while IFS=$'\t' read -r svc sha ref; do
-            # Promo має власну фазу і не бере участі в core rollback.
-            [[ "$svc" == "promo-controller" ]] && continue
             [[ -n "$sha" && -n "$ref" ]] || continue
             docker tag "$sha" "$ref" >/dev/null 2>&1 || true
         done < "$ROLLBACK_DIR/images.tsv"
@@ -155,10 +141,10 @@ rollback_core_runtime() {
         cp "$ROLLBACK_DIR/app.conf" nginx/generated/app.conf
         "${COMPOSE[@]}" exec -T nginx nginx -t >/dev/null 2>&1 && "${COMPOSE[@]}" exec -T nginx nginx -s reload >/dev/null 2>&1 || true
     fi
-    echo "Core rollback виконано наскільки можливо. Promo-система не перезапускалась. Бекап БД: deploy/data/backups; metadata: $ROLLBACK_DIR" >&2
+    echo "Core rollback виконано наскільки можливо. Бекап БД: deploy/data/backups; metadata: $ROLLBACK_DIR" >&2
 }
 
-echo "==> ФАЗА 1/6: базові сервіси (PostgreSQL + Redis)"
+echo "==> ФАЗА 1/5: базові сервіси (PostgreSQL + Redis)"
 "${COMPOSE[@]}" up -d db redis
 
 wait_service_healthy() {
@@ -180,7 +166,7 @@ wait_service_healthy() {
 wait_service_healthy db 45 || exit 1
 wait_service_healthy redis 45 || exit 1
 
-echo "==> ФАЗА 2/6: міграції БД"
+echo "==> ФАЗА 2/5: міграції БД"
 # Міграції йдуть тільки після healthy DB. Перехід категорій змінює старий API.
 CATALOG_BREAKING_UPGRADE="$("${COMPOSE[@]}" run --rm --no-deps -T api python -m shop.catalog_upgrade)"
 if [[ "$CATALOG_BREAKING_UPGRADE" == 1 ]]; then
@@ -202,15 +188,15 @@ if [[ "$BROADCAST_QUEUE_UPGRADE" == 1 ]]; then
     "${COMPOSE[@]}" stop api scheduler
 fi
 if ! "${COMPOSE[@]}" run --rm migrate; then
-    echo "ПОМИЛКА: міграції БД не завершено — API / dashboard / promo НЕ оновлюємо." >&2
+    echo "ПОМИЛКА: міграції БД не завершено — API / dashboard НЕ оновлюємо." >&2
     echo "Не запускайте старі розсильники вручну: попередня міграція черги могла вже зафіксуватись у PostgreSQL." >&2
     echo "Виправте код міграції та повторіть bash deploy/deploy.sh; до цього перевірте ревізію БД." >&2
     "${COMPOSE[@]}" run --rm --no-deps -T api alembic current >&2 || true
     exit 1
 fi
 
-echo "==> ФАЗА 3/6: API"
-# API запускаємо окремо. Якщо він не піднявся — деплой ЗУПИНЯЄТЬСЯ ДО nginx/promo.
+echo "==> ФАЗА 3/5: API"
+# API запускаємо окремо. Якщо він не піднявся — деплой ЗУПИНЯЄТЬСЯ ДО nginx.
 "${COMPOSE[@]}" up -d --no-deps api
 
 api_ok=0
@@ -226,7 +212,7 @@ for i in $(seq 1 60); do
 done
 
 if [[ "$api_ok" != 1 ]]; then
-    echo "API не пройшов health-check. Основні web/promo сервіси НЕ оновлювались." >&2
+    echo "API не пройшов health-check. Основні web-сервіси НЕ оновлювались." >&2
     "${COMPOSE[@]}" logs --tail=150 api >&2 || true
     rollback_core_runtime
     exit 1
@@ -234,7 +220,7 @@ fi
 
 echo "    API health: OK"
 
-echo "==> ФАЗА 4/6: основні застосунки"
+echo "==> ФАЗА 4/5: основні застосунки"
 # Ці сервіси запускаємо лише після здорового API.
 "${COMPOSE[@]}" up -d --no-deps dashboard miniapp bot scheduler certbot
 
@@ -250,7 +236,7 @@ for svc in dashboard miniapp bot scheduler; do
     fi
 done
 
-echo "==> ФАЗА 5/6: nginx основного сайту"
+echo "==> ФАЗА 5/5: nginx основного сайту"
 # ВАЖЛИВО: nginx запускається/пересоздається ПІСЛЯ API. Це гарантує, що
 # proxy_pass api:8000 резолвиться на актуальний контейнер, а не на стару IP.
 "${COMPOSE[@]}" up -d --no-deps --force-recreate nginx
@@ -271,7 +257,7 @@ if [[ "$nginx_core_ok" != 1 ]]; then
     exit 1
 fi
 
-# Перевіряємо саме nginx-маршрут головного сайту, окремо від будь-якого promo Host.
+# Перевіряємо саме nginx-маршрут головного сайту.
 # PUBLIC_URL використовується тільки для Host основної системи.
 MAIN_HOST="$(python3 "./domain_config.py" primary --env "$ENV_FILE")"
 
@@ -310,33 +296,10 @@ if [[ "$public_routes_ok" != 1 ]]; then
     exit 1
 fi
 
-echo "==> ФАЗА 6/6: промо-система"
-# Promo-controller стартує ОСТАННІМ і не є умовою здоров'я основної системи.
-# Він має власний health-check і окремі server_name для кожного промо-домену.
-"${COMPOSE[@]}" up -d --no-deps promo-controller
-promo_ok=0
-for i in $(seq 1 30); do
-    cid="$("${COMPOSE[@]}" ps -q promo-controller 2>/dev/null || true)"
-    if [[ -n "$cid" ]]; then
-        status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || true)"
-        if [[ "$status" == "healthy" ]]; then promo_ok=1; break; fi
-    fi
-    sleep 2
-done
-
-if [[ "$promo_ok" != 1 ]]; then
-    echo "УВАГА: основна система здорова, але Promo Controller не пройшов health-check." >&2
-    echo "Промо ізольовано від основного сайту; full deploy не відкочується через promo-помилку." >&2
-    "${COMPOSE[@]}" logs --tail=120 promo-controller >&2 || true
-else
-    echo "    Promo Controller health: OK"
-fi
-
-# Після promo-controller робимо фінальну перевірку API, щоб promo-фаза не могла
-# непомітно зачепити основу.
+# Фінальна перевірка API після оновлення nginx і застосунків.
 if ! "${COMPOSE[@]}" exec -T api python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3); raise SystemExit(0 if r.status==200 else 1)" >/dev/null 2>&1; then
-    echo "КРИТИЧНО: API перестав бути healthy після promo-фази." >&2
-    "${COMPOSE[@]}" logs --tail=120 api promo-controller nginx >&2 || true
+    echo "КРИТИЧНО: API перестав бути healthy після оновлення." >&2
+    "${COMPOSE[@]}" logs --tail=120 api nginx >&2 || true
     rollback_core_runtime
     exit 1
 fi
