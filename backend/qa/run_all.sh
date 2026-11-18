@@ -153,6 +153,8 @@ else
   echo "ПРОВАЛ — збірка панелі"; echo "$out" | tail -5 | sed 's/^/      /'; fail=1
 fi
 run_node styles tests/styles.mjs dashboard
+run_node contrast tests/contrast.mjs dashboard
+run_node field-a11y tests/field-a11y.dom.mjs dashboard
 run_node scroll tests/scroll.mjs
 
 echo
