@@ -446,7 +446,7 @@ class MigrationTests(unittest.TestCase):
     def test_runtime_rollback_is_blocked_after_queue_upgrade(self):
         import subprocess
         deploy = (Path(__file__).resolve().parents[2]/'deploy/deploy.sh').read_text()
-        function = deploy[deploy.index('rollback_core_runtime()'):deploy.index('echo "==> ФАЗА 1/6')]
+        function = deploy[deploy.index('rollback_core_runtime()'):deploy.index('echo "==> ФАЗА 1/5')]
         run = subprocess.run(['bash','-c', 'CATALOG_BREAKING_UPGRADE=0\nBROADCAST_QUEUE_UPGRADE=1\ndocker(){ echo UNEXPECTED_DOCKER; }\n'+function+'\nrollback_core_runtime'],capture_output=True,text=True)
         self.assertEqual(run.returncode,0)
         self.assertNotIn('UNEXPECTED_DOCKER',run.stdout+run.stderr)

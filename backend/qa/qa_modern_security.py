@@ -126,8 +126,4 @@ except ValueError:blocked=True
 r.check(blocked,'XLSX expansion bomb rejected before XML parsing')
 r.check(c.post('/api/telegram/hook/777001',json={},headers={'X-Telegram-Bot-Api-Secret-Token':webhook_header_secret()}).status_code==400,'malformed trusted Telegram update rejected')
 r.check('input' not in c.post('/api/auth/login',json={'login':'admin','password':'s'*1100}).json()['detail'][0], 'validation error does not echo password')
-from api.routers.landing_pages import _html_response
-rendered=_html_response('<script>console.log(1)</script>',{})
-policy=rendered.headers['content-security-policy'].split('script-src',1)[1].split(';',1)[0]
-r.check("'sha256-" in policy and "unsafe-inline" not in policy,'promo inline scripts allowlist by SHA256')
 raise SystemExit(1 if r.done() else 0)

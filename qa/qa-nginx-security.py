@@ -27,7 +27,7 @@ class Upstream(BaseHTTPRequestHandler):
 
 with tempfile.TemporaryDirectory(prefix='nginx-security-') as directory:
  p=pathlib.Path(directory)
- for name in ['logs','promo.d','deny.d','hsts.d','cert','media']:(p/name).mkdir()
+ for name in ['logs','deny.d','hsts.d','cert','media']:(p/name).mkdir()
  upstream=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
  threading.Thread(target=upstream.serve_forever,daemon=True).start()
  port=upstream.server_port
@@ -42,17 +42,11 @@ with tempfile.TemporaryDirectory(prefix='nginx-security-') as directory:
  app=app.replace('listen 80','listen 127.0.0.1:5080').replace('listen 443','listen 127.0.0.1:5443').replace('listen 127.0.0.1:8080','listen 127.0.0.1:5780')
  app=app.replace('http://api:8000',f'http://127.0.0.1:{port}').replace('http://miniapp:80',f'http://127.0.0.1:{port}').replace('http://dashboard:80',f'http://127.0.0.1:{port}').replace('/data/media/',str(p/'media')+'/')
  (p/'app.conf').write_text(app)
- # Validate the config produced by the isolated promo controller as well.
- spec=importlib.util.spec_from_file_location('promo_controller',ROOT/'deploy/promo-controller/controller.py');controller=importlib.util.module_from_spec(spec);spec.loader.exec_module(controller)
- promo=controller.https_config('promo.test').replace('/etc/nginx/',str(p)+'/').replace('/data/media/',str(p/'media')+'/')
- promo=promo.replace('/etc/letsencrypt/live/promo.test/fullchain.pem',str(p/'cert/cert.pem')).replace('/etc/letsencrypt/live/promo.test/privkey.pem',str(p/'cert/key.pem'))
- promo=promo.replace('listen 80','listen 127.0.0.1:5080').replace('listen 443','listen 127.0.0.1:5443').replace('http://api:8000',f'http://127.0.0.1:{port}')
- (p/'promo.d/promo.conf').write_text(promo)
  (p/'rates.conf').write_text((ROOT/'deploy/nginx/ratelimit.conf').read_text())
  (p/'nginx.conf').write_text(f'user root root; pid {p}/nginx.pid; error_log {p}/logs/error.log; events {{ worker_connections 256; }} http {{ include {ROOT}/qa/nginx-mime.types; include {p}/rates.conf; include {p}/app.conf; }}')
  command=[NGINX,'-p',str(p)+'/', '-c',str(p/'nginx.conf')]
  syntax=subprocess.run(command+['-t'],capture_output=True,text=True)
- check(syntax.returncode==0,'nginx syntax including dynamic promo config: '+syntax.stderr.strip())
+ check(syntax.returncode==0,'nginx syntax: '+syntax.stderr.strip())
  (p/'media/photo.jpg').write_bytes(b'qa-jpeg')
  (p/'media/unsafe.svg').write_bytes(b'<svg/>')
  (p/'media/link.png').symlink_to('/etc/hosts')
@@ -113,7 +107,6 @@ with tempfile.TemporaryDirectory(prefix='nginx-security-') as directory:
   check('SENSITIVE_WEBHOOK' not in text and 'PRIVATE_PASSWORD' not in text and '[REDACTED]' in text,'access logs omit webhook path secret and query values')
   codes=[request('/api/auth/browser-login',method='POST')[0] for _ in range(8)]
   check(429 in codes,'browser login gets dedicated rate limit')
-  check(request('/',host='promo.test')[0]==200,'dynamic promo domain remains accessible')
   print(f'NGINX SECURITY: {checks}/{checks}',flush=True)
  finally:
   proc.terminate();proc.wait(timeout=5);upstream.shutdown()

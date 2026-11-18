@@ -28,7 +28,6 @@ map $uri $safe_log_uri {
 }
 log_format elfar_safe '$remote_addr - $remote_user [$time_local] "$request_method $safe_log_uri $server_protocol" $status $body_bytes_sent "$http_user_agent"';
 access_log /var/log/nginx/access.log elfar_safe;
-include /etc/nginx/promo.d/*.conf;
 
 
 # Адреси в змінних — теж навмисно. proxy_pass із літеральним іменем

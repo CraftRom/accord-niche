@@ -312,37 +312,3 @@ async def order_sources(session, w, source=None, offset=0, limit=25):
         "sales": finance(r)["total"], "revenue": finance(r)["received"],
         "attribution": order_attribution(r.attribution, r.crm_snapshot)} for r in rows]}
 
-
-def attributed_button_url(target, params, *, campaign=""):
-    """Preserve tagged promo traffic across the Telegram launch boundary.
-
-    Existing chat/referral deep links keep their destination. Named Mini App
-    payloads use Telegram's allowed base64url alphabet, bounded to 512 chars.
-    """
-    import base64
-    import json
-    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
-    from shop.links import NAMED_MINIAPP_URL
-    parts = urlsplit(target)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    a = clean_attribution({k: params.get('utm_' + k, '') for k in ('source', 'medium', 'campaign', 'content', 'term')})
-    if a['source'] == 'unknown':
-        a.update(source='promo', medium='landing', campaign=campaign[:160])
-    named = urlsplit(NAMED_MINIAPP_URL)
-    if parts.hostname == named.hostname and parts.path.rstrip('/') == named.path.rstrip('/'):
-        if not query.get('startapp'):
-            # Shorten long optional fields until the launch payload fits.
-            def encode():
-                return 'acq_' + base64.urlsafe_b64encode(json.dumps(a, separators=(',', ':'), ensure_ascii=True).encode()).decode().rstrip('=')
-            payload = encode()
-            for key in ('term', 'content', 'medium', 'campaign'):
-                if len(payload) <= 512:
-                    break
-                a[key] = ''
-                payload = encode()
-            query['startapp'] = payload
-    elif parts.hostname not in {'t.me', 'telegram.me'}:
-        for key, value in a.items():
-            if value:
-                query.setdefault('utm_' + key, value)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))

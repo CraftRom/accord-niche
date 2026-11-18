@@ -702,7 +702,11 @@ class Wishlist(Base):
 # --------------------------------------------------------- промо-сторінки
 
 class PromoLandingPage(Base):
-    """Керована промо-сторінка з фіксованим шаблоном.
+    """RETIRED: promo pages were removed from ACCORD (v1.23.0). No code reads
+    or writes this table any more; it stays only so existing data is not
+    destroyed by an update. Drop it with a dedicated migration if needed.
+
+    Керована промо-сторінка з фіксованим шаблоном.
 
     draft_config редагується в панелі. published_config — незмінний snapshot
     останньої публікації, тому незбережена/невдала правка не ламає живий сайт.

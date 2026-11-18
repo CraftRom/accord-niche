@@ -35,7 +35,7 @@ test('server field allowlist controls module switches and sensitive items indepe
 })
 test('marketing is administrative and catalog changes need an administrator (A10)', async () => {
   const { canManageCatalog } = await import('../src/roles.js')
-  for (const path of ['/promos', '/landing-pages', '/broadcasts', '/broadcasts/4', '/%70romos']) {
+  for (const path of ['/promos', '/broadcasts', '/broadcasts/4', '/%70romos']) {
     assert.equal(canAccessPage('operator', path), false, path)
     assert.equal(canAccessPage('shop_admin', path), true, path)
   }

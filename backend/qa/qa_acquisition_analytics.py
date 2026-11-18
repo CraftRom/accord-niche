@@ -41,14 +41,6 @@ async def main():
         try: a.window(tz, now=dt('2024-04-10T09:00:00'), **args)
         except Exception as e: check(f'invalid calendar rejected {args}', getattr(e,'status_code',None)==422)
         else: raise AssertionError(args)
-    from urllib.parse import urlsplit, parse_qs
-    target = a.attributed_button_url('https://t.me/elfarshop_bot/elfar', {'utm_source':'google','utm_campaign':'Осінь','utm_medium':'cpc'})
-    payload = parse_qs(urlsplit(target).query)['startapp'][0]
-    import json, base64
-    decoded = json.loads(base64.urlsafe_b64decode(payload[4:]+'='*(-len(payload[4:])%4)))
-    check('promo UTM survives Telegram boundary incl unicode', decoded['source']=='google' and decoded['campaign']=='Осінь' and len(payload)<=512)
-    chat=a.attributed_button_url('https://t.me/elfarshop_bot/elfar?startapp=chat_7', {'utm_source':'google'})
-    check('promo attribution preserves chat destination', parse_qs(urlsplit(chat).query)['startapp']==['chat_7'])
     check('actual historical CRM UTM reused without inventing metadata', a.order_attribution(None, {'utm':{'source':'Google Ads','campaign':'old'}})['source']=='google_ads')
     check('checkout attribution wins over later CRM metadata', a.order_attribution({'source':'facebook'},{'utm':{'source':'google'}})['source']=='facebook')
     check('zero denominators are unavailable', a.ratio(0,0) is None and a.delta(10,0) is None)
