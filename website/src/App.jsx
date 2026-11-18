@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { genderName, sanitizeCart, telegramCheckoutUrl } from './catalog'
 import { useStoreRequest } from './useStoreRequest'
 import { BlogList, BlogArticle } from './Blog'
-import {rememberCampaign} from './checkout'
+import {recordVisit,rememberCampaign} from './checkout'
 import {useDialog} from './useDialog'
 import { useCommerce, CheckoutPage, CheckoutSuccess, ProfilePage } from './commerce'
 
@@ -217,7 +217,8 @@ function InfoModal({name, close, site}) {
 
 export default function App() {
   const [route, go] = useRoute()
-  useEffect(()=>rememberCampaign(location.search),[route])
+  // UTM first, then the visit, so the visit carries the landing campaign.
+  useEffect(()=>{rememberCampaign(location.search);recordVisit()},[route])
   const path = route.split('?')[0].replace(/\/+$/, '') || '/'
   const commerce = useCommerce()
   const [orderResult, setOrderResult] = useState(null)

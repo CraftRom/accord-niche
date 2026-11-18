@@ -6,4 +6,4 @@
 
 Число міняйте вручну при кожній збірці, яку віддаєте на деплой.
 """
-BUILD = "2026-11-18-accord-stage3-module-readiness-v1.17.0"
+BUILD = "2026-11-18-accord-stage5-website-funnel-v1.18.0"

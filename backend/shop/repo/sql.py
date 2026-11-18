@@ -2901,6 +2901,13 @@ class SqlRepository(Repository):
             removed[name] = total
         return removed
 
+    async def prune_website_visits(self, before):
+        result = await self.s.execute(delete(m.AnalyticsSession).where(
+            m.AnalyticsSession.channel == m.WEBSITE_CHANNEL, m.AnalyticsSession.user_id.is_(None),
+            m.AnalyticsSession.started_at < before).execution_options(synchronize_session=False))
+        await self.s.commit()
+        return int(result.rowcount or 0)
+
     async def prune_panel_notifications(self, older_than_days: int = 90) -> int:
         """Видаляє лише оперативні panel notifications, не бізнес-історію."""
         days = max(7, int(older_than_days or 90))

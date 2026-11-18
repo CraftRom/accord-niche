@@ -125,6 +125,34 @@ async def record_session(session, user_id, session_id, attribution):
         await session.rollback()  # Concurrent retry of the same visit.
 
 
+WEBSITE_VISIT_RETENTION_DAYS = 400
+
+
+async def record_website_visit(session, session_id, attribution) -> bool:
+    """Idempotent anonymous main-website visit. True only for a new row."""
+    exists = await session.scalar(select(m.AnalyticsSession.id).where(
+        m.AnalyticsSession.channel == m.WEBSITE_CHANNEL, m.AnalyticsSession.session_id == session_id))
+    if exists:
+        return False
+    try:
+        session.add(m.AnalyticsSession(user_id=None, channel=m.WEBSITE_CHANNEL, session_id=session_id,
+                                       attribution=clean_attribution(attribution), started_at=datetime.now(UTC)))
+        await session.commit()
+        return True
+    except IntegrityError:
+        await session.rollback()  # A concurrent retry of the same visit won.
+        return False
+
+
+async def website_checkout_session(session, session_id) -> str | None:
+    """Link a website order to its visit only if that visit was really recorded."""
+    if not session_id:
+        return None
+    found = await session.scalar(select(m.AnalyticsSession.session_id).where(
+        m.AnalyticsSession.channel == m.WEBSITE_CHANNEL, m.AnalyticsSession.session_id == session_id))
+    return found
+
+
 async def checkout_attribution(session, user_id, session_id, attribution):
     # A missing analytics POST must never prevent checkout. Link only a visit
     # owned by this authenticated user; don't insert telemetry in checkout.
@@ -178,16 +206,24 @@ async def aggregate(session, w, granularity="day"):
     ).where(m.Order.business_state == "sale", event >= since, event < until))).all()
     created = (await session.execute(select(m.Order.id, m.Order.created_at, m.Order.attribution, m.Order.crm_snapshot).where(
         m.Order.created_at >= since, m.Order.created_at < until))).all()
-    visits = (await session.execute(select(m.AnalyticsSession.user_id, m.AnalyticsSession.session_id,
+    visits = (await session.execute(select(m.AnalyticsSession.id, m.AnalyticsSession.channel,
         m.AnalyticsSession.started_at, m.AnalyticsSession.attribution).where(
         m.AnalyticsSession.started_at >= since, m.AnalyticsSession.started_at < until))).all()
     # Conversion is a visit cohort: any submitted order created after this
     # visit and before report end; cancellation still counts as checkout.
-    converted = set((await session.execute(select(m.Order.user_id, m.AnalyticsSession.session_id).join(
-        m.AnalyticsSession, and_(m.Order.user_id == m.AnalyticsSession.user_id,
-          m.Order.attribution["session_id"].as_string() == m.AnalyticsSession.session_id)).where(
+    # Mini App visits match by owner; anonymous website visits only by their
+    # random session id on a website order (A07).
+    owner = or_(
+        m.Order.user_id == m.AnalyticsSession.user_id,
+        and_(m.AnalyticsSession.user_id.is_(None), m.AnalyticsSession.channel == m.WEBSITE_CHANNEL,
+             m.Order.attribution["channel"].as_string() == m.WEBSITE_CHANNEL))
+    converted = set(await session.scalars(select(m.AnalyticsSession.id).distinct().join(
+        m.Order, and_(owner, m.Order.attribution["session_id"].as_string() == m.AnalyticsSession.session_id)).where(
         m.AnalyticsSession.started_at >= since, m.AnalyticsSession.started_at < until,
-        m.Order.created_at >= m.AnalyticsSession.started_at, m.Order.created_at < until))).all())
+        m.Order.created_at >= m.AnalyticsSession.started_at, m.Order.created_at < until)))
+    first_website_visit = await session.scalar(select(func.min(m.AnalyticsSession.started_at)).where(
+        m.AnalyticsSession.channel == m.WEBSITE_CHANNEL))
+    channels = {key: slot() for key in (m.WEBSITE_CHANNEL, m.MINIAPP_CHANNEL)}
     local_start, local_end = since.astimezone(tz), (until - timedelta(microseconds=1)).astimezone(tz)
     spend_rows = (await session.execute(select(m.MarketingSpend).where(
         m.MarketingSpend.day >= local_start.date(), m.MarketingSpend.day <= local_end.date()))).scalars().all()
@@ -221,9 +257,13 @@ async def aggregate(session, w, granularity="day"):
             out["orders"] += 1
             out["new_customers"] += int(row.id in first_ids)
     for row in visits:
+        hit = int(row.id in converted)
+        channel = channels.setdefault(row.channel or m.MINIAPP_CHANNEL, slot())
+        channel["sessions"] += 1
+        channel["converted_sessions"] += hit
         for out in targets(row.attribution, row.started_at):
             out["sessions"] += 1
-            out["converted_sessions"] += int((row.user_id, row.session_id) in converted)
+            out["converted_sessions"] += hit
     for row in created:
         # The total and channel checkout count use order creation, not sale.
         for out in targets(order_attribution(row.attribution, row.crm_snapshot), row.created_at):
@@ -237,6 +277,13 @@ async def aggregate(session, w, granularity="day"):
         "sources": [{"source": key, **finish(value)} for key, value in sorted(sources.items(), key=lambda x: -x[1]["sales"])],
         "campaigns": [{"source": key[0], "campaign": key[1], **finish(value)} for key, value in sorted(campaigns.items(), key=lambda x: -x[1]["sales"])],
         "series": [{"date": key, **finish(value)} for key, value in sorted(buckets.items())],
+        # Per-channel funnel. Website visits exist only since the first
+        # recorded one: earlier periods must not read as 0% conversion.
+        "channels": [{"channel": key, "sessions": value["sessions"],
+                      "converted_sessions": value["converted_sessions"],
+                      "conversion": ratio(value["converted_sessions"], value["sessions"], 100)}
+                     for key, value in channels.items()],
+        "website_visits_since": _aware(first_website_visit).isoformat() if first_website_visit else None,
         "attribution_coverage": ratio(sum(1 for r in sales if order_attribution(r.attribution, r.crm_snapshot)["source"] != "unknown"), len(sales), 100),
     }
 

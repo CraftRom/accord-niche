@@ -77,6 +77,20 @@ function ChannelTable({ rows, campaigns = false }) {
   </table>{!rows.length && <p className="muted">За цей період даних немає.</p>}</ManagedTable>
 }
 
+const CHANNEL_TITLES = { accord_website: 'Сайт', telegram_miniapp: 'Mini App' }
+
+// A07: the funnel is shown per channel; a channel without recorded visits is
+// "no data", never an artificial 0%.
+export function ChannelFunnel({ analytics }) {
+  const rows = analytics.channels || []
+  const since = analytics.website_visits_since
+  return <div className="card"><div className="stats-section-title"><div><h2>Конверсія за каналами</h2>
+    <p className="faint">{since ? `Відвідування сайту враховуються з ${new Date(since).toLocaleDateString('uk-UA')}. Боти не рахуються, повторне відкриття вкладки — той самий візит.` : 'Відвідування сайту ще не записані: конверсія сайту поки невідома.'}</p></div></div>
+    <div className="table-wrap"><table><thead><tr><th>Канал</th><th className="num">Відвідувань</th><th className="num">З замовленням</th><th className="num">Конверсія</th></tr></thead>
+      <tbody>{rows.map((row) => <tr key={row.channel}><td>{CHANNEL_TITLES[row.channel] || row.channel}</td><td className="num">{row.sessions}</td><td className="num">{row.converted_sessions}</td><td className="num">{row.sessions ? pct(row.conversion) : 'Немає даних'}</td></tr>)}</tbody></table></div>
+  </div>
+}
+
 export function MarketingMetrics({ data }) {
   const m = data.analytics.metrics, c = data.changes
   return <>
@@ -87,6 +101,7 @@ export function MarketingMetrics({ data }) {
       <Kpi title="Конверсія в замовлення" value={pct(m.conversion)} change={c.conversion} hint={`${m.converted_sessions} відвідувань із замовленням / ${m.sessions} відвідувань вітрини.`} />
       <Kpi title="Нові покупці" value={m.new_customers} change={c.new_customers} hint="Унікальні клієнти з першим успішним продажем у вибраному періоді." />
     </div>
+    <ChannelFunnel analytics={data.analytics} />
     <div className="card"><div className="stats-section-title"><div><h2>Джерела продажів</h2><p className="faint">Відоме джерело мають {pct(data.analytics.attribution_coverage)} продажів. «Невідомо» — замовлення без збереженої атрибуції.</p></div></div>
       <ChannelTable rows={data.analytics.sources} />
       <details className="analytics-details"><summary>Кампанії</summary><ChannelTable rows={data.analytics.campaigns} campaigns /></details>
