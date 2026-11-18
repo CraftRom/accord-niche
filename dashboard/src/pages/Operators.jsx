@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { api, getSession } from '../api'
 import { ROLE_TITLES, assignableRoles, canManageAccount } from '../roles'
 import { Empty, ErrorBar, Field, Loading, Modal, confirmPurge, useToast } from '../components/ui'
-import { PageHeader } from '../components/page'
+import { PageHeader, SectionCard } from '../components/page'
 
 // Значення мають збігатися з OperatorRole на бекенді. «admin» історично
 // означає системного адміністратора з .env — його в панелі не створюють,
@@ -17,6 +17,18 @@ const CREATABLE_ROLES = [
   { value: 'shop_admin', label: 'Адміністратор',
     hint: 'Керує модулями, налаштуваннями магазину та менеджерами' },
 ]
+
+// Що відкриває кожна група — одна модель і для таблиці, і для попередження
+// про зміну ролі (UI-022). Права перевіряє сервер; тут лише пояснення.
+const ROLE_ACCESS = {
+  admin: ['Замовлення, клієнти й чати', 'Налаштування магазину й модулі', 'Облікові записи менеджерів', 'Інфраструктура, журнали й резервні копії'],
+  shop_admin: ['Замовлення, клієнти й чати', 'Налаштування магазину й модулі', 'Облікові записи менеджерів'],
+  operator: ['Замовлення, клієнти й чати'],
+}
+export function roleChange(from, to) {
+  const before = ROLE_ACCESS[from] || [], after = ROLE_ACCESS[to] || []
+  return { lost: before.filter((item) => !after.includes(item)), gained: after.filter((item) => !before.includes(item)) }
+}
 
 const availableRoles = () => CREATABLE_ROLES.filter((role) => assignableRoles(getSession().role).includes(role.value))
 
@@ -72,7 +84,11 @@ function OperatorForm({ operator, onClose, onSaved }) {
     try {
       if (editing) {
         const payload = { name: form.name.trim() }
-        if (form.role !== operator.role) payload.role = form.role
+        if (form.role !== operator.role) {
+          const { lost } = roleChange(operator.role, form.role)
+          if (lost.length && !window.confirm(`${operator.name || operator.login} втратить доступ: ${lost.join(', ')}. Змінити групу?`)) return
+          payload.role = form.role
+        }
         // Порожнє поле означає «пароль не змінюємо»
         if (form.password) payload.password = form.password
         await api.operators.update(operator.id, payload)
@@ -172,6 +188,16 @@ function OperatorForm({ operator, onClose, onSaved }) {
           ))}
         </select>
       </Field>
+      {editing && form.role !== operator.role && (() => {
+        const { lost, gained } = roleChange(operator.role, form.role)
+        return (
+          <div className={`card role-change-notice ${lost.length ? 'warn' : ''}`} role="status">
+            <strong>Після збереження зміняться права</strong>
+            {lost.length > 0 && <p>Втратить доступ: {lost.join(', ')}.</p>}
+            {gained.length > 0 && <p>Отримає доступ: {gained.join(', ')}.</p>}
+          </div>
+        )
+      })()}
     </Modal>
   )
 }
@@ -232,21 +258,15 @@ export default function Operators() {
 
       <ErrorBar error={error} />
 
-      <div className="card" style={{ marginBottom: 18 }}>
-        <p className="faint" style={{ margin: 0 }}>
-          Системний адміністратор керує всією системою та обліковими записами.
-          Адміністратор керує модулями, магазином і менеджерами.
-          Менеджер працює з клієнтами й продажами без доступу до будь-яких налаштувань.
-        </p>
-      </div>
-
-      <div className="table-wrap" style={{ marginBottom: 18 }} aria-label="Системні групи">
-        <table><thead><tr><th>Системна група</th><th>Доступ</th></tr></thead><tbody>
-          <tr><td>Системний адміністратор</td><td>Усі розділи, інфраструктура, журнали, копії та адміністративні групи. Системний обліковий запис задається на сервері.</td></tr>
-          <tr><td>Адміністратор</td><td>Модулі, параметри магазину, продажі й облікові записи менеджерів.</td></tr>
-          <tr><td>Менеджер</td><td>Клієнти, чати й продажі. Налаштування та керування доступом закриті.</td></tr>
-        </tbody></table>
-      </div>
+      <SectionCard title="Що може кожна група" description="Права перевіряє сервер; прихована кнопка не замінює перевірки доступу.">
+        <div className="table-wrap" aria-label="Системні групи">
+          <table><thead><tr><th>Системна група</th><th>Доступ</th></tr></thead><tbody>
+            {['admin', 'shop_admin', 'operator'].map((role) => (
+              <tr key={role}><td>{ROLE_LABEL[role]}</td><td>{ROLE_ACCESS[role].join(' · ')}{role === 'admin' ? '. Обліковий запис задається на сервері.' : ''}</td></tr>
+            ))}
+          </tbody></table>
+        </div>
+      </SectionCard>
 
       {rows.length === 0 ? (
         <Empty title="Менеджерів ще немає">

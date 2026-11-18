@@ -51,7 +51,7 @@ function BonusForm({ customer, onClose, onSaved }) {
     >
       <div className="stack">
         <ErrorBar error={error} />
-        <p className="muted" style={{ margin: 0 }}>
+        <p className="muted u-m-0">
           Поточний баланс: <span className="mono">{money(customer.bonus_balance)}</span>
         </p>
         <Field label="Сума" hint="Додатне число нараховує бонуси, від'ємне — списує">
@@ -108,14 +108,14 @@ function CustomerOrders({ customer, onClose }) {
   return (
     <Modal title={`Замовлення: ${customer.first_name || customerContact(customer)}`} onClose={onClose}>
       <ErrorBar error={identityError} />
-      {identity?.linked && <div className="notice" role="status" style={{marginBottom:12}}>
+      {identity?.linked && <div className="notice u-mb-3" role="status">
         <strong>Пов’язаний профіль ACCORD</strong>
-        <p style={{margin:'6px 0'}}>
+        <p className="u-my-2">
           {identity.google_connected ? 'Google підтверджено' : 'Google не підключено'}
           {identity.telegram_connected ? ' · Telegram прив’язано' : ''}
           {identity.email ? ` · ${identity.email}` : ''}
         </p>
-        <p style={{margin:'6px 0'}}>Пов’язані записи покупця: {identity.user_ids.join(', ')}.</p>
+        <p className="u-my-2">Пов’язані записи покупця: {identity.user_ids.join(', ')}.</p>
         <small>Показано об’єднану історію. Бонусні баланси кожного запису ведуться окремо.</small>
       </div>}
       <ErrorBar error={ordersError} />
@@ -152,15 +152,15 @@ function CustomerOrders({ customer, onClose }) {
         </div>
       )}
 
-      <h3 style={{ marginTop: 18 }}>Збережені списки</h3>
+      <h3 className="u-mt-5">Збережені списки</h3>
       <ErrorBar error={savedError} />
       {savedError && <div className="row"><span className="faint">{saved ? 'Попередні списки можуть бути застарілими.' : 'Списки не завантажено.'}</span><button className="btn ghost small" disabled={savedLoading} onClick={loadSaved}>Оновити списки</button></div>}
       {savedLoading && !saved && <Loading rows={2} />}
       {saved && !savedError && !saved.some((w) => w.products.length > 0) && <p className="faint">Збережених товарів немає.</p>}
       {saved && saved.some((w) => w.products.length > 0) && (
-        <div style={{ marginTop: 18 }}>
+        <div className="u-mt-5">
           <h3 style={{ marginBottom: 6 }}>Відкладене</h3>
-          <p className="faint" style={{ marginTop: 0 }}>
+          <p className="faint u-mt-0">
             Товари, які клієнт зберіг на потім. Якщо чогось немає в наявності —
             це привід написати, коли з'явиться.
           </p>
@@ -254,7 +254,7 @@ export default function Customers() {
           <Empty title="Нічого не знайдено">
             За запитом «{search}» клієнтів немає. Пошук працює за імʼям
             і номером телефону.
-            <div style={{ marginTop: 12 }}>
+            <div className="u-mt-3">
               <button className="btn ghost small" onClick={resetFilters}>
                 Очистити пошук
               </button>
