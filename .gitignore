@@ -18,3 +18,4 @@ qa/output/
 .edge-backups/
 
 /backups/
+backend/shop/release.json
