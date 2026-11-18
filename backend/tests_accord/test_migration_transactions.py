@@ -226,7 +226,7 @@ def test_durable_import_jobs_migration_keeps_applied_receipts(postgres):
         INSERT INTO catalog_imports (digest,status,result,created_at) VALUES ('applied','running','{"rows":1}',now());
         INSERT INTO catalog_imports (digest,status,result,created_at) VALUES ('interrupted','running','',now());
     """)
-    postgres(upgrade_sql('f4c8e2a17d59:head'))
+    postgres(upgrade_sql('f4c8e2a17d59:a3d9b6e14f02'))
     result=postgres("SELECT digest,status,rows_done,attempts FROM catalog_imports ORDER BY digest; SELECT version_num FROM alembic_version;")
     assert 'digest = "applied"' in result.stdout and 'status = "done"' in result.stdout
     assert 'interrupted' not in result.stdout and 'a3d9b6e14f02' in result.stdout
@@ -239,6 +239,35 @@ def test_durable_import_jobs_migration_keeps_applied_receipts(postgres):
     postgres(downgrade.stdout)
     result=postgres("SELECT digest FROM catalog_imports; SELECT version_num FROM alembic_version;")
     assert 'applied' in result.stdout and 'queued-job' not in result.stdout and 'f4c8e2a17d59' in result.stdout
+
+
+def test_promo_pages_are_dropped_with_their_cloudflare_credentials(postgres):
+    postgres("""
+        CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY);
+        INSERT INTO alembic_version VALUES ('a3d9b6e14f02');
+        CREATE TABLE settings (key VARCHAR(64) PRIMARY KEY, value TEXT);
+        INSERT INTO settings VALUES ('promo_cloudflare_api_token','enc:v1:secret'),
+            ('promo_cloudflare_account_id','acc'),('shop_name','ACCORD');
+        CREATE TABLE promo_landing_pages (id INTEGER PRIMARY KEY, domain VARCHAR(253));
+        CREATE TABLE promo_landing_daily_stats (id INTEGER PRIMARY KEY,
+            page_id INTEGER REFERENCES promo_landing_pages(id) ON DELETE CASCADE);
+        INSERT INTO promo_landing_pages VALUES (1,'promo.example');
+        INSERT INTO promo_landing_daily_stats VALUES (1,1);
+    """)
+    postgres(upgrade_sql('a3d9b6e14f02:head'))
+    result=postgres("SELECT to_regclass('public.promo_landing_pages') IS NULL AS pages_gone, "
+                    "to_regclass('public.promo_landing_daily_stats') IS NULL AS stats_gone; "
+                    "SELECT key FROM settings ORDER BY key; SELECT version_num FROM alembic_version;")
+    assert 'pages_gone = "t"' in result.stdout and 'stats_gone = "t"' in result.stdout
+    assert 'promo_cloudflare' not in result.stdout and 'key = "shop_name"' in result.stdout
+    assert 'c8f1e5a3d702' in result.stdout
+    downgrade=subprocess.run([sys.executable,'-m','alembic','downgrade','c8f1e5a3d702:a3d9b6e14f02','--sql'],
+        cwd=BACKEND,env={**os.environ,'PYTHONPATH':str(BACKEND),'DATABASE_URL':'postgresql+asyncpg://qa:qa@localhost/qa'},
+        text=True,capture_output=True,timeout=30)
+    assert downgrade.returncode==0,downgrade.stderr
+    postgres(downgrade.stdout)
+    result=postgres("SELECT count(*) AS n FROM promo_landing_pages; SELECT version_num FROM alembic_version;")
+    assert 'n = "0"' in result.stdout and 'a3d9b6e14f02' in result.stdout
 
 
 def test_commerce_channel_and_queue_expressions_on_real_postgres(postgres):
