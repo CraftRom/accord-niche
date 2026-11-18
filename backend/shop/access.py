@@ -64,7 +64,7 @@ ADMIN_FIELDS = frozenset({
 
 # A10: менеджер — продажі, клієнти, підтримка й читання каталогу. Зміни
 # каталогу (ціни, публікація, залишки, імпорт, видалення) та весь маркетинг
-# (промокоди, промосторінки, розсилки) — лише адміністратор. API перевіряє це
+# (промокоди, розсилки) — лише адміністратор. API перевіряє це
 # через require_admin; ця таблиця — та сама матриця для UI й тестів.
 _MANAGER = frozenset({'sales.manage', 'customers.manage', 'support.manage', 'catalog.read'})
 _ADMIN = _MANAGER | {'catalog.manage', 'marketing.manage', 'blog.manage', 'settings.manage',
