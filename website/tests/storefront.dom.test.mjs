@@ -79,14 +79,18 @@ test('detail selects a real volume, hydrates the cart and enforces current stock
  try {
   await waitFor(()=>app.document.querySelector('.product-link'))
   app.document.querySelector('.product-link').click()
-  await waitFor(()=>button(app.document,'5 мл'))
-  button(app.document,'5 мл').click()
-  await waitFor(()=>button(app.document,'5 мл').getAttribute('aria-pressed')==='true')
+  // Each volume button carries its price too (W-20), so match by the volume.
+  const volume=label=>[...app.document.querySelectorAll('.variant-buttons button')].find(item=>item.firstChild?.textContent===label)
+  await waitFor(()=>volume('5 мл'))
+  assert.equal(volume('5 мл').querySelector('small').textContent,'75 грн')
+  volume('5 мл').click()
+  await waitFor(()=>volume('5 мл').getAttribute('aria-pressed')==='true')
+  assert.match(app.document.querySelector('.detail-buy span').textContent,/ЦІНА ЗА 5 МЛ/)
   button(app.document,'ДОДАТИ В КОШИК').click()
   await waitFor(()=>app.document.querySelector('.basket-line'))
   assert.match(app.document.querySelector('.basket-info strong').textContent,/75 грн/)
-  app.document.querySelector('[aria-label="Збільшити кількість"]').click()
-  await waitFor(()=>app.document.querySelector('[aria-label="Збільшити кількість"]').disabled)
+  app.document.querySelector('[aria-label^="Збільшити кількість"]').click()
+  await waitFor(()=>app.document.querySelector('[aria-label^="Збільшити кількість"]').disabled)
   assert.deepEqual(JSON.parse(app.window.localStorage.getItem('accord:niche:cart')),{'43':2})
  } finally {app.close()}
 })
@@ -165,5 +169,26 @@ test('navigation uses real links: shareable href, current page, native modified 
   card.dispatchEvent(plain)
   assert.equal(plain.defaultPrevented,true)
   await waitFor(()=>app.window.location.pathname.startsWith('/aroma/'))
+ } finally {app.close()}
+})
+
+test('the cart names each line, explains the price and states what changed on that line (W-11, W-15)',async()=>{
+ const app=mount({saved:{42:9}})
+ try {
+  await waitFor(()=>app.document.querySelector('.cart-button'))
+  app.document.querySelector('.cart-button').click()
+  await waitFor(()=>app.document.querySelector('.basket-line .basket-info'))
+  const line=app.document.querySelector('.basket-line .basket-info')
+  // 9 saved, 4 in stock: the line itself says the quantity was reduced.
+  assert.match(line.querySelector('.basket-line-note').textContent,/Кількість зменшено до 4/)
+  assert.match(line.textContent,/40 грн за шт\./)
+  assert.match(line.querySelector('strong').textContent,/4 × 40 грн = 160 грн/)
+  assert.equal(line.querySelector('[aria-label^="Збільшити кількість"]').getAttribute('aria-label'),'Збільшити кількість: Actual Aroma 2 мл')
+  assert.match(line.textContent,/У наявності 4 шт\. — це максимум/)
+  const bottom=app.document.querySelector('.basket-bottom')
+  assert.match(bottom.textContent,/Сума за товари/)
+  assert.match(bottom.textContent,/Доставка не входить у суму/)
+  line.querySelector('[aria-label^="Зменшити кількість"]').click()
+  await waitFor(()=>!app.document.querySelector('.basket-line-note'))
  } finally {app.close()}
 })
