@@ -13,7 +13,7 @@ from api.routers import (
     logs as logs_router, media as media_router,
     integrations, orders, promos, support, shop_support, notifications, realtime,
     settings as settings_router, operators, shop as shop_router, stats, telegram, landing_pages, public_catalog, website_shop, blog,
-    system as system_router,
+    system as system_router, seo as seo_router,
 )
 from api.schemas import LoginIn, TokenOut
 from shop.config import settings
@@ -311,6 +311,7 @@ app.include_router(integrations.router, prefix="/api/integrations", tags=["integ
 # Вітрина Mini App — окрема автентифікація (Telegram initData), не JWT панелі
 app.include_router(shop_router.router, prefix="/api/shop", tags=["shop"])
 app.include_router(public_catalog.router, prefix="/api/public", tags=["public-catalog"])
+app.include_router(seo_router.router, prefix="/api/public/seo", tags=["seo"])
 app.include_router(website_shop.router, prefix="/api/web", tags=["website-shop"])
 app.include_router(shop_support.router, prefix="/api/shop/support", tags=["shop-support"])
 app.include_router(telegram.router, prefix="/api", tags=["telegram"])

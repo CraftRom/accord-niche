@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /checkout
+Disallow: /profile
+Disallow: /order/
+Disallow: /api/
+Allow: /api/public/catalog/
+
+Sitemap: https://accordniche.pp.ua/sitemap.xml
