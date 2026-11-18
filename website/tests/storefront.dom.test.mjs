@@ -103,7 +103,7 @@ test('catalog filters request the server and retain a shareable URL',async()=>{
  const app=mount({path:'/catalog'})
  try {
   await waitFor(()=>app.document.querySelectorAll('.product-card').length===2)
-  const select=[...app.document.querySelectorAll('.catalog-filters select')][0]
+  const select=[...app.document.querySelectorAll('.catalog-filters label')].find(label=>label.textContent.startsWith('БРЕНД')).querySelector('select')
   select.value='OTHER'
   select.dispatchEvent(new app.window.Event('change',{bubbles:true}))
   await waitFor(()=>app.document.querySelectorAll('.product-card').length===1)
@@ -122,4 +122,48 @@ test('a removed product does not remain buyable after a definitive not-found ref
   assert.equal(button(app.document,'ДОДАТИ В КОШИК'),undefined)
   assert.equal(app.document.querySelector('.detail-buy'),null)
  }finally{app.close()}
+})
+
+test('applied catalog filters show as chips; removing one keeps the others (W-06, W-18)',async()=>{
+ const app=mount({path:'/catalog?brand=OTHER&available=true&page=2'})
+ try {
+  await waitFor(()=>app.document.querySelector('.catalog-chip'))
+  const chips=()=>[...app.document.querySelectorAll('.catalog-chip:not(.clear)')].map(chip=>chip.firstChild.textContent)
+  assert.deepEqual(chips(),['Бренд: OTHER','Лише в наявності'])
+  assert.ok(button(app.document,'Очистити все'),'several filters offer clearing them all')
+  const toggle=app.document.querySelector('.catalog-filters-toggle')
+  assert.equal(toggle.textContent,'Фільтри (2)')
+  assert.equal(toggle.getAttribute('aria-expanded'),'false')
+  assert.equal(toggle.getAttribute('aria-controls'),'catalog-filter-panel')
+  toggle.click()
+  await waitFor(()=>toggle.getAttribute('aria-expanded')==='true')
+  assert.ok(app.document.getElementById('catalog-filter-panel').classList.contains('is-open'))
+  app.document.querySelector('.catalog-chip[aria-label="Прибрати фільтр: Бренд: OTHER"]').click()
+  await waitFor(()=>app.window.location.search==='?available=true')
+  assert.deepEqual(chips(),['Лише в наявності'])
+  assert.equal(button(app.document,'Очистити все'),undefined,'one filter needs no «clear all»')
+ } finally {app.close()}
+})
+
+test('navigation uses real links: shareable href, current page, native modified clicks (W-05)',async()=>{
+ const app=mount({path:'/catalog'})
+ try {
+  await waitFor(()=>app.document.querySelector('a.product-link'))
+  const nav=[...app.document.querySelectorAll('#store-navigation a')]
+  assert.deepEqual(nav.map(link=>link.getAttribute('href')),['/catalog','/catalog?kind=hits','/catalog?kind=new','/sets','/brands','/blog'])
+  assert.equal(app.document.querySelector('#store-navigation [aria-current="page"]').textContent,'Каталог')
+  assert.equal(app.document.querySelector('a.brandmark').getAttribute('href'),'/')
+  const card=app.document.querySelector('a.product-link')
+  assert.match(card.getAttribute('href'),/^\/aroma\/\d+$/)
+  // Ctrl/Cmd-click is left to the browser (new tab): no in-app navigation.
+  const modified=new app.window.MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:true,button:0})
+  card.dispatchEvent(modified)
+  assert.equal(modified.defaultPrevented,false)
+  assert.equal(app.window.location.pathname,'/catalog')
+  // A plain click stays an in-app transition.
+  const plain=new app.window.MouseEvent('click',{bubbles:true,cancelable:true,button:0})
+  card.dispatchEvent(plain)
+  assert.equal(plain.defaultPrevented,true)
+  await waitFor(()=>app.window.location.pathname.startsWith('/aroma/'))
+ } finally {app.close()}
 })

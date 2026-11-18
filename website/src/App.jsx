@@ -37,8 +37,23 @@ function Icon({name, size = 21}) {
   return <svg {...props}><path d="M4 12h16m-7-7 7 7-7 7"/></svg>
 }
 
+/**
+ * W-05: navigation is a real link. A plain left click stays an in-app
+ * transition; Ctrl/Cmd/Shift/Alt-click, the middle button and the context menu
+ * keep their native behaviour (new tab, copy address), and the address is
+ * visible to the browser and to crawlers.
+ */
+function SiteLink({to, onNavigate, current = false, children, ...rest}) {
+  const follow = event => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    onNavigate(to)
+  }
+  return <a href={(BASE || '') + to} onClick={follow} aria-current={current ? 'page' : undefined} {...rest}>{children}</a>
+}
+
 function Logo({dark = false, onClick}) {
-  return <button className={'brandmark' + (dark ? ' inverse' : '')} onClick={onClick} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong><span className="brandmark-bottom" data-decorative=""><i/>NICHE<i/></span></button>
+  return <SiteLink to="/" onNavigate={() => onClick()} className={'brandmark' + (dark ? ' inverse' : '')} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong><span className="brandmark-bottom" data-decorative=""><i/>NICHE<i/></span></SiteLink>
 }
 
 function Header({go, onCart, count, account, route}) {
@@ -59,7 +74,7 @@ function Header({go, onCart, count, account, route}) {
   const nav = [['/catalog','Каталог'],['/catalog?kind=hits','Хіти'],['/catalog?kind=new','Новинки'],['/sets','Набори'],['/brands','Бренди'],['/blog','Блог']]
   function navigate(path) {go(path); setMenu(false); setSearch(false)}
   return <header className="header"><div className="shell header-inner"><Logo onClick={() => navigate('/')}/>
-    <nav className={'header-nav' + (menu ? ' open' : '')} id="store-navigation" aria-label="Головна навігація">{nav.map(([path,label]) => <button key={path} onClick={() => navigate(path)}>{label}</button>)}</nav>
+    <nav className={'header-nav' + (menu ? ' open' : '')} id="store-navigation" aria-label="Головна навігація">{nav.map(([path,label]) => <SiteLink key={path} to={path} onNavigate={navigate} current={route === path}>{label}</SiteLink>)}</nav>
     <div className="header-actions"><button className="icon-btn" aria-label="Профіль" title={account?.signed_in ? 'Мій профіль' : 'Увійти'} onClick={() => navigate('/profile')}><Icon name="user"/></button>
       <button className="icon-btn" ref={searchButton} aria-label="Пошук" aria-expanded={search} aria-controls="store-search" onClick={() => {setMenu(false);setSearch(value => !value)}}><Icon name="search"/></button>
       <button className="icon-btn cart-button" aria-label={'Кошик, товарів ' + count} onClick={()=>{setMenu(false);setSearch(false);onCart()}}><Icon name="bag"/>{count > 0 && <span className="cart-count">{count}</span>}</button>
@@ -85,17 +100,17 @@ function RequestStatus({request, empty, children}) {
 
 function ProductCard({item, go}) {
   const hit = item.bestseller_rank > 0 && item.bestseller_rank <= 8
-  return <article className="product-card available"><button className="product-link" onClick={() => go('/aroma/' + (item.default_product_id || item.id))} aria-label={[item.brand,item.name,'— переглянути'].filter(Boolean).join(' ')}>
+  return <article className="product-card available"><SiteLink className="product-link" to={'/aroma/' + (item.default_product_id || item.id)} onNavigate={go} aria-label={[item.brand,item.name,'— переглянути'].filter(Boolean).join(' ')}>
     <div className="product-visual"><ImageTile item={item}/><div className="product-badges">{item.stock <= 0 ? <span>Немає в наявності</span> : <>{hit && <span className="hit-badge">Хіт продажів</span>}{item.is_new && <span>Новинка</span>}</>}</div></div>
     <div className="product-meta">{item.brand && <span className="product-brand">{item.brand}</span>}<h3>{item.name}</h3><p>{genderName[item.gender] || 'унісекс'}{item.volumes?.length > 0 ? ' · ' + item.volumes.join(' / ') + ' мл' : ''}</p>
       <strong>від {money(item.min_price)}</strong>{item.price_per_ml != null && <span className="unit-price">від {money(item.price_per_ml)} / мл</span>}
       <span className={'availability ' + (item.stock > 0 ? 'in-stock' : '')}>{item.stock > 0 ? 'У наявності' : 'Тимчасово відсутній'}</span></div>
-  </button></article>
+  </SiteLink></article>
 }
 
 function ProductSection({title, description, items, go, to = '/catalog'}) {
   if (!items?.length) return null
-  return <section className="featured shell"><div className="section-row"><div><h2 className="section-heading">{title}</h2>{description && <p className="section-description">{description}</p>}</div><button className="section-link" onClick={() => go(to)}>ПЕРЕГЛЯНУТИ ВСІ →</button></div><div className="products-grid">{items.map(item => <ProductCard key={item.key} item={item} go={go}/>)}</div></section>
+  return <section className="featured shell"><div className="section-row"><div><h2 className="section-heading">{title}</h2>{description && <p className="section-description">{description}</p>}</div><SiteLink className="section-link" to={to} onNavigate={go}>ПЕРЕГЛЯНУТИ ВСІ →</SiteLink></div><div className="products-grid">{items.map(item => <ProductCard key={item.key} item={item} go={go}/>)}</div></section>
 }
 
 function Hero({go, item}) {
@@ -149,18 +164,34 @@ function Catalog({route, go, sets = false}) {
     if (data) setFacets({brands:data.brands, categories:data.categories, volumes:data.volumes || []})
   }, [data])
   const titles = {all:'Каталог',hits:'Хіти продажів',new:'Новинки',recommended:'Рекомендуємо',sets:'Набори пробників'}
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  // W-18: every applied filter as a removable chip; removing one keeps the
+  // rest and returns to page 1 (update() drops the page parameter).
+  const genders = {female:'Жіночий', male:'Чоловічий', unisex:'Унісекс'}
+  const chips = [
+    params.get('q') && {key:'q', label:'Пошук: «' + params.get('q') + '»'},
+    params.get('brand') && {key:'brand', label:'Бренд: ' + params.get('brand')},
+    params.get('category') && {key:'category', label:'Категорія: ' + params.get('category')},
+    params.get('gender') && {key:'gender', label:'Аромат для: ' + (genders[params.get('gender')] || params.get('gender'))},
+    params.get('volume') && {key:'volume', label:params.get('volume') + ' мл'},
+    params.get('available') === 'true' && {key:'available', label:'Лише в наявності'},
+  ].filter(Boolean)
+  const refineCount = chips.filter(chip => chip.key !== 'q').length
   const pages = Math.ceil((data?.total || 0) / 24)
   return <main><PageTitle label="КОЛЕКЦІЯ АРОМАТІВ" title={titles[kind] || 'Каталог'} detail={kind === 'hits' ? 'Добірка за фактичними продажами за останні 90 днів. Нові, скасовані та повернені замовлення не впливають на рейтинг.' : 'Актуальні ціни, доступні об’єми та наявність.'}/>
     <section className="shell catalog-layout" aria-label="Каталог ароматів"><div className="catalog-filters">
-      <label>ПОШУК<input maxLength={120} value={search} onChange={event => {setSearch(event.target.value); setTyping(true)}} placeholder="Назва, бренд…"/></label>
+      <label>ПОШУК<input type="search" maxLength={120} value={search} onChange={event => {setSearch(event.target.value); setTyping(true)}} placeholder="Назва, бренд…"/></label>
+      <label>СОРТУВАННЯ<select value={params.get('sort') || 'recommended'} onChange={event => update('sort', event.target.value)}><option value="recommended">Рекомендовані</option><option value="popular">За продажами</option><option value="new">Спочатку новинки</option><option value="price_asc">Спочатку дешевші</option><option value="price_desc">Спочатку дорожчі</option><option value="name">За назвою</option></select></label>
+      {/* W-06: on a phone the refining filters fold behind one button with a count; on a wide screen they stay in the column. */}
+      <button type="button" className="catalog-filters-toggle" aria-expanded={filtersOpen} aria-controls="catalog-filter-panel" onClick={() => setFiltersOpen(open => !open)}>Фільтри{refineCount ? ` (${refineCount})` : ''}</button>
+      <div className={'catalog-filter-panel' + (filtersOpen ? ' is-open' : '')} id="catalog-filter-panel">
       <label>БРЕНД<select value={params.get('brand') || ''} onChange={event => update('brand', event.target.value)}><option value="">Усі бренди</option>{(data?.brands || facets.brands).map(brand => <option key={brand}>{brand}</option>)}</select></label>
       <label>КАТЕГОРІЯ<select value={params.get('category') || ''} onChange={event => update('category', event.target.value)}><option value="">Усі категорії</option>{(data?.categories || facets.categories).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label>АРОМАТ ДЛЯ<select value={params.get('gender') || ''} onChange={event => update('gender', event.target.value)}><option value="">Для всіх</option><option value="female">Жіночий</option><option value="male">Чоловічий</option><option value="unisex">Унісекс</option></select></label>
       <label>ОБ’ЄМ<select value={params.get('volume') || ''} onChange={event => update('volume', event.target.value)}><option value="">Усі об’єми</option>{(data?.volumes || facets.volumes).map(volume => <option key={volume} value={volume}>{volume} мл</option>)}</select></label>
-      <label>СОРТУВАННЯ<select value={params.get('sort') || 'recommended'} onChange={event => update('sort', event.target.value)}><option value="recommended">Рекомендовані</option><option value="popular">За продажами</option><option value="new">Спочатку новинки</option><option value="price_asc">Спочатку дешевші</option><option value="price_desc">Спочатку дорожчі</option><option value="name">За назвою</option></select></label>
       <label className="stock-filter"><input type="checkbox" checked={params.get('available') === 'true'} onChange={event => update('available', event.target.checked ? 'true' : '')}/>Лише в наявності</label>
-      <button className="filter-reset" onClick={() => go(sets ? '/sets' : '/catalog')}>Скинути фільтри</button></div>
-      <div className="catalog-results" aria-busy={request.loading}><div className="catalog-summary"><span>{data ? 'Знайдено ароматів: ' + data.total : 'Завантаження…'}</span>{request.loading && data && <span>Оновлюємо…</span>}</div>
+      <button className="filter-reset" onClick={() => go(sets ? '/sets' : '/catalog')}>Скинути фільтри</button></div></div>
+      <div className="catalog-results" aria-busy={request.loading}>{chips.length > 0 && <div className="catalog-chips" role="group" aria-label="Застосовані фільтри">{chips.map(chip => <button type="button" key={chip.key} className="catalog-chip" aria-label={'Прибрати фільтр: ' + chip.label} onClick={() => {if (chip.key === 'q') setSearch(''); update(chip.key, '')}}><span>{chip.label}</span><span aria-hidden="true">×</span></button>)}{chips.length > 1 && <button type="button" className="catalog-chip clear" onClick={() => {setSearch(''); go(sets ? '/sets' : '/catalog')}}>Очистити все</button>}</div>}<div className="catalog-summary"><span>{data ? 'Знайдено ароматів: ' + data.total : 'Завантаження…'}</span>{request.loading && data && <span>Оновлюємо…</span>}</div>
         <RequestStatus request={request}>{data && !data.items.length ? <div className="store-state"><h2>{kind === 'hits' ? 'Хіти ще формуються' : 'Нічого не знайдено'}</h2><p>{kind === 'hits' ? 'Тут з’являться аромати з підтвердженими продажами.' : 'Спробуй інший пошук або скинь фільтри.'}</p><button className="btn outline" onClick={() => go('/catalog')}>Весь каталог</button></div> : <div className="products-grid">{data?.items.map(item => <ProductCard key={item.key} item={item} go={go}/>)}</div>}</RequestStatus>
         {pages > 1 && <nav className="catalog-pagination" aria-label="Сторінки каталогу"><button className="btn outline" disabled={page <= 1} onClick={() => update('page', String(page - 1))}>← Назад</button><span>{page} / {pages}</span><button className="btn outline" disabled={page >= pages} onClick={() => update('page', String(page + 1))}>Далі →</button></nav>}
       </div></section></main>
