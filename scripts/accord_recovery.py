@@ -15,7 +15,7 @@ import uuid
 from accord_backup import HostBackup, ROOT, WRITERS
 from setup_domains import parse_env, validate_domain_environment
 from shop.backup_files import BackupError, backup_lock, DUMP_ARGS
-from shop.build import BUILD
+from shop.build import release_id
 from recovery_archive import (open_bundle, private_copy, inspect_media, make_bundle,
                               write_state, recovery_states)
 
@@ -124,7 +124,7 @@ class Recovery:
             # Detect configuration edits made during the snapshot window.
             if parse_env(h.root/'.env.domains') != h.values:
                 raise BackupError('Конфігурація змінилася під час копіювання')
-            return make_bundle(directory, payload, project=h.project, revision=revision, build=BUILD, media=media)
+            return make_bundle(directory, payload, project=h.project, revision=revision, build=release_id(), media=media)
 
     def bundle(self):
         h = self.host
