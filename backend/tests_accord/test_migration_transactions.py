@@ -194,7 +194,7 @@ def test_website_visits_migration_allows_anonymous_unique_visits(postgres):
         INSERT INTO users (id,bonus_balance,orders_count,total_spent) VALUES (1,0,0,0);
         INSERT INTO analytics_sessions (user_id,session_id,started_at) VALUES (1,'miniapp-old-visit',now());
     """)
-    postgres(upgrade_sql('bc1a8f723f9d:head'))
+    postgres(upgrade_sql('bc1a8f723f9d:f4c8e2a17d59'))
     result=postgres("""
         INSERT INTO analytics_sessions (user_id,channel,session_id,started_at) VALUES (NULL,'accord_website','web-visit-1',now());
         SELECT channel FROM analytics_sessions WHERE session_id='miniapp-old-visit';
@@ -210,6 +210,35 @@ def test_website_visits_migration_allows_anonymous_unique_visits(postgres):
     postgres(downgrade.stdout)
     result=postgres("SELECT count(*) AS n FROM analytics_sessions; SELECT version_num FROM alembic_version;")
     assert 'n = "1"' in result.stdout and 'e2a6c4f81b37' in result.stdout
+
+
+def test_durable_import_jobs_migration_keeps_applied_receipts(postgres):
+    blog_baseline(postgres)
+    postgres("""
+        CREATE TABLE website_sessions (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
+        CREATE TABLE website_telegram_links (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
+        CREATE TABLE analytics_sessions (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+            session_id VARCHAR(64) NOT NULL, started_at TIMESTAMPTZ NOT NULL, attribution JSONB,
+            CONSTRAINT uq_analytics_user_session UNIQUE (user_id, session_id));
+    """)
+    postgres(upgrade_sql('bc1a8f723f9d:f4c8e2a17d59'))
+    postgres("""
+        INSERT INTO catalog_imports (digest,status,result,created_at) VALUES ('applied','running','{"rows":1}',now());
+        INSERT INTO catalog_imports (digest,status,result,created_at) VALUES ('interrupted','running','',now());
+    """)
+    postgres(upgrade_sql('f4c8e2a17d59:head'))
+    result=postgres("SELECT digest,status,rows_done,attempts FROM catalog_imports ORDER BY digest; SELECT version_num FROM alembic_version;")
+    assert 'digest = "applied"' in result.stdout and 'status = "done"' in result.stdout
+    assert 'interrupted' not in result.stdout and 'a3d9b6e14f02' in result.stdout
+    postgres("INSERT INTO catalog_imports (digest,created_at,payload,rows_total) VALUES ('queued-job',now(),'[]',0);")
+    assert 'status = "queued"' in postgres("SELECT status FROM catalog_imports WHERE digest='queued-job';").stdout
+    downgrade=subprocess.run([sys.executable,'-m','alembic','downgrade','a3d9b6e14f02:f4c8e2a17d59','--sql'],
+        cwd=BACKEND,env={**os.environ,'PYTHONPATH':str(BACKEND),'DATABASE_URL':'postgresql+asyncpg://qa:qa@localhost/qa'},
+        text=True,capture_output=True,timeout=30)
+    assert downgrade.returncode==0,downgrade.stderr
+    postgres(downgrade.stdout)
+    result=postgres("SELECT digest FROM catalog_imports; SELECT version_num FROM alembic_version;")
+    assert 'applied' in result.stdout and 'queued-job' not in result.stdout and 'f4c8e2a17d59' in result.stdout
 
 
 def test_commerce_channel_and_queue_expressions_on_real_postgres(postgres):

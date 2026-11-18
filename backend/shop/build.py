@@ -6,4 +6,4 @@
 
 Число міняйте вручну при кожній збірці, яку віддаєте на деплой.
 """
-BUILD = "2026-11-18-accord-stage6-seo-metadata-v1.20.0"
+BUILD = "2026-11-18-accord-stage7-durable-imports-v1.21.0"
