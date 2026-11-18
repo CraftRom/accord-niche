@@ -161,6 +161,7 @@ run_node state-badge tests/state-badge.dom.mjs dashboard
 run_node managed-table tests/managed-table.dom.mjs dashboard
 run_node jsx-hygiene tests/jsx-hygiene.mjs dashboard
 run_node role-change tests/role-change.mjs dashboard
+run_node toast tests/toast.dom.mjs dashboard
 run_node scroll tests/scroll.mjs
 
 echo
