@@ -124,3 +124,27 @@ test('no rule paints white text on the light brand or status fills',()=>{
     .map(([,selector])=>selector.trim())
   assert.deepEqual(offenders,[])
 })
+
+test('no colour from the retired violet palette is left in the dashboard sources',async()=>{
+  const {readSourceCss}=await import('./helpers/source-css.mjs')
+  const {readdirSync}=await import('node:fs')
+  const src=new URL('../src/',import.meta.url)
+  const sources=[readSourceCss()]
+  for(const dir of ['pages/','components/'])for(const name of readdirSync(new URL(dir,src)).filter(n=>/\.(css|jsx)$/.test(n)))sources.push(readFileSync(new URL(dir+name,src),'utf8'))
+  const hue=([r,g,b])=>{
+    const max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/510,d=(max-min)/255
+    if(!d)return {h:0,s:0}
+    const s=d/(1-Math.abs(2*l-1))
+    const h=max===r?((g-b)/(max-min))%6:max===g?(b-r)/(max-min)+2:(r-g)/(max-min)+4
+    return {h:(h*60+360)%360,s}
+  }
+  const violet=[]
+  for(const text of sources)for(const [token] of text.matchAll(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3})\b|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+[^)]*\)/gi)){
+    let rgb
+    if(token.startsWith('#')){let h=token.slice(1);if(h.length===3)h=[...h].map(c=>c+c).join('');rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16))}
+    else rgb=token.match(/\d+/g).slice(0,3).map(Number)
+    const {h,s}=hue(rgb)
+    if(h>=235&&h<=285&&s>=.08)violet.push(token)
+  }
+  assert.deepEqual([...new Set(violet)],[])
+})

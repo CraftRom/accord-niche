@@ -1,9 +1,10 @@
+import {readSourceCss} from './helpers/source-css.mjs'
 import { existsSync, readFileSync } from 'node:fs'
 
 const app = readFileSync('src/App.jsx', 'utf8')
 const center = readFileSync('src/components/NotificationCenter.jsx', 'utf8')
 const api = readFileSync('src/api.js', 'utf8')
-const css = readFileSync('src/styles.css', 'utf8')
+const css = readSourceCss()
 const html = readFileSync('index.html', 'utf8')
 const nginx = readFileSync('nginx.conf', 'utf8')
 const sw = readFileSync('public/notification-sw.js', 'utf8')
@@ -70,10 +71,10 @@ check(app.includes('brand-label') && css.includes('.brand-label') && css.include
 
 check(css.includes('.sidebar {') && css.includes('z-index: 200') && css.includes('isolation: isolate'), 'popover сповіщень має власний верхній stacking-context і не провалюється під таблицю')
 check(css.includes('padding-right: 76px') && css.includes('width: 48px') && css.includes('right: 10px'), 'згорнута кнопка живе у правому safe-rail і не перекриває дії замовлення')
-check(css.includes('background: #171420') && css.includes('background: #1d192a'), 'popover та непрочитані елементи мають непрозорий фон без просвічування контенту')
+check(css.includes('background: #1d1b17') && css.includes('background: #26221d'), 'popover та непрочитані елементи мають непрозорий фон без просвічування контенту')
 check(center.includes("import { createPortal } from 'react-dom'") && center.includes('document.body'), 'нижній toast/dock винесений portal-ом із sidebar і не кліпиться')
 check(center.includes('Старі непрочитані після перезавантаження') && center.includes('setToastDocked(true)'), 'непрочитані після reload відновлюють нижній dock без повторного звуку')
-check(css.includes('z-index: 1200') && css.includes('background: #1d1929'), 'toast/dock гарантовано видимі поверх сторінки та мають непрозорий фон')
+check(css.includes('z-index: 1200') && css.includes('background: #25221d'), 'toast/dock гарантовано видимі поверх сторінки та мають непрозорий фон')
 check(center.includes("DEVICE_VOLUME_KEY = 'elfar:notification-device-volume'") && center.includes('SOUND_VOLUME_MAX = 200'), 'гучність має окреме локальне сховище цього ПК і регулюється до 200%')
 check(center.includes('notification-volume-slider') && center.includes('[50, 100, 150, 200]'), 'у центрі є slider та швидкі пресети глобальної гучності')
 check(center.includes("window.addEventListener('storage', syncLocalSettings)") && center.includes('applySoundVolume(next.soundVolume)'), 'зміна гучності синхронізується між вкладками цього браузера')
