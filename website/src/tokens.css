@@ -1,0 +1,28 @@
+/*
+ * ACCORD NICHE website design tokens (audit W-14). The brand stays white,
+ * black and warm beige; these tokens only make text readable. Every text
+ * token passes WCAG AA (4.5:1) on all light surfaces of the site —
+ * white, --linen and the summary panels — which qa/browser-website-a11y.mjs
+ * measures on the rendered pages.
+ */
+:root {
+  /* Surfaces */
+  --surface: #FFFFFF;
+  --surface-warm: #F5F1EB;   /* photo backdrop, highlights (= --linen) */
+  --surface-soft: #F7F4EF;   /* summaries, help panels */
+
+  /* Text on light surfaces (contrast on white / #F5F1EB) */
+  --text-primary: #111111;   /* 18.9 / 16.8 */
+  --text-secondary: #5C554D; /* 7.3 / 6.5 — descriptions */
+  --text-subtle: #6B665F;    /* 5.7 / 5.1 — metadata, units */
+  --text-accent: #76624A;    /* 5.8 / 5.2 — eyebrows, brands, text links */
+  --text-danger: #8E5A50;    /* 5.6 / 5.0 — remove actions */
+
+  /* Interaction */
+  --focus: #6D533A;          /* focus ring: 7.1:1 on white, visible on beige */
+
+  /* Readable minimums (W-02) */
+  --font-small: 12px;        /* metadata, badges, eyebrows */
+  --font-control: 13px;      /* buttons and calls to action */
+  --target-min: 44px;        /* touch target for frequent actions (W-03) */
+}
