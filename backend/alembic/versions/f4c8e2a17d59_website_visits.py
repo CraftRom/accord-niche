@@ -15,7 +15,8 @@ depends_on = None
 def upgrade():
     op.add_column("analytics_sessions", sa.Column(
         "channel", sa.String(24), nullable=False, server_default="telegram_miniapp"))
-    op.alter_column("analytics_sessions", "user_id", existing_type=sa.Integer(), nullable=True)
+    with op.batch_alter_table("analytics_sessions") as batch:  # SQLite-safe; direct on PostgreSQL
+        batch.alter_column("user_id", existing_type=sa.Integer(), nullable=True)
     op.create_index("ux_analytics_website_session", "analytics_sessions", ["session_id"], unique=True,
                     postgresql_where=sa.text("channel = 'accord_website'"))
 
@@ -24,5 +25,6 @@ def downgrade():
     # Anonymous visits cannot satisfy NOT NULL user_id; they are telemetry only.
     op.execute("DELETE FROM analytics_sessions WHERE user_id IS NULL")
     op.drop_index("ux_analytics_website_session", table_name="analytics_sessions")
-    op.alter_column("analytics_sessions", "user_id", existing_type=sa.Integer(), nullable=False)
+    with op.batch_alter_table("analytics_sessions") as batch:
+        batch.alter_column("user_id", existing_type=sa.Integer(), nullable=False)
     op.drop_column("analytics_sessions", "channel")
