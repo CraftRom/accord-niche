@@ -24,6 +24,6 @@ async def main():
  transition=script[script.index('CATALOG_BREAKING_UPGRADE="$'):script.index('"${COMPOSE[@]}" run --rm migrate')]
  r.check('BACKUP_CREATED' in transition and transition.index('BACKUP_CREATED')<transition.index('stop api bot scheduler') and 'exit 1' in transition,'без успішного бекапу перехід зупиняється до вимкнення старих застосунків')
  r.check(script.index('stop api bot scheduler')<script.index('run --rm migrate'),'старі API, бот і scheduler зупиняються перед зміною схеми')
- guard=script[script.index('rollback_core_runtime()'):script.index('echo "==> ФАЗА 1/6')]
+ guard=script[script.index('rollback_core_runtime()'):script.index('echo "==> ФАЗА 1/5')]
  r.check('CATALOG_BREAKING_UPGRADE' in guard and guard.index('CATALOG_BREAKING_UPGRADE')<guard.index('docker tag'),'відкат старих образів заблоковано після несумісної міграції')
 asyncio.run(main()); raise SystemExit(bool(r.done()))

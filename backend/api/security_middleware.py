@@ -133,9 +133,8 @@ class SecurityMiddleware:
             async def protected_send(message):
                 if message["type"] == "http.response.start" and path.startswith("/api/"):
                     response_headers = list(message.get("headers", []))
-                    if path != "/api/landing-pages/public/render/page":
-                        response_headers = [(k, v) for k, v in response_headers if k.lower() != b"cache-control"]
-                        response_headers.append((b"cache-control", b"no-store"))
+                    response_headers = [(k, v) for k, v in response_headers if k.lower() != b"cache-control"]
+                    response_headers.append((b"cache-control", b"no-store"))
                     response_headers.extend([(b"x-content-type-options", b"nosniff"), (b"referrer-policy", b"no-referrer")])
                     message = {**message, "headers": response_headers}
                 await send(message)
@@ -146,11 +145,7 @@ class SecurityMiddleware:
 
 
 class SiteHostMiddleware:
-    """Main app uses an explicit host allowlist; two public promo routes validate
-    their dynamic host against published pages in the database inside the handler.
-    Nginx exposes them only through an explicitly provisioned promo server_name.
-    """
-    PUBLIC_PROMO = {"/api/landing-pages/public/render/page", "/api/landing-pages/public/go/button"}
+    """Explicit host allowlist for the whole API (no dynamic public hosts)."""
 
     def __init__(self, app, allowed_hosts):
         from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -158,8 +153,6 @@ class SiteHostMiddleware:
         self.checked = TrustedHostMiddleware(app, allowed_hosts=allowed_hosts, www_redirect=False)
 
     async def __call__(self, scope, receive, send):
-        if scope.get("path") in self.PUBLIC_PROMO and scope.get("method") in ("GET", "HEAD"):
-            return await self.app(scope, receive, send)
         return await self.checked(scope, receive, send)
 
 class DomainBoundaryMiddleware:

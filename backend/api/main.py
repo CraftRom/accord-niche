@@ -12,7 +12,7 @@ from api.routers import (
     backups as backups_router, broadcasts, catalog, customers,
     logs as logs_router, media as media_router,
     integrations, orders, promos, support, shop_support, notifications, realtime,
-    settings as settings_router, operators, shop as shop_router, stats, telegram, landing_pages, public_catalog, website_shop, blog,
+    settings as settings_router, operators, shop as shop_router, stats, telegram, public_catalog, website_shop, blog,
     system as system_router, seo as seo_router,
 )
 from api.schemas import LoginIn, TokenOut
@@ -300,7 +300,6 @@ app.include_router(notifications.router, prefix="/api/notifications", tags=["not
 app.include_router(realtime.router, prefix="/api/realtime", tags=["realtime"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(promos.router, prefix="/api/promos", tags=["promos"])
-app.include_router(landing_pages.router, prefix="/api/landing-pages", tags=["landing-pages"])
 app.include_router(broadcasts.router, prefix="/api/broadcasts", tags=["broadcasts"])
 app.include_router(operators.router, prefix="/api/operators", tags=["operators"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])

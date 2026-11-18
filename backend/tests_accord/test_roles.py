@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from api import auth
 from api.browser_sessions import profile
-from api.routers import settings as settings_api, operators, landing_pages, blog
+from api.routers import settings as settings_api, operators, blog
 from api.schemas import ShopSettingsIn
 from shop.access import MODULE_FIELDS, INFRA_FIELDS
 from shop.config import settings
@@ -61,7 +61,6 @@ async def client(monkeypatch):
     app = FastAPI()
     app.include_router(settings_api.router, prefix='/api/settings')
     app.include_router(operators.router, prefix='/api/operators')
-    app.include_router(landing_pages.router, prefix='/api/landing-pages')
     app.include_router(blog.admin, prefix='/api/blog')
     app.dependency_overrides[get_repo] = lambda: repo
     from shop.db import get_session
@@ -153,12 +152,6 @@ async def test_sysadmin_manages_admin_accounts_and_reserved_login_cannot_be_shad
     payload['role'] = Role.SYSADMIN.value
     payload['login'] = 'superuser'
     assert (await client.http.post('/api/operators', json=payload, headers=headers(Role.ADMIN))).status_code == 422
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('path', ['/api/landing-pages/1/domain-connect', '/api/landing-pages/1/domain-disconnect'])
-async def test_manager_cannot_change_domain_settings(client, path):
-    assert (await client.http.post(path, headers=headers(Role.MANAGER))).status_code == 403
 
 
 @pytest.mark.parametrize('role', list(Role))

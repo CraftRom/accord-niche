@@ -135,7 +135,6 @@ run_node performance tests/performance.mjs dashboard
 run_node stats-business-ui tests/stats-business.mjs dashboard
 run_node form-chart tests/form-chart-normalization.mjs dashboard
 run_node deep-actions-ui tests/deep-actions.mjs dashboard
-run_node promo-domain-ux tests/promo-domain-ux.mjs dashboard
 run_node promo-form tests/promo-form.mjs dashboard
 run_node settings-model tests/settings-model.mjs dashboard
 run_node commerce tests/commerce.mjs dashboard
@@ -209,13 +208,8 @@ run legal qa/qa_legal.py
 run deploy-phases qa/qa_deploy_phases.py
 run deploy-security qa/qa_deploy_security.py
 run deploy-health qa/qa_deploy_health.py
-run promo-google qa/qa_promo_google.py
-run promo-landing qa/qa_promo_landing.py
-run promo-cloudflare qa/qa_promo_cloudflare.py
 run external-api qa/qa_external_api_contracts.py
 run injection-boundaries qa/qa_injection_boundaries.py
-run external-origin qa/qa_external_origin.py
-run external-google qa/qa_external_google.py
 run scheduler qa/qa_scheduler.py
 run broadcast-recovery qa/qa_broadcast_recovery.py
 run broadcast-content qa/qa_broadcast_content.py

@@ -53,7 +53,6 @@ const CatalogProduct = page(() => import('./pages/CatalogProduct'))
 const Customers = page(() => import('./pages/Customers'))
 const Blog = page(() => import('./pages/Blog'))
 const Promos = page(() => import('./pages/Promos'))
-const LandingPages = page(() => import('./pages/LandingPages'))
 const Broadcasts = page(() => import('./pages/Broadcasts'))
 const Settings = page(() => import('./pages/Settings'))
 const Operators = page(() => import('./pages/Operators'))
@@ -296,7 +295,6 @@ export default function App() {
         <Route path="/customers" element={<Protected><Customers /></Protected>} />
         <Route path="/blog" element={<Protected><Blog /></Protected>} />
         <Route path="/promos" element={<Protected><Promos /></Protected>} />
-        <Route path="/landing-pages" element={<Protected><LandingPages /></Protected>} />
         <Route path="/broadcasts" element={<Protected><Broadcasts /></Protected>} />
         <Route path="/settings" element={<Protected><Settings /></Protected>} />
         <Route path="/operators" element={<Protected><Operators /></Protected>} />

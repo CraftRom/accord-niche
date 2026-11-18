@@ -47,8 +47,7 @@ class DeployHealth(unittest.TestCase):
             values={'PUBLIC_URL':'https://'+domain,'BOT_TOKEN':'777001:TESTTOKEN','JWT_SECRET':'x'*32,
                     'DATA_ENCRYPTION_KEY':'unused-host-preflight','DASHBOARD_PASSWORD':'Valid-password-2026',
                     'POSTGRES_USER':'shop','POSTGRES_PASSWORD':'postgres-secret','POSTGRES_DB':'shop',
-                    'REDIS_PASSWORD':'redis-secret','REDIS_URL':'redis://:redis-secret@redis:6379/0',
-                    'PROMO_CONTROLLER_TOKEN':'valid-test-controller-token'}
+                    'REDIS_PASSWORD':'redis-secret','REDIS_URL':'redis://:redis-secret@redis:6379/0'}
             (root/'.env').write_text('\n'.join(f'{k}={v}' for k,v in values.items()))
             docker=root/'bin/docker';docker.write_text(DOCKER);docker.chmod(0o700)
             sleep=root/'bin/sleep';sleep.write_text('#!/bin/sh\nexit 0\n');sleep.chmod(0o700)
@@ -77,7 +76,7 @@ class DeployHealth(unittest.TestCase):
         result,calls=self.deploy(QA_FAIL_INTERNAL='1')
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Rollback CORE runtime',result.stderr)
-        self.assertNotIn('ФАЗА 6/6',result.stdout)
+        self.assertNotIn('Фінальний API health: OK',result.stdout)
         self.assertTrue(any('-S' in a and 'http://127.0.0.1:8080/__deploy_api_health' in a for a in calls))
 
     def test_broken_tls_route_still_triggers_rollback(self):
@@ -85,13 +84,13 @@ class DeployHealth(unittest.TestCase):
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Основний nginx route',result.stderr)
         self.assertIn('Rollback CORE runtime',result.stderr)
-        self.assertNotIn('ФАЗА 6/6',result.stdout)
+        self.assertNotIn('Фінальний API health: OK',result.stdout)
 
     def test_broken_legacy_or_storefront_route_triggers_rollback(self):
         result,calls=self.deploy(QA_FAIL_PUBLIC='1')
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Rollback CORE runtime',result.stderr)
-        self.assertNotIn('ФАЗА 6/6',result.stdout)
+        self.assertNotIn('Фінальний API health: OK',result.stdout)
 
     def test_real_api_reproduces_old_host_failure_and_accepts_probe_host(self):
         os.environ['TRUSTED_HOSTS']=''

@@ -13,7 +13,7 @@ from qa_common import Report, boot
 from qa_paths import qa_db_path
 app, Session, _ = boot(qa_db_path('external_contracts.db'))
 from shop.http_utils import retry_after_seconds
-from shop.services import novaposhta as np, salesdrive as sd, cloudflare as cf
+from shop.services import novaposhta as np, salesdrive as sd
 from shop.services.shop_settings import ShopSettings, prime_cache
 from shop.repo.sql import SqlRepository
 from shop import telegram
@@ -108,37 +108,6 @@ async def salesdrive_tests():
         except sd.SalesDriveError:pass
     r.check(len(calls)==1,'SalesDrive mutations never receive an automatic HTTP replay')
 
-async def cloudflare_tests():
-    account='a'*32;paths=[]
-    def active(request):paths.append(request.url.path);return httpx.Response(200,json={'success':True,'result':{'status':'active'}})
-    with patch('shop.services.cloudflare.httpx.AsyncClient',side_effect=client_factory(active)):
-        await cf.verify_token('user-token');await cf.verify_token('account-token',account)
-    r.check(paths==['/client/v4/user/tokens/verify',f'/client/v4/accounts/{account}/tokens/verify'],'Cloudflare user and account tokens use their documented verification routes')
-    for body in [[],{}, {'success':True,'result':{}},{'success':True,'result':{'status':'expired'}}]:
-        with patch('shop.services.cloudflare.httpx.AsyncClient',side_effect=client_factory(lambda request,b=body:httpx.Response(200,json=b))):
-            try:await cf.verify_token('invalid-token');ok=False
-            except cf.CloudflareError:ok=True
-        r.check(ok,f'Cloudflare rejects invalid verification response: {body}')
-    calls=[]
-    def limited(request):calls.append(request);return httpx.Response(429,headers={'Retry-After':'120'},json={'success':False,'errors':[]})
-    with patch('shop.services.cloudflare.httpx.AsyncClient',side_effect=client_factory(limited)):
-        delays=[]
-        for _ in range(2):
-            try:await cf.request('limited-token','GET','/zones')
-            except cf.CloudflareError as exc:delays.append(exc.retry_after)
-    r.check(len(calls)==1 and all(delay>119 for delay in delays),'Cloudflare full Retry-After prevents premature retries')
-    calls.clear()
-    def gateway(request):calls.append(request);return httpx.Response(503,json={'success':False})
-    with patch('shop.services.cloudflare.httpx.AsyncClient',side_effect=client_factory(gateway)):
-        try:await cf.request('write-token','POST','/zones/id/dns_records',body={'type':'A'})
-        except cf.CloudflareError:pass
-    r.check(len(calls)==1,'Cloudflare DNS writes are never automatically repeated')
-    calls.clear()
-    def transient(request):calls.append(request);return httpx.Response(503,json={'success':False}) if len(calls)==1 else httpx.Response(200,json={'success':True,'result':[]})
-    with patch('shop.services.cloudflare.httpx.AsyncClient',side_effect=client_factory(transient)):
-        result=await cf.request('read-token','GET','/zones')
-    r.check(len(calls)==2 and result['success'],'Cloudflare safe reads recover after one gateway failure')
-
 async def telegram_tests():
     for failure in [httpx.ReadTimeout('token-bearing-url'),httpx.WriteError('token-bearing-url')]:
         sender=AsyncMock();sender.post.side_effect=failure
@@ -160,16 +129,6 @@ async def api_tests():
         auth=(await client.post('/api/auth/login',json={'login':'admin','password':'secret'})).json()
         headers={'Authorization':'Bearer '+auth['access_token']}
         r.check((await client.get('/api/integrations/health')).status_code==401,'integration diagnostics requires authorization')
-        token='cloudflare-sensitive-token-123456';account='b'*32
-        def active(request):return httpx.Response(200,json={'success':True,'result':{'status':'active'}})
-        with patch('shop.services.cloudflare.httpx.AsyncClient',side_effect=client_factory(active)):
-            response=await client.put('/api/landing-pages/cloudflare/config',headers=headers,json={'api_token':token,'account_id':account})
-        r.check(response.status_code==200 and response.json()['accountId']==account and token not in response.text,'Cloudflare account config can be saved without exposing token',response.text)
-        async with Session() as session:
-            raw=await SqlRepository(session).get_settings_map()
-            r.check(raw['promo_cloudflare_api_token']!=token and decrypt_secret(raw['promo_cloudflare_api_token'])==token,'Cloudflare token remains encrypted at rest')
-        response=await client.get('/api/landing-pages/cloudflare/config',headers=headers)
-        r.check(response.json()['accountId']==account and token not in response.text,'Cloudflare status returns account ID and no credential')
         prime_cache(SHOP)
         with patch('shop.services.integration_health.httpx.AsyncClient',side_effect=AssertionError('network must not run')):
             response=await client.get('/api/integrations/health',headers=headers)
@@ -180,13 +139,13 @@ async def api_tests():
             if request.url.host=='api.telegram.org':return httpx.Response(200,json={'ok':True,'result':{'id':1}})
             if request.url.host=='api.novaposhta.ua':return httpx.Response(200,json={'success':True,'data':[]})
             if request.url.host.endswith('.salesdrive.me'):return httpx.Response(200,json={'data':[{'id':1,'name':'Новий'}]})
-            return active(request)
+            return httpx.Response(404)
         with patch('shop.services.integration_health.httpx.AsyncClient',side_effect=client_factory(providers)):
             response=await client.get('/api/integrations/health?live=true',headers=headers)
         data=response.json()
-        r.check(response.status_code==200 and data['verified']==4 and data['errors']==0,'live diagnostics probes all four configured providers with read methods',response.text)
+        r.check(response.status_code==200 and data['verified']==3 and data['errors']==0,'live diagnostics probes all three configured providers with read methods',response.text)
         r.check(all('sendMessage' not in str(request.url) and 'sendPhoto' not in str(request.url) and 'dns_records' not in str(request.url) for request in calls),'diagnostics never sends messages or modifies DNS')
-        r.check(all(secret not in response.text for secret in [token,SHOP.salesdrive_api_key,SHOP.novaposhta_api_key]),'diagnostics report contains no provider keys')
+        r.check(all(secret not in response.text for secret in [SHOP.salesdrive_api_key,SHOP.novaposhta_api_key]),'diagnostics report contains no provider keys')
         prime_cache(ShopSettings.from_env())
     await Session.kw['bind'].dispose()
 
@@ -194,6 +153,6 @@ async def run():
     now=datetime(2026,11,2,12,tzinfo=timezone.utc)
     r.check(retry_after_seconds('120')==120 and retry_after_seconds(format_datetime(now+timedelta(seconds=90),usegmt=True),now=now)==90,'Retry-After supports seconds and HTTP dates')
     r.check(retry_after_seconds('nan',default=7)==7 and retry_after_seconds('-1',default=7)==7,'invalid Retry-After never creates NaN or negative sleeps')
-    await nova_tests();await salesdrive_tests();await cloudflare_tests();await telegram_tests();await api_tests()
+    await nova_tests();await salesdrive_tests();await telegram_tests();await api_tests()
 asyncio.run(run())
 raise SystemExit(bool(r.done()))

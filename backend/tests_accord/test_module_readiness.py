@@ -1,4 +1,4 @@
-"""Stage 3/4: worker heartbeats, module states, release readiness, token cleanup (A04/A09/A11/A13)."""
+"""Stage 3/4: worker heartbeats, module states, release readiness, token cleanup (A04/A11/A13)."""
 from __future__ import annotations
 
 import json
@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from api.auth import create_token
-from api.routers import landing_pages, system
+from api.routers import system
 from shop import models as m
 from shop import worker_health
 from shop.config import settings
@@ -73,13 +73,12 @@ async def test_enabled_module_without_worker_is_not_reported_ready(db, tmp_path,
     session, _ = db
     repo = SqlRepository(session)
     monkeypatch.setattr(settings, 'bot_token', '')
-    monkeypatch.delenv('PROMO_CONTROLLER_TOKEN', raising=False)
     report = await module_status.module_report(repo, heartbeat_directory=tmp_path)
     states = {item['key']: item['status'] for item in report['modules']}
     assert states['scheduled_broadcasts'] == 'no_worker'
     assert states['backup_jobs'] == 'no_worker'
     assert states['telegram_bot'] == 'not_configured'
-    assert states['promo_domains'] == 'not_configured'
+    assert 'promo_domains' not in states, 'promo pages were removed from ACCORD'
     assert states['salesdrive'] in {'disabled', 'not_configured'}
     for service in ('scheduler', 'maintenance'):
         worker_health.beat(service, directory=tmp_path)
@@ -174,36 +173,6 @@ async def test_only_expired_tokens_are_pruned_in_batches(db):
     assert await session.scalar(select(func.count()).select_from(m.User)) == 1
     assert await repo.get_dashboard_session('dash-live')
     assert (await repo.prune_expired_tokens(now)) == {'website_sessions': 0, 'website_telegram_links': 0, 'dashboard_sessions': 0}
-
-
-# --------------------------------------------------------- A09 controller
-
-@pytest.mark.asyncio
-async def test_promo_domain_without_controller_is_a_known_state_not_503(db, monkeypatch):
-    session, factory = db
-    monkeypatch.setattr(landing_pages, '_PROMO_CONTROLLER_TOKEN', '')
-    monkeypatch.setattr(settings, 'jwt_secret', 'readiness-signing-secret-' * 3)
-    monkeypatch.setattr(settings, 'dashboard_login', 'root')
-    session.add(m.PromoLandingPage(id=1, name='Promo', domain='promo.example.test', draft_config={}, is_published=True))
-    await session.commit()
-    app = FastAPI()
-    app.include_router(landing_pages.router, prefix='/api/landing-pages')
-    from shop.db import get_session
-
-    async def db_session():
-        async with factory() as s:
-            yield s
-    app.dependency_overrides[get_session] = db_session
-    app.dependency_overrides[get_repo] = lambda: SqlRepository(session)
-    root = {'Authorization': 'Bearer ' + create_token('root', Role.SYSADMIN, 0)}
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='https://dashboard.test') as http:
-        status = await http.get('/api/landing-pages/1/domain-status', headers=root)
-        assert status.status_code == 200, status.text
-        assert status.json()['controller_configured'] is False and status.json()['live']['status'] == 'not_configured'
-        connect = await http.post('/api/landing-pages/1/domain-connect', headers=root)
-        assert connect.status_code == 409 and 'PROMO_CONTROLLER_TOKEN' in connect.json()['detail']
-        disconnect = await http.post('/api/landing-pages/1/domain-disconnect', headers=root)
-        assert disconnect.status_code == 200 and disconnect.json()['page']['published'] is False
 
 
 # ------------------------------------------------------- A13 release id
