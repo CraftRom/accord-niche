@@ -68,7 +68,8 @@ try {
     check(await p.getByRole('group', { name: 'Наявність товарів' }).getByRole('button', { name: 'Усі', exact: true }).getAttribute('aria-pressed') === 'true', `${label}: availability explicitly defaults to all goods`)
     check(!await p.locator('.category-tile-detail').filter({ hasText: 'Самостійна група' }).count(), `${label}: category cards have customer-facing labels`)
     const palette = await p.evaluate(() => { const css = getComputedStyle(document.documentElement); return { accent: css.getPropertyValue('--accent').trim(), page: css.getPropertyValue('--tg-bg').trim() } })
-    check(palette.accent === (variant.scheme === 'dark' ? '#8b7bf0' : '#6453c6') && palette.page === (variant.scheme === 'dark' ? '#100e18' : '#ffffff'), `${label}: system palette matches the dashboard brand`)
+    // ACCORD NICHE brand (miniapp/src/styles.css), not the former ELFAR violet.
+    check(palette.accent.toLowerCase() === (variant.scheme === 'dark' ? '#d9c8ae' : '#111111') && palette.page.toLowerCase() === (variant.scheme === 'dark' ? '#0a0a0a' : '#ffffff'), `${label}: system palette matches the ACCORD brand`)
     await p.evaluate(() => { window.Telegram.WebApp.themeParams = { bg_color: '#ff0000', text_color: '#ff0000', secondary_bg_color: '#ff0000' }; window.__qaEvents.themeChanged?.() })
     check(await p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--tg-bg').trim()) === palette.page, `${label}: custom Telegram colours cannot break brand text contrast`)
     if (variant.width >= 700) {
