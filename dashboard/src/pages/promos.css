@@ -260,7 +260,7 @@
 .promo-type-picker .selected,
 .promo-scope-picker .selected {
   border-color: var(--violet);
-  background: rgba(139, 123, 240, 0.09);
+  background: rgba(209, 187, 154, 0.09);
 }
 .promo-type-picker strong {
   font-size: 13px;
@@ -327,7 +327,7 @@
 }
 .promo-category-list label:hover,
 .promo-category-list label.selected {
-  background: rgba(139, 123, 240, 0.08);
+  background: rgba(209, 187, 154, 0.08);
 }
 .promo-category-list label > span {
   flex: 1;
@@ -370,7 +370,7 @@
 .promo-preview {
   background: linear-gradient(
     150deg,
-    rgba(139, 123, 240, 0.12),
+    rgba(209, 187, 154, 0.12),
     var(--panel-2) 60%
   );
   border: 1px solid var(--line);

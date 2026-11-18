@@ -8,6 +8,7 @@ import { useChatViewport } from '../components/useChatViewport'
 import { useChatDraft } from '../components/useChatDraft'
 import { useSupportRead } from '../components/useSupportRead'
 import { ChatDraftStatus, ChatLatest, ChatStatus } from '../components/ChatStatus'
+import { PageHeader } from '../components/page'
 
 const FILE_LABEL = {
   photo: 'Фото', document: 'Документ', video: 'Відео', voice: 'Голосове',
@@ -499,15 +500,16 @@ export default function Support() {
 
   return (
     <>
-      <div className="page-head support-page-head">
-        <div>
-          <h1>Підтримка</h1>
-          <p>Окремі звернення з /ask зберігаються в історії та групуються по клієнтах</p>
-        </div>
-        <button className="btn ghost support-refresh" onClick={() => loadThreads()} disabled={loading}>
-          Оновити
-        </button>
-      </div>
+      <PageHeader
+        className="support-page-head"
+        title="Підтримка"
+        description="Окремі звернення з /ask зберігаються в історії та групуються по клієнтах"
+        actions={<>
+          <button className="btn ghost support-refresh" onClick={() => loadThreads()} disabled={loading}>
+            Оновити
+          </button>
+        </>}
+      />
 
       <div className="support-stats" aria-label="Статистика підтримки">
         <button className={`support-stat ${status === 'open' ? 'active' : ''}`} onClick={() => changeFilter('open')}>

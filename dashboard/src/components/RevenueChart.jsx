@@ -65,22 +65,22 @@ export default function RevenueChart({ data, previous }) {
               <stop offset="100%" stopColor="#66d9b8" stopOpacity={0} />
             </linearGradient>
             <linearGradient id="turnover" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8b7bf0" stopOpacity={0.16} />
-              <stop offset="100%" stopColor="#8b7bf0" stopOpacity={0} />
+              <stop offset="0%" stopColor="#d1bb9a" stopOpacity={0.16} />
+              <stop offset="100%" stopColor="#d1bb9a" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="#2e2840" vertical={false} />
+          <CartesianGrid stroke="#3a352e" vertical={false} />
           <XAxis
             dataKey="date"
-            stroke="#635b7d"
+            stroke="#A0978B"
             fontSize={11}
             tickFormatter={displayDate}
             minTickGap={24}
             tickLine={false}
-            axisLine={{ stroke: '#3a334d' }}
+            axisLine={{ stroke: '#484238' }}
           />
           <YAxis
-            stroke="#635b7d"
+            stroke="#A0978B"
             fontSize={11}
             domain={[0, 'auto']}
             tickFormatter={compactMoney}
@@ -90,7 +90,7 @@ export default function RevenueChart({ data, previous }) {
           />
           <Tooltip
             contentStyle={{
-              background: '#221e31', border: '1px solid #2e2840', borderRadius: 10, color: '#ece9f5',
+              background: '#2c2823', border: '1px solid #3a352e', borderRadius: 10, color: '#f5f0e9',
             }}
             labelFormatter={(value) => `Дата: ${displayDate(value)}`}
             formatter={(value, name, item) => {
@@ -103,7 +103,7 @@ export default function RevenueChart({ data, previous }) {
           <Area
             type="linear"
             dataKey="sales"
-            stroke="#8b7bf0"
+            stroke="#d1bb9a"
             strokeWidth={2}
             fill="url(#turnover)"
             baseValue={0}

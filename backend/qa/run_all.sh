@@ -155,6 +155,9 @@ fi
 run_node styles tests/styles.mjs dashboard
 run_node contrast tests/contrast.mjs dashboard
 run_node field-a11y tests/field-a11y.dom.mjs dashboard
+run_node css-structure tests/stylesheet-structure.mjs dashboard
+run_node page-components tests/page-components.dom.mjs dashboard
+run_node state-badge tests/state-badge.dom.mjs dashboard
 run_node scroll tests/scroll.mjs
 
 echo

@@ -8,6 +8,7 @@ import TaxonomyManager from '../components/catalog/TaxonomyManager'
 import { api, isAdmin } from '../api'
 import { useFilters } from '../components/useFilters'
 import { Empty, ErrorBar, Field, Loading, Modal, confirmPurge, money, useToast } from '../components/ui'
+import { PageHeader } from '../components/page'
 
 const SORT_OPTIONS = [
   ['name-asc', 'За назвою (А → Я)'],
@@ -307,29 +308,30 @@ export default function Catalog() {
 
   return (
     <>
-      <div className="page-head catalog-page-head">
-        <div>
-          <h1>Каталог</h1>
-          <p>Єдиний каталог сайту, Mini App і бота: варіанти, ціни, залишки та публікація</p>
-        </div>
-        <div className="catalog-head-actions">
-          <button className="btn ghost" onClick={() => api.products.exportXlsx().catch(e => notify(e.message, 'bad'))}>Експорт XLSX</button>
-          {canEdit && <><button className="btn ghost" onClick={() => setImporting(true)}>Імпорт XLSX</button>
-          <button
-            className="btn ghost catalog-categories-btn"
-            onClick={() => setManagingCategories(true)}
-            title="Керувати категоріями"
-          >
-            <span className="catalog-categories-wide">Категорії</span>
-            <span className="catalog-categories-short" aria-hidden="true">▦</span>
-          </button>
-          <button className="btn catalog-add-btn" onClick={() => setEditing({})}>
-            <span aria-hidden="true">＋</span>
-            <span className="catalog-add-wide">Додати товар</span>
-            <span className="catalog-add-short">Додати</span>
-          </button></>}
-        </div>
-      </div>
+      <PageHeader
+        className="catalog-page-head"
+        title="Каталог"
+        description="Єдиний каталог сайту, Mini App і бота: варіанти, ціни, залишки та публікація"
+        actions={<>
+          <div className="catalog-head-actions">
+            <button className="btn ghost" onClick={() => api.products.exportXlsx().catch(e => notify(e.message, 'bad'))}>Експорт XLSX</button>
+            {canEdit && <><button className="btn ghost" onClick={() => setImporting(true)}>Імпорт XLSX</button>
+            <button
+              className="btn ghost catalog-categories-btn"
+              onClick={() => setManagingCategories(true)}
+              title="Керувати категоріями"
+            >
+              <span className="catalog-categories-wide">Категорії</span>
+              <span className="catalog-categories-short" aria-hidden="true">▦</span>
+            </button>
+            <button className="btn catalog-add-btn" onClick={() => setEditing({})}>
+              <span aria-hidden="true">＋</span>
+              <span className="catalog-add-wide">Додати товар</span>
+              <span className="catalog-add-short">Додати</span>
+            </button></>}
+          </div>
+        </>}
+      />
 
       <div className="catalog-toolbar">
         <label className="catalog-filter">

@@ -18,14 +18,14 @@
   border: 1px dashed var(--violet-dim);
   border-radius: 12px;
   padding: 22px 16px;
-  background: rgba(139, 123, 240, 0.05);
+  background: rgba(209, 187, 154, 0.05);
   color: var(--text);
   cursor: pointer;
   font: inherit;
 }
 .image-dropzone:hover,
 .image-field.is-dragging .image-dropzone {
-  background: rgba(139, 123, 240, 0.12);
+  background: rgba(209, 187, 154, 0.12);
   border-color: var(--violet);
 }
 .image-drop-symbol {
