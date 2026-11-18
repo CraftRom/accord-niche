@@ -146,7 +146,7 @@ def test_blog_upgrade_and_downgrade_leave_existing_customers_untouched(postgres)
 
 def test_catalog_import_receipts_upgrade_and_downgrade(postgres):
     blog_baseline(postgres)
-    postgres(upgrade_sql('bc1a8f723f9d:head'))
+    postgres(upgrade_sql('bc1a8f723f9d:d7e3a91c5b20'))
     result=postgres("""
         INSERT INTO catalog_imports (digest,created_at) VALUES ('a',now());
         SELECT version_num FROM alembic_version;
@@ -162,6 +162,25 @@ def test_catalog_import_receipts_upgrade_and_downgrade(postgres):
     postgres(downgrade.stdout)
     result=postgres("SELECT to_regclass('public.catalog_imports') IS NULL AS gone; SELECT version_num FROM alembic_version;")
     assert 'gone = "t"' in result.stdout and 'c04b19a7e230' in result.stdout
+
+
+def test_token_expiry_indexes_upgrade_and_downgrade(postgres):
+    blog_baseline(postgres)
+    postgres("""
+        CREATE TABLE website_sessions (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
+        CREATE TABLE website_telegram_links (id INTEGER PRIMARY KEY, expires_at TIMESTAMPTZ);
+    """)
+    postgres(upgrade_sql('bc1a8f723f9d:head'))
+    result=postgres("SELECT indexname FROM pg_indexes WHERE indexname LIKE 'ix_website_%_expires_at' ORDER BY 1; SELECT version_num FROM alembic_version;")
+    assert 'ix_website_sessions_expires_at' in result.stdout and 'ix_website_telegram_links_expires_at' in result.stdout
+    assert 'e2a6c4f81b37' in result.stdout
+    downgrade=subprocess.run([sys.executable,'-m','alembic','downgrade','e2a6c4f81b37:d7e3a91c5b20','--sql'],
+        cwd=BACKEND,env={**os.environ,'PYTHONPATH':str(BACKEND),'DATABASE_URL':'postgresql+asyncpg://qa:qa@localhost/qa'},
+        text=True,capture_output=True,timeout=30)
+    assert downgrade.returncode==0,downgrade.stderr
+    postgres(downgrade.stdout)
+    result=postgres("SELECT count(*) AS n FROM pg_indexes WHERE indexname LIKE 'ix_website_%_expires_at';")
+    assert 'n = "0"' in result.stdout
 
 
 def test_commerce_channel_and_queue_expressions_on_real_postgres(postgres):

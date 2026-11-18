@@ -4,6 +4,7 @@ import { api, getSession, isSysadmin } from '../api'
 import { filterSettingGroups } from '../roles'
 import { ErrorBar, Field, Loading, useToast } from '../components/ui'
 import { SETTINGS_CATEGORIES, categoryFor, changedSettings } from '../settingsModel'
+import ModuleStatus from '../components/ModuleStatus'
 
 // Editable field names come from the authenticated server session.
 // Managers cannot open this page or read/write the settings API.
@@ -666,6 +667,8 @@ export default function Settings() {
       </div>
 
       <ErrorBar error={error} />
+
+      <ModuleStatus />
 
       <div className="settings-tools">
         <input className="input" type="search" aria-label="Пошук налаштувань" placeholder="Знайти налаштування…" value={query} onChange={(event) => setQuery(event.target.value)} />

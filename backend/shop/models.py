@@ -147,6 +147,7 @@ class WebsiteAccountUser(Base):
 
 class WebsiteTelegramLink(Base):
     __tablename__ = "website_telegram_links"
+    __table_args__ = (Index("ix_website_telegram_links_expires_at", "expires_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tg_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -157,7 +158,8 @@ class WebsiteTelegramLink(Base):
 
 class WebsiteSession(Base):
     __tablename__ = "website_sessions"
-    __table_args__ = (Index("ix_website_sessions_account", "account_id"),)
+    __table_args__ = (Index("ix_website_sessions_account", "account_id"),
+                      Index("ix_website_sessions_expires_at", "expires_at"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("website_accounts.id", ondelete="CASCADE"))
