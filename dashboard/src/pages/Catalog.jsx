@@ -501,13 +501,18 @@ export default function Catalog() {
           </div>
 
           <footer className="catalog-footer">
-            {canEdit ? <div className="catalog-bulk">
-              <span>Вибрано: <strong>{selected.size}</strong></span>
+            {/* UI-010: групові дії з'являються лише після вибору й прямо
+                кажуть, що стосуються тільки цієї сторінки: вибір скидається
+                при зміні сторінки або фільтра. */}
+            {!canEdit ? <div className="catalog-bulk faint">Перегляд: змінювати каталог може адміністратор.</div>
+              : selected.size === 0 ? <div className="catalog-bulk faint">Позначте товари, щоб приховати або показати їх разом.</div>
+              : <div className="catalog-bulk has-selection" role="region" aria-label="Дії з вибраними товарами">
+              <span role="status">Вибрано <strong>{selected.size}</strong> з {visibleIds.length} на цій сторінці</span>
               <select
                 className="input"
+                aria-label="Дія з вибраними"
                 value={bulkAction}
                 onChange={(e) => setBulkAction(e.target.value)}
-                disabled={selected.size === 0}
               >
                 <option value="">Дія з вибраними</option>
                 <option value="hide">Прибрати з каталогу</option>
@@ -515,12 +520,15 @@ export default function Catalog() {
               </select>
               <button
                 className="btn ghost small"
-                disabled={!bulkAction || selected.size === 0 || bulkBusy}
+                disabled={!bulkAction || bulkBusy}
                 onClick={runBulk}
               >
                 {bulkBusy ? 'Виконую…' : 'Застосувати'}
               </button>
-            </div> : <div className="catalog-bulk faint">Перегляд: змінювати каталог може адміністратор.</div>}
+              <button type="button" className="btn ghost small" disabled={bulkBusy} onClick={() => { setSelected(new Set()); setBulkAction('') }}>
+                Зняти вибір
+              </button>
+            </div>}
 
             <div className="catalog-pagination">
               <label>
