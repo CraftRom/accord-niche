@@ -68,7 +68,7 @@ function exportAnalytics(data) {
   for (const row of data.series) rows.push([row.date, ...keys.map((k) => row[k])])
   for (const row of data.analytics.sources) rows.push([`Канал: ${row.source}`, ...keys.map((k) => row[k])])
   for (const row of data.analytics.campaigns) rows.push([`Кампанія: ${row.source} / ${row.campaign || 'без мітки'}`, ...keys.map((k) => row[k])])
-  downloadCsv(rows, data.snapshot ? `elfar-report-${data.snapshot.month}.csv` : 'elfar-analytics.csv')
+  downloadCsv(rows, data.snapshot ? `accord-report-${data.snapshot.month}.csv` : 'accord-analytics.csv')
 }
 
 function ChannelTable({ rows, campaigns = false }) {

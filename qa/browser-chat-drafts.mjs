@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 const browser = await chromium.launch({headless:true, executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined, args:['--no-sandbox']})
 const base = process.env.DASHBOARD_URL || 'http://127.0.0.1:5173'
-const A = 'a'.repeat(64), B = 'b'.repeat(64), prefix = 'elfar:chat-draft:v1:'
+const A = 'a'.repeat(64), B = 'b'.repeat(64), prefix = 'accord:chat-draft:v1:'
 let checks = 0
 function check(ok, label) { assert.ok(ok, label); checks++; console.log('PASS ' + label) }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))

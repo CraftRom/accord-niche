@@ -58,7 +58,7 @@ try {
   await page.getByRole('status').filter({hasText:'Збережено'}).waitFor()
   check(spendUpdates.at(-1).source==='google' && spendUpdates.at(-1).amount==='125.50','spend form saves actual entered amount')
   const download=page.waitForEvent('download'); await page.getByRole('button',{name:'CSV статистики'}).click()
-  check((await download).suggestedFilename()==='elfar-analytics.csv','CSV export downloadable')
+  check((await download).suggestedFilename()==='accord-analytics.csv','CSV export downloadable')
   await page.setViewportSize({width:360,height:780})
   await page.getByText('CAC · усі канали',{exact:true}).waitFor()
   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile no page overflow')

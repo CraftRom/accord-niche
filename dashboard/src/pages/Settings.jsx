@@ -145,7 +145,7 @@ const FIELDS = [
       {
         key: 'bot_username',
         label: 'Юзернейм бота',
-        hint: 'Без «собаки», наприклад elfar1_bot',
+        hint: 'Без «собаки», наприклад accordniche_bot',
       },
       {
         key: 'miniapp_short_name',
@@ -267,7 +267,7 @@ const FIELDS = [
           'актуальний список статусів підтягується з SalesDrive автоматично. Для нових CRM-пов’язаних ' +
           'замовлень SalesDrive є джерелом статусу; старі заявки в CRM не переносяться.',
     items: [
-      { key: 'salesdrive_domain', label: 'Субдомен', hint: 'Лише субдомен: «elfar» для elfar.salesdrive.me' },
+      { key: 'salesdrive_domain', label: 'Субдомен', hint: 'Лише субдомен: «accord» для accord.salesdrive.me' },
       { key: 'salesdrive_telegram_form_id', label: 'ID форми Telegram', type: 'number',
         hint: 'formId окремої бази заявок «ELFAR — Telegram Bot». Інтеграція приймає webhook лише з цієї бази.' },
       {
@@ -666,6 +666,7 @@ export default function Settings() {
   return (
     <>
       <PageHeader
+        help="settings"
         title="Налаштування"
         description="Магазин, автоматизація та інтеграції — за розділами"
         actions={<>

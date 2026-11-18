@@ -67,7 +67,7 @@ try {
     await dialog.getByRole('checkbox', { name: /Рідини/ }).check()
     await dialog.getByLabel('Діє до', { exact: true }).fill('2027-07-10')
     await dialog.getByRole('button', { name: 'Згенерувати', exact: true }).click()
-    check(/^ELFAR[A-Z2-9]{6}$/.test(await dialog.getByLabel('Промокод', { exact: true }).inputValue()), `${width}: code generator creates usable code`)
+    check(/^ACCORD[A-Z2-9]{6}$/.test(await dialog.getByLabel('Промокод', { exact: true }).inputValue()), `${width}: code generator creates usable code`)
     await dialog.getByLabel('Промокод', { exact: true }).fill('welcome')
     check(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth) && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}: no horizontal overflow`)
     check(await save.isVisible(), `${width}: save remains visible while form scrolls`)
