@@ -4,10 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#FFFFFF" />
+  <!-- Per-URL title, description, Open Graph, canonical and JSON-LD come from
+       the API through nginx SSI (crawlers and link previews run no JavaScript).
+       Without SSI (vite dev, API unavailable) the block below is the fallback. -->
+  <!--# block name="seo_default" -->
   <meta name="description" content="ACCORD NICHE — розпив оригінальної нішевої парфумерії. Creed, Kilian, Nasomatto, Amouage та інші. Спробуйте аромат у форматах 2, 5 або 10 мл." />
   <meta property="og:title" content="ACCORD NICHE — нішеві аромати від 2 мл" />
   <meta property="og:description" content="Спробуй аромат, перш ніж купити флакон." />
   <title>ACCORD NICHE — розпив оригінальної нішевої парфумерії</title>
+  <!--# endblock -->
+  <!--# include virtual="/__seo_head" stub="seo_default" -->
 </head>
 <body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
 </html>

@@ -174,6 +174,14 @@ function Detail({id, go, add}) {
     if (group) setSku(group.variants.find(product => product.id === id)?.id || group.id)
   }, [group?.id, id])
   const current = group?.variants.find(product => product.id === Number(sku)) || group?.variants[0]
+  // The server already sends this title on a direct visit (SSI); keep it in
+  // step when the shopper arrives through in-app navigation.
+  useEffect(() => {
+    if (!group) return
+    const previous = document.title
+    document.title = [group.brand, group.name].filter(Boolean).join(' ') + ' — ACCORD NICHE'
+    return () => { document.title = previous }
+  }, [group?.id])
   return <main><div className="shell detail-back"><button onClick={() => go('/catalog')}>← Усі аромати</button></div><div className="shell"><RequestStatus request={request}/></div>
     {group && current && <><section className="shell detail-grid"><ImageTile item={{...current, image: current.photo_url || current.photo_endpoint || group.image, brand:group.brand}} priority/><div className="detail-text"><p className="eyebrow">{group.brand}</p><h1>{group.name}</h1><p className="detail-kind">{genderName[group.gender] || 'унісекс'}</p>
       {group.bestseller_rank && group.bestseller_rank <= 8 && <p className="detail-hit">Хіт продажів · за останні 90 днів</p>}{group.description && <p className="detail-description">{group.description}</p>}
