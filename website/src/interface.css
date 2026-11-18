@@ -5,7 +5,7 @@
 @media(max-width:930px){
  .header .header-inner{min-height:68px;gap:12px}.header .brandmark{width:105px}.header .brandmark strong{font-size:18px}.header .header-actions{gap:3px;flex-shrink:0}.header .icon-btn{width:44px;height:44px;flex-shrink:0}.header .menu-btn{display:inline-flex}
  .header .header-nav{display:none;position:absolute;top:68px;left:0;right:0;background:#fff;box-shadow:0 15px 28px #0001;padding:16px 24px 24px;align-items:stretch;max-height:calc(100dvh - 68px);overflow-y:auto;overscroll-behavior:contain}
- .header .header-nav.open{display:flex;flex-direction:column;gap:5px}.header .header-nav button{padding:14px 0;text-align:left;font-size:14px}
+ .header .header-nav.open{display:flex;flex-direction:column;gap:5px}.header .header-nav :is(button,a){padding:14px 0;text-align:left;font-size:14px}
 }
 @media(max-width:430px){
  .header .header-inner{gap:8px}.header .brandmark{width:90px}.header .brandmark strong{font-size:16px}.header .brandmark-bottom{font-size:6px;letter-spacing:.4em}
@@ -32,7 +32,7 @@
 .footer-links button,.footer-links a{display:inline-flex;align-items:center;min-height:32px;padding-block:4px}
 .filter-reset{display:inline-flex;align-items:center;min-height:32px;padding-block:6px}
 .qty-control .remove-btn{min-height:32px;padding-inline:6px}
-.header-nav button{min-width:32px;min-height:32px}
+.header-nav :is(button,a){min-width:32px;min-height:32px}
 @media (pointer:coarse){.qty-control button:not(.remove-btn){width:var(--target-min);height:var(--target-min)}}
 
 /* W-04: one visible keyboard focus for every control. The search strip and
@@ -48,3 +48,41 @@
    pushing the page sideways. */
 .section-row{flex-wrap:wrap;row-gap:4px}
 .section-row>div{min-width:0}
+
+/* W-06: catalog filters. Wide screens keep the full column; on a phone only
+   search, sort and a «Фільтри (N)» button stay above the products. */
+.catalog-filters-toggle{display:none}
+.catalog-filter-panel{display:contents}
+@media(max-width:750px){
+  .catalog-filters>label:first-child,.catalog-filters-toggle{grid-column:1/-1}
+  .catalog-filters-toggle{display:flex;align-items:center;justify-content:center;min-height:var(--target-min);border:1px solid #111;background:#fff;color:var(--text-primary);font-size:var(--font-control);letter-spacing:.12em;text-transform:uppercase}
+  .catalog-filters-toggle[aria-expanded="true"]{background:#111;color:#fff}
+  .catalog-filter-panel{display:none;grid-column:1/-1;grid-template-columns:1fr 1fr;gap:15px}
+  .catalog-filter-panel.is-open{display:grid}
+  .catalog-filter-panel .stock-filter,.catalog-filter-panel .filter-reset{grid-column:1/-1}
+}
+
+/* W-18: applied filters as removable chips above the results. */
+.catalog-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+.catalog-chip{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:6px 12px;border:1px solid #DDD7CF;background:var(--surface-soft);color:var(--text-primary);font-size:13px;line-height:1.2}
+.catalog-chip>span:last-child{color:var(--text-subtle);font-size:15px}
+.catalog-chip:hover{border-color:#111}
+.catalog-chip.clear{background:none;border-color:transparent;color:var(--text-accent);text-decoration:underline;text-underline-offset:3px}
+
+/* W-07: card hierarchy brand → name → volumes → price. The price was 13 px,
+   smaller than the name; it is now the strongest figure in the card and is
+   pinned to the bottom, so prices line up across cards with names of
+   different length. Names are never truncated. */
+.product-card{display:flex}
+.product-card>.product-link{display:flex;flex-direction:column;width:100%}
+.product-card .product-meta{display:flex;flex:1;flex-direction:column}
+.product-card .product-meta>strong{margin-top:auto;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.product-card .product-meta>.unit-price{margin-top:2px}
+@media(max-width:750px){.product-card .product-meta>strong{font-size:15px}}
+
+/* W-05: links keep the look the buttons had; the current section is marked
+   with aria-current and a visible underline, not by colour alone. */
+a.brandmark{display:block}
+.header-nav a{display:inline-flex;align-items:center}
+.header-nav [aria-current="page"]{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:6px}
+a.section-link,a.product-link{display:block}

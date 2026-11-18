@@ -20,7 +20,7 @@ test('every text token passes AA on every light surface', () => {
 test('no light-surface rule paints text below 4.5:1 on white', () => {
   // Rules on the black footer, the dark «how it works» band, black buttons and
   // the decorative hero lettering legitimately use light text.
-  const darkContext = /footer|how-section|steps|step-number|inverse|section-heading\.light|btn\.primary|hit-badge|hero-lettering/
+  const darkContext = /footer|how-section|steps|step-number|inverse|section-heading\.light|btn\.primary|hit-badge|hero-lettering|aria-expanded="true"/
   const offenders = []
   for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     if (darkContext.test(selector)) continue
