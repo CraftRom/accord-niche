@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { api, getSession } from '../api'
 import { ROLE_TITLES, assignableRoles, canManageAccount } from '../roles'
 import { Empty, ErrorBar, Field, Loading, Modal, confirmPurge, useToast } from '../components/ui'
+import { PageHeader } from '../components/page'
 
 // Значення мають збігатися з OperatorRole на бекенді. «admin» історично
 // означає системного адміністратора з .env — його в панелі не створюють,
@@ -221,13 +222,13 @@ export default function Operators() {
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>Команда та доступ</h1>
-          <p>Хто має доступ до панелі й на якому рівні</p>
-        </div>
-        <button className="btn" onClick={() => setEditing({})}>Новий обліковий запис</button>
-      </div>
+      <PageHeader
+        title="Команда та доступ"
+        description="Хто має доступ до панелі й на якому рівні"
+        actions={<>
+          <button className="btn" onClick={() => setEditing({})}>Новий обліковий запис</button>
+        </>}
+      />
 
       <ErrorBar error={error} />
 

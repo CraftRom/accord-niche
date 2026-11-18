@@ -5,6 +5,8 @@ import { api, isAdmin } from '../api'
 import { useProductImage } from '../components/catalog/useProductImage'
 import { ErrorBar, Field, Info, Loading, money, useToast } from '../components/ui'
 import { DescriptionField, DisplayFields, PriceFields, ProductImageField, TaxonomyFields, PerfumeFields, perfumePayload, changeField, groupPayload, pricePayload } from '../components/catalog/ProductFields'
+import { PageHeader } from '../components/page'
+import { StateBadge } from '../components/StateBadge'
 
 function EditBlock({ title, product, fields, payload, onSaved, children }) {
   const [editing, setEditing] = useState(false), [form, setForm] = useState(product)
@@ -51,7 +53,7 @@ export default function CatalogProduct() {
   const sub = subcategories.find((s) => s.id === product.subcategory_id)
   return <div className="catalog-product-page">
     <Link className="btn ghost catalog-back-link" to={back}>← До каталогу</Link>
-    <div className="page-head"><div><h1>{product.name}</h1><p>Єдині дані для сайту, Mini App і бота.</p></div><span className={'chip '+(publication.buyable?'ok':'')}>{publication.label}</span></div>
+    <PageHeader title={product.name} description="Єдині дані для сайту, Mini App і бота." actions={<StateBadge tone={publication.buyable?'success':'neutral'}>{publication.label}</StateBadge>}/>
     <section className="card commerce-publication"><div><h2>Стан на вітрині</h2><p>{!product.is_active?'Товар приховано.':Number(product.price)<=0?'Активний товар без ціни не публікується на сайті.':publication.buyable?'Покупець може вибрати цей варіант і додати його в кошик.':'Товар можна переглянути, але оформлення недоступне без залишку.'}</p><small className="faint">{!product.photo_url && !product.has_photo?'Зображення не додано. ':''}{!product.description?'Опис не додано.':''}</small></div>{publication.visible && <a className="btn ghost small" href={'https://accordniche.pp.ua/aroma/'+product.id} target="_blank" rel="noopener noreferrer">Переглянути на сайті ↗</a>}</section>
     <div className="catalog-sku-panel"><Info label="Артикул (SKU)" copy={product.sku}><strong className="mono">{product.sku}</strong></Info><span className="muted">Автоматично створений · незмінний</span></div>
     <div className="catalog-detail-grid">
