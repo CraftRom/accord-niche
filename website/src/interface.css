@@ -86,3 +86,14 @@ a.brandmark{display:block}
 .header-nav a{display:inline-flex;align-items:center}
 .header-nav [aria-current="page"]{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:6px}
 a.section-link,a.product-link{display:block}
+
+/* W-11: what changed on this very line, and why «+» stopped. */
+.basket-line-note{margin:6px 0 0;padding:6px 8px;background:var(--surface-soft);border-left:2px solid var(--text-accent);color:var(--text-secondary);font-size:var(--font-small);line-height:1.45}
+.basket-line-hint{margin:4px 0 0;color:var(--text-subtle);font-size:var(--font-small)}
+
+/* W-20: each volume shows its own price before it is chosen; stock is said in words. */
+.variant-buttons button{display:inline-flex;flex-direction:column;align-items:center;gap:2px}
+.variant-buttons button small{font-size:var(--font-small);color:var(--text-subtle)}
+.variant-buttons button.selected small{color:inherit}
+.detail-stock{margin-top:6px;color:var(--text-subtle);font-size:var(--font-small)}
+.detail-stock.in-stock{color:#3E5A44}

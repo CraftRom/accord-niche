@@ -22,7 +22,7 @@ function useRoute() {
     const next = BASE + to
     if (location.pathname + location.search !== next) history[options.replace ? 'replaceState' : 'pushState'](null, '', next)
     setRoute(to)
-    window.scrollTo({top: 0, behavior: 'instant'})
+    if (options.scroll !== false) window.scrollTo({top: 0, behavior: 'instant'})
   }
   return [route, go]
 }
@@ -216,8 +216,8 @@ function Detail({id, go, add}) {
   return <main><div className="shell detail-back"><button onClick={() => go('/catalog')}>← Усі аромати</button></div><div className="shell"><RequestStatus request={request}/></div>
     {group && current && <><section className="shell detail-grid"><ImageTile item={{...current, image: current.photo_url || current.photo_endpoint || group.image, brand:group.brand}} priority/><div className="detail-text"><p className="eyebrow">{group.brand}</p><h1>{group.name}</h1><p className="detail-kind">{genderName[group.gender] || 'унісекс'}</p>
       {group.bestseller_rank && group.bestseller_rank <= 8 && <p className="detail-hit">Хіт продажів · за останні 90 днів</p>}{group.description && <p className="detail-description">{group.description}</p>}
-      <div className="variant-group"><h2>Обери об’єм</h2><div className="variant-buttons">{group.variants.map(product => <button key={product.id} aria-pressed={current.id === product.id} className={current.id === product.id ? 'selected' : ''} onClick={() => {setSku(product.id);go('/aroma/'+product.id)}}>{product.volume_ml ? product.volume_ml + ' мл' : product.name}{product.stock <= 0 && <small>Немає</small>}</button>)}</div></div>
-      <div className="detail-buy"><div><span>ЦІНА ЗА ОБРАНИЙ ОБ’ЄМ</span>{current.is_sale && current.old_price && <del>{money(current.old_price)}</del>}<strong>{money(current.price)}</strong>{current.volume_ml > 0 && <p>{money(Number(current.price) / current.volume_ml)} / мл</p>}</div><button className="btn primary" disabled={current.stock <= 0} onClick={() => add({...current, brand:group.brand})}>{current.stock > 0 ? 'ДОДАТИ В КОШИК' : 'НЕМАЄ В НАЯВНОСТІ'}</button></div><p className="microcopy">Ціна й наявність перевіряються повторно під час оформлення.</p></div></section>
+      <div className="variant-group"><h2 id="variant-title">Обери об’єм</h2><div className="variant-buttons" role="group" aria-labelledby="variant-title">{group.variants.map(product => <button key={product.id} aria-pressed={current.id === product.id} className={current.id === product.id ? 'selected' : ''} onClick={() => {setSku(product.id);go('/aroma/'+product.id, {replace:true, scroll:false})}}><span>{product.volume_ml ? product.volume_ml + ' мл' : product.name}</span><small>{product.stock > 0 ? money(product.price) : 'Немає'}</small></button>)}</div></div>
+      <div className="detail-buy"><div><span>{current.volume_ml ? 'ЦІНА ЗА ' + current.volume_ml + ' МЛ' : 'ЦІНА'}</span>{current.is_sale && current.old_price && <del>{money(current.old_price)}</del>}<strong>{money(current.price)}</strong>{current.volume_ml > 0 && <p>{money(Number(current.price) / current.volume_ml)} / мл</p>}<p className={'detail-stock' + (current.stock > 0 ? ' in-stock' : '')}>{current.stock > 0 ? 'У наявності' : 'Немає в наявності'}</p></div><button className="btn primary" disabled={current.stock <= 0} onClick={() => add({...current, brand:group.brand})}>{current.stock > 0 ? 'ДОДАТИ В КОШИК' : 'НЕМАЄ В НАЯВНОСТІ'}</button></div><p className="microcopy">Ціна й наявність перевіряються повторно під час оформлення.</p></div></section>
       <ProductSection title="Схожі аромати" items={request.data.related} go={go}/></>}</main>
 }
 
@@ -226,7 +226,7 @@ function Brands({go}) {
   return <main><PageTitle label="ПАРФУМЕРНІ БУДИНКИ" title="Бренди" detail="Бренди, представлені в актуальному каталозі."/><section className="shell"><RequestStatus request={request} empty={request.data?.brands?.length === 0}><div className="brand-grid">{request.data?.brands.map(brand => <button key={brand} onClick={() => go('/catalog?brand=' + encodeURIComponent(brand))}><span>{brand}</span><Icon name="arrow" size={17}/></button>)}</div></RequestStatus></section></main>
 }
 
-function Basket({open, close, cart, products, change, go, site, request}) {
+function Basket({open, close, cart, products, change, go, site, request, lineNotes = {}}) {
   const dialog=useRef(null)
   useDialog(dialog,open,close)
   if (!open) return null
@@ -237,9 +237,9 @@ function Basket({open, close, cart, products, change, go, site, request}) {
   const blocked = Boolean(request.loading || request.error || Object.keys(cart).length !== lines.length)
   return <div className="drawer-backdrop" onMouseDown={event => {if (event.target === event.currentTarget) close()}}><aside ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Кошик" className="basket"><div className="basket-head"><h2>Кошик</h2><button className="icon-btn" aria-label="Закрити кошик" onClick={close}><Icon name="close"/></button></div>
     <div className="basket-lines">{Object.keys(cart).length > 0 && request.error && <div role="alert" className="notice">Не вдалося перевірити кошик. <button onClick={request.retry}>Спробувати ще раз</button></div>}{request.loading && <p role="status" className="shop-hint">Перевіряємо ціни й наявність…</p>}
-      {unresolved.map(id=><div className="basket-line" key={id}><p>Товар потребує перевірки наявності.</p><button className="remove-btn" onClick={()=>change(Number(id),0)}>Прибрати з кошика</button></div>)}{lines.map(({product,qty}) => <div className="basket-line" key={product.id}><div className="basket-thumb"><ImageTile item={product}/></div><div className="basket-info"><h3>{product.brand && product.brand + ' · '}{product.name}</h3><p>{product.volume_ml ? product.volume_ml + ' мл' : ''}</p><strong>{money(Number(product.price) * qty)}</strong><div className="qty-control"><button aria-label="Зменшити кількість" onClick={() => change(product.id, qty - 1)}>−</button><span>{qty}</span><button aria-label="Збільшити кількість" disabled={qty >= product.stock || qty >= 99} onClick={() => change(product.id, qty + 1)}>+</button><button className="remove-btn" onClick={() => change(product.id, 0)}>Видалити</button></div></div></div>)}
+      {unresolved.map(id=><div className="basket-line" key={id}><p>Товар потребує перевірки наявності.</p><button className="remove-btn" onClick={()=>change(Number(id),0)}>Прибрати з кошика</button></div>)}{lines.map(({product,qty}) => <div className="basket-line" key={product.id}><div className="basket-thumb"><ImageTile item={product}/></div><div className="basket-info"><h3>{product.brand && product.brand + ' · '}{product.name}</h3><p>{[product.volume_ml ? product.volume_ml + ' мл' : '', money(product.price) + ' за шт.'].filter(Boolean).join(' · ')}</p><strong>{qty > 1 ? qty + ' × ' + money(product.price) + ' = ' : ''}{money(Number(product.price) * qty)}</strong>{lineNotes[product.id] && <p className="basket-line-note" role="status">{lineNotes[product.id]}</p>}<div className="qty-control" role="group" aria-label={'Кількість: ' + product.name}><button aria-label={'Зменшити кількість: ' + product.name} onClick={() => change(product.id, qty - 1)}>−</button><span aria-live="polite">{qty}</span><button aria-label={'Збільшити кількість: ' + product.name} disabled={qty >= product.stock || qty >= 99} onClick={() => change(product.id, qty + 1)}>+</button><button className="remove-btn" aria-label={'Видалити з кошика: ' + product.name} onClick={() => change(product.id, 0)}>Видалити</button></div>{qty >= product.stock && product.stock < 99 && <p className="basket-line-hint">У наявності {product.stock} шт. — це максимум.</p>}</div></div>)}
       {!Object.keys(cart).length && <div className="empty-basket"><p>У кошику поки порожньо</p><button className="btn outline" onClick={() => {close(); go('/catalog')}}>Переглянути аромати</button></div>}</div>
-    {lines.length > 0 && <div className="basket-bottom"><div className="basket-total"><span>Разом</span><strong>{money(total)}</strong></div><button className="btn primary checkout-link" disabled={blocked} onClick={() => {close(); go('/checkout')}}>ОФОРМИТИ ЗАМОВЛЕННЯ →</button>{!blocked && link && <a className="basket-telegram-link" href={link} target="_blank" rel="noopener noreferrer">Продовжити в Telegram Mini App</a>}<p>Кошик зберігається на цьому пристрої. Остаточну суму розрахуємо під час оформлення.</p></div>}</aside></div>
+    {lines.length > 0 && <div className="basket-bottom"><div className="basket-total"><span>Сума за товари</span><strong>{money(total)}</strong></div><button className="btn primary checkout-link" disabled={blocked} onClick={() => {close(); go('/checkout')}}>ОФОРМИТИ ЗАМОВЛЕННЯ →</button>{!blocked && link && <a className="basket-telegram-link" href={link} target="_blank" rel="noopener noreferrer">Продовжити в Telegram Mini App</a>}<p>Доставка не входить у суму: її оплачують перевізнику за його тарифами. Знижки, бонуси й остаточну суму покаже оформлення. Кошик зберігається на цьому пристрої.</p></div>}</aside></div>
 }
 
 function Footer({go, setInfo, site}) {
@@ -265,6 +265,7 @@ export default function App() {
   const [basketOpen, setBasketOpen] = useState(false)
   const [info, setInfo] = useState('')
   const [notice, setNotice] = useState('')
+  const [lineNotes, setLineNotes] = useState({})
   const [cart, setCart] = useState(() => {try {
     const saved = JSON.parse(localStorage.getItem('accord:niche:cart') || '{}')
     return saved && typeof saved === 'object' && !Array.isArray(saved) ? Object.fromEntries(Object.entries(saved).filter(([id,qty]) => /^[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id)) && Number.isInteger(Number(qty)) && Number(qty) > 0).slice(0,30)) : {}
@@ -279,12 +280,24 @@ export default function App() {
       const next=sanitizeCart(cart,cartRequest.data)
       const changed=JSON.stringify(next)!==JSON.stringify(cart)
       const repriced=cartRequest.data.some(product=>products.some(previous=>previous.id===product.id && Number(previous.price)!==Number(product.price)))
+      // W-11: say on the line itself what changed, not only in a page-wide notice.
+      const notes={}
+      for(const product of cartRequest.data){
+        const previous=products.find(item=>item.id===product.id)
+        const before=Number(cart[product.id])||0, after=Number(next[product.id])||0
+        const parts=[]
+        if(previous && Number(previous.price)!==Number(product.price))parts.push('Ціна оновилась: було '+money(previous.price)+', тепер '+money(product.price))
+        if(after>0 && after<before)parts.push('Кількість зменшено до '+after+': більше немає в наявності')
+        if(parts.length)notes[product.id]=parts.join('. ')
+      }
+      setLineNotes(notes)
       setProducts(cartRequest.data)
       if(changed){setCart(next);setNotice('Наявність змінилася. Недоступні позиції прибрано, кількість обмежено поточним залишком. Перевірте кошик.')}
       else if(repriced)setNotice('Ціни в кошику оновлено. Перевірте підсумок перед підтвердженням замовлення.')
     }
   }, [cartRequest.data])
   function change(id, qty) {
+    setLineNotes(old => {if (!(id in old)) return old; const next = {...old}; delete next[id]; return next})
     setCart(old => {const next = {...old}; const product = products.find(product => product.id === id); const capped = Math.min(Math.max(0,qty), product?.stock || 0, 99); if (capped) next[id] = capped; else delete next[id]; return next})
   }
   function add(product) {
@@ -305,6 +318,6 @@ export default function App() {
   return <><Header route={route} go={go} onCart={() => setBasketOpen(true)} count={count} account={commerce.account}/>
     {notice && <div className="shell notice" role="alert">{notice}<button onClick={() => setNotice('')}>Закрити</button></div>}
     {path === '/' ? <Home go={go}/> : path === '/catalog' || path === '/sets' ? <Catalog key={path} route={route} go={go} sets={path === '/sets'}/> : path === '/brands' ? <Brands go={go}/> : path === '/blog' ? <BlogList route={route} go={go}/> : blogMatch ? <BlogArticle key={blogSlug} slug={blogSlug} shop={commerce} go={go}/> : detail ? <Detail id={Number(detail[1])} go={go} add={add}/> : path === '/checkout' ? <CheckoutPage shop={commerce} cart={cart} products={products} cartRequest={cartRequest} change={change} go={go} complete={result => {setOrderResult(result); setNotice(''); setCart({})}}/> : path === '/profile' ? <ProfilePage key={commerce.account.account_key || 'guest'} shop={commerce} go={go}/> : path === '/order/success' ? <CheckoutSuccess result={commerce.account.has_session?orderResult:null} go={go}/> : path === '/how' ? <main><PageTitle label="ПРОСТО І ЗРОЗУМІЛО" title="Як це працює"/><HowItWorks/></main> : <main><PageTitle label="404" title="Сторінку не знайдено"/><div className="shell"><button className="btn outline" onClick={() => go('/')}>На головну</button></div></main>}
-    <Footer go={go} setInfo={setInfo} site={site}/><Basket open={basketOpen} close={() => setBasketOpen(false)} cart={cart} products={products} change={change} go={go} site={site} request={cartRequest}/><InfoModal name={info} close={() => setInfo('')} site={site}/>
+    <Footer go={go} setInfo={setInfo} site={site}/><Basket lineNotes={lineNotes} open={basketOpen} close={() => setBasketOpen(false)} cart={cart} products={products} change={change} go={go} site={site} request={cartRequest}/><InfoModal name={info} close={() => setInfo('')} site={site}/>
   </>
 }
