@@ -38,7 +38,7 @@ function Icon({name, size = 21}) {
 }
 
 function Logo({dark = false, onClick}) {
-  return <button className={'brandmark' + (dark ? ' inverse' : '')} onClick={onClick} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong><span className="brandmark-bottom"><i/>NICHE<i/></span></button>
+  return <button className={'brandmark' + (dark ? ' inverse' : '')} onClick={onClick} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong><span className="brandmark-bottom" data-decorative=""><i/>NICHE<i/></span></button>
 }
 
 function Header({go, onCart, count, account, route}) {

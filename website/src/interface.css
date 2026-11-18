@@ -25,3 +25,26 @@
   margin-top: auto;
   padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
 }
+
+/* W-03: touch and pointer targets. Text-only buttons keep their look but get
+   a target of at least 24 px (WCAG 2.2, 2.5.8); the cart quantity buttons,
+   pressed often on a phone, get 44 px on touch screens. */
+.footer-links button,.footer-links a{display:inline-flex;align-items:center;min-height:32px;padding-block:4px}
+.filter-reset{display:inline-flex;align-items:center;min-height:32px;padding-block:6px}
+.qty-control .remove-btn{min-height:32px;padding-inline:6px}
+.header-nav button{min-width:32px;min-height:32px}
+@media (pointer:coarse){.qty-control button:not(.remove-btn){width:var(--target-min);height:var(--target-min)}}
+
+/* W-04: one visible keyboard focus for every control. The search strip and
+   form fields removed the outline (outline:0) to keep their minimal look;
+   keyboard users now get the shared ring, mouse users still see none. */
+:where(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.search-strip input:focus-visible,.shop-field input:focus-visible,.shop-field textarea:focus-visible,.shop-field select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.search-strip:focus-within{box-shadow:inset 0 -2px 0 var(--focus)}
+.footer :focus-visible,.footer:focus-within :focus-visible{outline-color:#F5F1EB}
+
+/* W-02 follow-up: with readable 12 px text «Переглянути всі →» no longer fits
+   beside the section title on a 320 px phone; the row wraps instead of
+   pushing the page sideways. */
+.section-row{flex-wrap:wrap;row-gap:4px}
+.section-row>div{min-width:0}

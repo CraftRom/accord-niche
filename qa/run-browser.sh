@@ -7,8 +7,10 @@ npm --prefix dashboard run dev -- --host 127.0.0.1 --port 5173 --strictPort >qa/
 DASH_PID=$!
 npm --prefix miniapp run dev -- --host 127.0.0.1 --port 5174 --strictPort >qa/output/miniapp-vite.log 2>&1 &
 MINI_PID=$!
-trap 'kill "$DASH_PID" "$MINI_PID" 2>/dev/null || true' EXIT
-node --input-type=module -e 'for (const port of [5173,5174]) { let ok=false; for(let i=0;i<200;i++){try{const r=await fetch(`http://127.0.0.1:${port}`);if(r.ok){ok=true;break}}catch{}await new Promise(r=>setTimeout(r,100))}if(!ok){console.error(`QA server not ready on port ${port}`);process.exit(1)}}'
+npm --prefix website run dev -- --host 127.0.0.1 --port 5175 --strictPort --base=/ >qa/output/website-vite.log 2>&1 &
+SITE_PID=$!
+trap 'kill "$DASH_PID" "$MINI_PID" "$SITE_PID" 2>/dev/null || true' EXIT
+node --input-type=module -e 'for (const port of [5173,5174,5175]) { let ok=false; for(let i=0;i<200;i++){try{const r=await fetch(`http://127.0.0.1:${port}`);if(r.ok){ok=true;break}}catch{}await new Promise(r=>setTimeout(r,100))}if(!ok){console.error(`QA server not ready on port ${port}`);process.exit(1)}}'
 if [[ "${QA_BROWSER_SUITE:-all}" == "promo-codes" ]]; then
   node qa/browser-promo-codes.mjs
 elif [[ "${QA_BROWSER_SUITE:-all}" == "support-history" ]]; then
@@ -49,6 +51,7 @@ elif [[ "${QA_BROWSER_SUITE:-all}" == "storefront" ]]; then
 elif [[ "${QA_BROWSER_SUITE:-all}" == "a11y" ]]; then
   node qa/browser-a11y-matrix.mjs
   node qa/browser-miniapp-a11y.mjs
+  node qa/browser-website-a11y.mjs
 else
   node qa/browser-promo-codes.mjs
   node qa/browser-support-history.mjs
@@ -72,4 +75,5 @@ else
   node qa/browser-analytics.mjs
   node qa/browser-a11y-matrix.mjs
   node qa/browser-miniapp-a11y.mjs
+  node qa/browser-website-a11y.mjs
 fi
