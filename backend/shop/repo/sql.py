@@ -11,7 +11,7 @@ import string
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import and_, case, delete, exists, func, not_, or_, select, update
+from sqlalchemy import and_, case, delete, exists, false, func, not_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, lazyload, selectinload
@@ -1334,7 +1334,11 @@ class SqlRepository(Repository):
             query = query.where(m.Order.crm_id.is_not(None), m.Order.crm_status_id == str(crm_status_id))
         if legacy_only:
             query = query.where(m.Order.crm_id.is_(None))
-        if user_id is not None:
+        if isinstance(user_id, (list, tuple, set, frozenset)):
+            # One customer's proven identities share one timeline (A12): a
+            # single indexed query instead of one deep read per identity.
+            query = query.where(m.Order.user_id.in_(sorted(user_id)) if user_id else false())
+        elif user_id is not None:
             query = query.where(m.Order.user_id == user_id)
         if active_only:
             from shop.services.order_chat import OPEN_STATUSES

@@ -32,7 +32,7 @@ from shop.repo.factory import get_repo
 from shop.services import shop_service as svc
 from shop.services import novaposhta as np
 from shop.services.shop_settings import get_shop_settings
-from shop.services.website_identity import _owned_user_ids, _order_time, attach_guest_identity
+from shop.services.website_identity import _owned_user_ids, attach_guest_identity
 from shop.services.attribution import clean_attribution
 
 log = logging.getLogger(__name__)
@@ -437,13 +437,11 @@ async def orders(request: Request, limit: int = Query(30, ge=1, le=60),
                  repo: Repository = Depends(get_repo)):
     account = await _required_account(request, repo)
     ids = await _owned_user_ids(repo, account)
-    result = []
-    # The two identities share a timeline; fetch enough from each source to
-    # produce a deterministic page after chronological merging.
-    for uid in ids:
-        result.extend(await _orders_payload(repo, uid, limit=offset+limit+1))
-    result.sort(key=lambda x: (_order_time(x), x.get('id', 0)), reverse=True)
-    return {'items': result[offset:offset+limit], 'has_more': len(result) > offset+limit}
+    # All proven identities share one timeline. The database merges and pages
+    # it (created_at desc, id desc): a deep page no longer reads every earlier
+    # order of every identity into memory (A12).
+    result = await _orders_payload(repo, ids, limit=limit + 1, offset=offset)
+    return {'items': result[:limit], 'has_more': len(result) > limit}
 
 
 @router.get('/checkout/defaults')
@@ -499,12 +497,10 @@ async def profile(request: Request, repo: Repository = Depends(get_repo)):
     account = await _required_account(request, repo)
     ids = await _owned_user_ids(repo, account)
     details = await repo.get_user(account.user_id)
-    results = []
-    for uid in ids:
-        results.extend(await _orders_payload(repo, uid, limit=100))
-    results.sort(key=lambda x: (_order_time(x), x.get('id', 0)), reverse=True)
+    # Only the latest order is shown here; the full history is paged by /orders.
+    results = await _orders_payload(repo, ids, limit=1)
     recent = results[0] if results else None
-    total_orders = sum([await repo.count_filtered_orders(user_id=uid) for uid in ids])
+    total_orders = await repo.count_filtered_orders(user_id=ids)
     latest_delivery = await checkout_defaults(request, repo)
     return {'account': _display(account), 'orders_count': total_orders,
             'bonus_balance': str(details.bonus_balance or 0),
