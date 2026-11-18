@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
-BUILD = "2026-11-18-accord-ui-names-help-v1.31.0"
+BUILD = "2026-11-18-accord-ui-action-names-v1.32.0"
 
 BACKEND = Path(__file__).resolve().parents[1]
 RELEASE_FILE = Path(__file__).with_name("release.json")
