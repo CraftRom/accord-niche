@@ -309,6 +309,7 @@ export default function Catalog() {
   return (
     <>
       <PageHeader
+        help="catalog"
         className="catalog-page-head"
         title="Каталог"
         description="Єдиний каталог сайту, Mini App і бота: варіанти, ціни, залишки та публікація"

@@ -249,6 +249,7 @@ export default function Operators() {
   return (
     <>
       <PageHeader
+        help="operators"
         title="Команда та доступ"
         description="Хто має доступ до панелі й на якому рівні"
         actions={<>

@@ -142,7 +142,7 @@ function PromoForm({
     const values = crypto.getRandomValues(new Uint8Array(6))
     setForm((f) => ({
       ...f,
-      code: `ELFAR${[...values].map((v) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[v % 32]).join('')}`,
+      code: `ACCORD${[...values].map((v) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[v % 32]).join('')}`,
     }))
   }
   const close = () => {
@@ -713,6 +713,7 @@ export default function Promos() {
   return (
     <div className="promos-page">
       <PageHeader
+        help="promos"
         title="Промокоди"
         description="Керуйте знижками, категоріями та умовами використання"
         actions={<>

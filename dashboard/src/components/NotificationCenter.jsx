@@ -4,11 +4,12 @@ import { useNavigate } from 'react-router-dom'
 
 import { api } from '../api'
 import { dateTime, useToast } from './ui'
+import { EVENTS, STORAGE } from '../storageKeys'
 
-const SETTINGS_KEY = 'elfar:notification-settings'
-const DEVICE_VOLUME_KEY = 'elfar:notification-device-volume'
-const NUDGE_KEY = 'elfar:notification-nudge-dismissed'
-const LEADER_KEY = 'elfar:notification-leader'
+const SETTINGS_KEY = STORAGE.notificationSettings
+const DEVICE_VOLUME_KEY = STORAGE.notificationVolume
+const NUDGE_KEY = STORAGE.notificationNudge
+const LEADER_KEY = STORAGE.notificationLeader
 const LEADER_TTL = 16000
 const POLL_MS = 10000
 const TOAST_AUTO_DOCK_MS = 15000
@@ -106,7 +107,7 @@ function permissionText(permission) {
 function deniedHelp() {
   const info = browserInfo()
   if (info.firefox) return 'Firefox: значок замка → Дозволи → Надсилати сповіщення.'
-  if (info.safari && !info.ios) return 'Safari: Налаштування → Вебсайти → Сповіщення → elfar.pp.ua → Дозволити.'
+  if (info.safari && !info.ios) return 'Safari: Налаштування → Вебсайти → Сповіщення → dashboard.accordniche.pp.ua → Дозволити.'
   if (info.edge) return 'Edge: значок замка → Дозволи для цього сайту → Сповіщення → Дозволити.'
   if (info.chrome) return 'Chrome: значок налаштувань сайту біля адреси → Сповіщення → Дозволити.'
   return 'Відкрийте налаштування дозволів цього сайту в браузері та дозвольте сповіщення.'
@@ -279,7 +280,7 @@ async function showSystemNotification(item, registration) {
     body: [item.actor, item.body].filter(Boolean).join(' · ').slice(0, 240),
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    tag: `elfar-notification-${item.id}`,
+    tag: `accord-notification-${item.id}`,
     renotify: true,
     // Не даємо браузеру/ОС додавати свій некерований системний звук поверх
     // звуку панелі. Де `silent` підтримується, весь audible-рівень контролює
@@ -466,7 +467,7 @@ export function NotificationCenter() {
   }
 
   // Налаштування гучності глобальне для цього браузерного профілю на ПК:
-  // зміна в одній вкладці одразу підхоплюється іншими вкладками elfar.pp.ua.
+  // зміна в одній вкладці одразу підхоплюється іншими вкладками панелі.
   useEffect(() => {
     const syncLocalSettings = (event) => {
       if (event.key !== DEVICE_VOLUME_KEY && event.key !== SETTINGS_KEY) return
@@ -641,7 +642,7 @@ export function NotificationCenter() {
         // Сторінки можуть відреагувати відразу, не чекаючи власного poll.
         // Це локальна invalidation-подія, а не друге джерело даних: Orders
         // після неї все одно перечитує канонічні дані через API.
-        window.dispatchEvent(new CustomEvent('elfar:notifications:fresh', {
+        window.dispatchEvent(new CustomEvent(EVENTS.notificationsFresh, {
           detail: { items: fresh },
         }))
         await announce(fresh)
@@ -703,10 +704,10 @@ export function NotificationCenter() {
       // and still removes the former 10s notification/sound latency.
       timer = setTimeout(() => poll().catch(() => {}), 250)
     }
-    window.addEventListener('elfar:orders:changed', onOrderChanged)
+    window.addEventListener(EVENTS.ordersChanged, onOrderChanged)
     return () => {
       if (timer) clearTimeout(timer)
-      window.removeEventListener('elfar:orders:changed', onOrderChanged)
+      window.removeEventListener(EVENTS.ordersChanged, onOrderChanged)
     }
   }, [poll])
 

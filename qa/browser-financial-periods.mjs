@@ -67,13 +67,13 @@ try {
   check(await page.getByLabel('Історичний місяць',{exact:true}).count()===0,`${width}: saved view hides live period controls`)
   check(await page.getByText(/Рекламні витрати ·/).count()===0 && await page.getByLabel('Канал',{exact:true}).count()===0,`${width}: saved view excludes live spend and order listing`)
   const before=detailReads
-  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.dispatchEvent(new CustomEvent('elfar:orders:changed'))})
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.dispatchEvent(new CustomEvent('accord:orders:changed'))})
   await page.waitForTimeout(250)
   check(detailReads===before,`${width}: focus and order events do not recalculate saved report`)
   const download=page.waitForEvent('download')
   await page.getByRole('button',{name:'CSV статистики',exact:true}).click()
   const file=await download;const content=readFileSync(await file.path(),'utf8')
-  check(file.suggestedFilename()==='elfar-report-2024-03.csv' && content.includes('abc123') && content.includes('199.90'),`${width}: CSV exports saved amounts and identity`)
+  check(file.suggestedFilename()==='accord-report-2024-03.csv' && content.includes('abc123') && content.includes('199.90'),`${width}: CSV exports saved amounts and identity`)
   await page.reload();await page.getByText('Зафіксований звіт · 2024-03',{exact:true}).waitFor()
   check(await page.getByText('Збережений звіт за 2024-03',{exact:true}).isVisible(),`${width}: saved mode survives reload`)
   detailFail=true

@@ -280,7 +280,7 @@ export const api = {
     purge: (id) => request(`/catalog/products/${id}/purge`, { method: 'DELETE' }),
     importXlsx: (form) => upload('/catalog/product-transfer/import', form),
     importStatus: (id) => request(`/catalog/product-transfer/import/${encodeURIComponent(id)}`),
-    exportXlsx: () => download('/catalog/product-transfer/export', 'elfar-products.xlsx'),
+    exportXlsx: () => download('/catalog/product-transfer/export', 'accord-products.xlsx'),
   },
 
   orders: {
@@ -479,7 +479,7 @@ export const api = {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `elfar-${service}${full ? '-full' : ''}.log`
+      link.download = `accord-${service}${full ? '-full' : ''}.log`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 30000)
     },

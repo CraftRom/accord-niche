@@ -89,7 +89,7 @@ try {
   check(state.calls.at(-1).offset==='50',path+': наступна сторінка API')
   await input.fill('OLD');await page.waitForResponse(r=>r.url().includes('search=OLD'),{timeout:4000}).catch(()=>{})
   // Start another OLD refresh and replace the filter while it is still running.
-  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('elfar:orders:changed')))
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('accord:orders:changed')))
   await pause(180)
   await input.fill('NEW')
   // fill() changes the native input before React Router commits the query.
@@ -105,7 +105,7 @@ try {
   await list.getByText('NEW',{exact:false}).waitFor();await pause(1600)
   check(await page.getByText('Збій списку',{exact:true}).count()===0,path+': стара помилка не застосована')
   state.fail=true
-  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('elfar:orders:changed')))
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('accord:orders:changed')))
   await page.getByRole('button',{name:'Спробувати ще раз',exact:true}).waitFor()
   check((await list.textContent()).includes('NEW') && (await page.getByText('Показано попередні дані.',{exact:false}).count())>0,path+': збережено дані з позначкою застарілості')
   state.fail=false;await page.getByRole('button',{name:'Спробувати ще раз',exact:true}).click()
