@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BUYER_INFO } from './info'
+import { StateBlock, InlineAlert } from './states'
 import {phoneNumber,checkoutErrors,readCheckoutAttempt,rememberCheckoutAttempt,clearCheckoutAttempt,checkoutCampaign} from './checkout'
 
 const money = (amount) => new Intl.NumberFormat('uk-UA', { maximumFractionDigits:2 }).format(Number(amount || 0))
@@ -140,7 +141,8 @@ function TelegramHistoryLink({shop, refreshOrders}) {
   const [code,setCode] = useState('')
   const [message,setMessage] = useState('')
   const [busy,setBusy] = useState(false)
-  if(shop.account.telegram_linked) return null
+  if(shop.account.telegram_linked) return <ProfileCard title="Покупки з Telegram" status={['ok','Підключено']}>
+    <p className="shop-hint">Замовлення з Telegram Mini App показуються в історії нижче разом із замовленнями сайту.</p></ProfileCard>
   const link=async()=>{
     setBusy(true);setMessage('')
     try {
@@ -148,12 +150,19 @@ function TelegramHistoryLink({shop, refreshOrders}) {
       setMessage(data.note);setCode('');await shop.refresh();refreshOrders?.()
     }catch(e){setMessage(e.message)}finally{setBusy(false)}
   }
-  return <div className="verification-panel"><h3>Звʼязати з Telegram Mini App</h3>
-    <p className="shop-hint">Якщо раніше купували через Mini App, відкрийте в ньому Профіль → «Створити код звʼязування». Вставте код сюди. Він підтверджує саме ваш Telegram-акаунт і відкриває попередню історію покупок навіть без SMS.</p>
+  return <ProfileCard title="Покупки з Telegram" status={['off','Не підключено']}>
+    <p className="shop-hint">Вхід через Google і зв’язування — різні речі: вхід зберігає замовлення сайту, а зв’язування додає до них історію з Mini App. Якщо раніше купували через Mini App, відкрийте в ньому Профіль → «Створити код звʼязування». Вставте код сюди. Він підтверджує саме ваш Telegram-акаунт і відкриває попередню історію покупок навіть без SMS.</p>
     <div className="phone-inputs"><Field name="telegramCode" label="Одноразовий код із Mini App" value={code} onChange={setCode} placeholder="Код із Telegram"/>
-      <button className="btn outline" onClick={link} disabled={busy || code.trim().length < 18}>ЗВʼЯЗАТИ</button></div>
+      <button className="btn outline" onClick={link} disabled={busy || code.trim().length < 18}>{busy ? 'ЗВʼЯЗУЄМО…' : 'ЗВʼЯЗАТИ'}</button></div>
     {message && <p className="shop-hint" role="status">{message}</p>}
-  </div>
+  </ProfileCard>
+}
+
+// W-22: each card says what it is for and its state in words.
+const STATUS_TEXT={ok:'Підключено',warn:'Потрібне підтвердження',off:'Не підключено'}
+function ProfileCard({title,status,children}) {
+  const [tone,label]=status || []
+  return <section className="profile-card" aria-label={title}><div className="profile-card-head"><h3>{title}</h3>{tone && <span className={'status-chip '+tone}>{label || STATUS_TEXT[tone]}</span>}</div>{children}</section>
 }
 
 function PhoneVerification({shop, refreshOrders}) {
@@ -170,31 +179,56 @@ function PhoneVerification({shop, refreshOrders}) {
       else {setSent(false);setCode('');setMessage(result.note || 'Номер підтверджено');await shop.refresh();refreshOrders?.()}
     } catch(e) {setMessage(e.message)} finally {setSending(false)}
   }
-  return <div className="verification-panel">
-    <h3>Номер телефону</h3>
-    <p className="shop-hint">{shop.account.phone_verified ? `Підтверджено: ${shop.account.phone}` :
-      'Підтверди свій номер, щоб безпечно звʼязати історію покупок із Mini App.'}</p>
-    {shop.account.telegram_linked && <p className="shop-success">Історію Telegram-покупок підключено.</p>}
+  const status=shop.account.phone_verified?['ok','Підтверджено']:shop.smsEnabled?['warn','Потрібне підтвердження']:['off','Недоступно']
+  return <ProfileCard title="Контакти та підтвердження" status={status}>
+    <p className="shop-hint">{shop.account.phone_verified ? `Номер ${shop.account.phone} підтверджено кодом із SMS.` :
+      'Підтверди номер кодом із SMS. Лише підтверджений номер може відкрити історію покупок із Mini App — номер, просто вписаний у форму, її не відкриває.'}</p>
     {shop.smsEnabled ? <>
       <div className="phone-inputs"><Field name="phone" label="Твій номер" value={phone} onChange={setPhone} placeholder="+380XXXXXXXXX"/>
-      <button className="btn outline" disabled={sending} onClick={()=>action('/profile/phone/send',{phone})}>НАДІСЛАТИ КОД</button></div>
+      <button className="btn outline" disabled={sending} onClick={()=>action('/profile/phone/send',{phone})}>{sending && !sent ? 'НАДСИЛАЄМО…' : sent ? 'НАДІСЛАТИ ЩЕ РАЗ' : 'НАДІСЛАТИ КОД'}</button></div>
       {sent && <div className="phone-inputs"><Field name="code" label="SMS-код" value={code} onChange={setCode} placeholder="123456"/>
         <button className="btn primary" disabled={sending || code.length < 4} onClick={()=>action('/profile/phone/check',{phone,code})}>ПІДТВЕРДИТИ</button></div>}
     </> : <p className="shop-hint">SMS-підтвердження не налаштовано. Додавати номер без перевірки небезпечно, тому історія Telegram не відкривається за непідтвердженим номером.</p>}
     {message && <p className="shop-hint" role="status">{message}</p>}
-  </div>
+  </ProfileCard>
+}
+
+// W-23: order status as consecutive stages. Only local statuses map onto the
+// stages; a status that comes from the CRM is shown as its own name, never
+// forced into a stage it may not mean.
+const STAGES=['Прийнято','В роботі','Відправлено','Отримано']
+const STAGE_OF={new:0,confirmed:0,accepted:1,paid:1,shipped:2,done:3}
+// Nova Poshta public tracking page; only for the 14-digit waybill format.
+const trackingUrl=number=>/^\d{14}$/.test(number||'')?'https://novaposhta.ua/tracking/?cargo_number='+number:''
+
+function OrderStages({order}) {
+  if(order.status==='cancelled')return <p className="order-status"><span className="status-chip off">Скасовано</span></p>
+  const stage=order.status_source==='local'?STAGE_OF[order.status]:undefined
+  return <div className="order-status-block"><p className="order-status">{order.status_label || order.crm_status_name || order.status}</p>
+    {stage!==undefined && <ol className="order-steps" aria-label="Етапи замовлення">{STAGES.map((name,i)=><li key={name} className={i<stage?'done':i===stage?'current':''} aria-current={i===stage?'step':undefined}>{name}</li>)}</ol>}</div>
+}
+
+function Tracking({number}) {
+  const [copied,setCopied]=useState(false)
+  const url=trackingUrl(number)
+  const copy=async()=>{try{await navigator.clipboard.writeText(number);setCopied(true);setTimeout(()=>setCopied(false),2000)}catch{setCopied(false)}}
+  return <div className="order-tracking"><span>ТТН: <strong>{number}</strong></span>
+    {navigator.clipboard && <button className="text-muted-button" onClick={copy} aria-label={'Скопіювати ТТН '+number}>{copied?'Скопійовано':'Скопіювати'}</button>}
+    {url && <a className="text-muted-button" href={url} target="_blank" rel="noopener noreferrer">Відстежити на сайті Нової пошти</a>}
+    <span className="sr-only" role="status">{copied?'ТТН скопійовано':''}</span></div>
 }
 
 function OrderList({orders,loading,cancelOrder,cancelling}) {
-  if(loading) return <p className="shop-hint">Завантаження історії замовлень…</p>
-  if(!orders.length) return <div className="shop-empty">Історія покупок поки порожня.</div>
+  if(loading) return <StateBlock kind="loading" headingLevel={3}>Завантаження історії замовлень…</StateBlock>
+  if(!orders.length) return <StateBlock className="shop-empty" headingLevel={3} title="Історія покупок поки порожня.">Тут з’являться замовлення з сайту та, після зв’язування, з Telegram Mini App.</StateBlock>
   return <div className="order-list">{orders.map(o=><article className="order-record" key={o.id}>
     <div className="order-record-head"><div><strong>Замовлення №{o.id}</strong><span>{o.created_at ? new Date(o.created_at).toLocaleDateString('uk-UA') : ''}</span></div><strong>{money(o.total)} грн</strong></div>
-    <p className="order-status">{o.status_label || o.crm_status_name || o.status}</p>
-    <ul>{(o.items||[]).map((item,i)=><li key={i}>{item.name} × {item.qty}<span>{money(Number(item.price)*Number(item.qty))} грн</span></li>)}</ul>
-    {o.tracking_number && <p>ТТН: <strong>{o.tracking_number}</strong></p>}
-    {o.operator_name && <p>Менеджер: {o.operator_name}</p>}
-    {o.can_cancel && <button className="text-muted-button" disabled={Boolean(cancelling)} onClick={()=>cancelOrder(o.id)}>Скасувати замовлення</button>}
+    <OrderStages order={o}/>
+    {o.tracking_number && <Tracking number={o.tracking_number}/>}
+    <details className="order-details"><summary>Склад замовлення ({(o.items||[]).length})</summary>
+      <ul>{(o.items||[]).map((item,i)=><li key={i}>{item.name} × {item.qty}<span>{money(Number(item.price)*Number(item.qty))} грн</span></li>)}</ul>
+      {o.operator_name && <p>Менеджер: {o.operator_name}</p>}</details>
+    {o.can_cancel && <div className="order-cancel"><button className="text-muted-button" disabled={Boolean(cancelling)} onClick={()=>cancelOrder(o.id)}>{cancelling===o.id?'Скасовуємо…':'Скасувати замовлення'}</button></div>}
   </article>)}</div>
 }
 
@@ -245,25 +279,30 @@ export function ProfilePage({shop,go}) {
   }
   return <main className="shell commerce-page">
     <p className="eyebrow">ОСОБИСТИЙ КАБІНЕТ</p><h1>Мій профіль</h1>
-    {!shop.account.signed_in ? <section className="commerce-panel">
-      <h2>Увійди через Google</h2><p>Усі замовлення в одному місці. Вхід не потрібен для покупки — можна замовити як гість.</p>
+    <div className="profile-cards">
+    {!shop.account.signed_in ? <ProfileCard title="Мій обліковий запис" status={['off','Не підключено']}>
+      <p>Увійди через Google, щоб бачити всі замовлення сайту з будь-якого пристрою. Вхід не потрібен для покупки — можна замовити як гість.</p>
       <GoogleLogin shop={shop} />
-    </section> : <section className="commerce-panel">
-      <h2>{shop.account.name || 'Покупець'}</h2><p>{shop.account.email}</p>
+      <p className="shop-hint">Після входу тут з’являться підтвердження телефону й зв’язування покупок із Telegram Mini App.</p>
+    </ProfileCard> : <>
+    <ProfileCard title="Мій обліковий запис" status={['ok','Google']}>
+      <p><strong>{shop.account.name || 'Покупець'}</strong><br/>{shop.account.email}</p>
       <div className="profile-edit"><Field name="displayName" label="Змінити імʼя" required={false} maxLength={100} value={newName} onChange={setNewName} placeholder="Твоє імʼя" />
-        <button className="btn outline" disabled={newName.trim().length<2 || saving} onClick={save}>ЗБЕРЕГТИ</button></div>
+        <button className="btn outline" disabled={newName.trim().length<2 || saving} onClick={save}>{saving?'ЗБЕРІГАЄМО…':'ЗБЕРЕГТИ'}</button></div>
       {profile && <div className="profile-facts">
         <div><span>Усього замовлень</span><strong>{profile.orders_count}</strong></div>
         <div><span>Бонуси сайту</span><strong>{money(profile.bonus_balance)} грн</strong></div>
         {profile.latest_delivery?.city && <div><span>Остання доставка</span><strong>{profile.latest_delivery.city}, {profile.latest_delivery.address}</strong></div>}
       </div>}
+      <button className="text-muted-button" onClick={logout}>Вийти з профілю</button>
+    </ProfileCard>
       <PhoneVerification shop={shop} refreshOrders={refreshOrders}/>
       <TelegramHistoryLink shop={shop} refreshOrders={refreshOrders}/>
-      <button className="text-muted-button" onClick={logout}>Вийти з профілю</button>
-    </section>}
+    </>}
+    </div>
     <section className="orders-section"><div className="section-row"><h2>Історія покупок</h2><button className="text-muted-button" onClick={refreshOrders} disabled={!shop.account.has_session || loading}>Оновити</button></div>
-      {error && <p className="shop-error" role="alert">{error}</p>}
-      {shop.account.has_session ? <>{(loading || historyLoaded) && <OrderList orders={orders} loading={loading} cancelOrder={cancelOrder} cancelling={cancelling} />}{hasMore && !loading && <button className="btn outline" disabled={moreLoading} onClick={loadMore}>{moreLoading?'ЗАВАНТАЖУЄМО…':'ПОКАЗАТИ БІЛЬШЕ ЗАМОВЛЕНЬ'}</button>}</> : <div className="shop-empty">Після першого замовлення історія зʼявиться тут. Для збереження між пристроями увійди через Google.</div>}
+      <InlineAlert>{error}</InlineAlert>
+      {shop.account.has_session ? <>{(loading || historyLoaded) && <OrderList orders={orders} loading={loading} cancelOrder={cancelOrder} cancelling={cancelling} />}{hasMore && !loading && <button className="btn outline" disabled={moreLoading} onClick={loadMore}>{moreLoading?'ЗАВАНТАЖУЄМО…':'ПОКАЗАТИ БІЛЬШЕ ЗАМОВЛЕНЬ'}</button>}</> : <StateBlock className="shop-empty" headingLevel={3} title="Після першого замовлення історія з’явиться тут.">Щоб вона зберігалась між пристроями, увійди через Google.</StateBlock>}
     </section><button className="btn outline" onClick={()=>go('/catalog')}>ПРОДОВЖИТИ ПОКУПКИ</button>
   </main>
 }
