@@ -324,10 +324,10 @@ check("db_pool_size" in _db, "розмір пулу налаштовний, а �
 check("products_by_ids" in read("backend/shop/services/wishlist.py"),
       "списки читають лише свої товари, а не весь каталог")
 
-_legal = read("miniapp/src/legal.js")
+_legal = read("backend/shop/services/legal.py")
 check("{{?SELLER_EMAIL}}" in _legal,
       "необовʼязкові реквізити обгорнуті в умовний блок")
-check("sellerIsUsable" in _legal, "є перевірка мінімального набору реквізитів")
+check("def seller_ready" in _legal, "є перевірка мінімального набору реквізитів")
 _mini_css2 = read("miniapp/src/styles.css")
 check("discount-badge" in _mini_css2, "знижка виділена як акційна пропозиція")
 check("object-fit: contain" in css_block(_mini_css2, ".item-photo"),
@@ -958,15 +958,16 @@ check(bool(_semver.search(mv)), "версія вітрини задана і у 
 # AUTHOR колись експортувався звідси, але його ніхто не імпортував —
 # перевірка стерегла константу, якої вже немає. Авторство має значення
 # в тексті угоди, який читає покупець, тому звіряємо саме там.
-check("Halytskyi Dmytro" in read("miniapp/src/legal.js"),
-      "авторство вказане в правових документах")
+check("Halytskyi Dmytro" in read("miniapp/src/screens/Legal.jsx"),
+      "авторство застосунку вказане на екрані документів")
 # Версії ведуться окремо, але файли мають бути різними сутностями
 check(read("dashboard/src/version.js") != read("miniapp/src/version.js") or True,
       "версії зберігаються окремими файлами")
 legal = read("miniapp/src/legal.js")
 for doc in ["offer", "privacy", "returns"]:
     check(f'"{doc}"' in legal or f"'{doc}'" in legal, f"документ: {doc}")
-check("SELLER_NAME" in legal, "документи підставляють реквізити продавця")
+check("SELLER_NAME" in read("backend/shop/services/legal.py"), "документи підставляють реквізити продавця")
+check("/legal/" in read("miniapp/src/api.js"), "Mini App читає документи з панелі, а не власну копію")
 shop_router = read("backend/api/routers/shop.py")
 check("seller" in shop_router, "конфіг вітрини віддає реквізити")
 

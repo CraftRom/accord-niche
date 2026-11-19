@@ -213,6 +213,7 @@ export const api = {
   config: () => request('/config'),
   // Стартові дані одним запитом — замість шести окремих
   bootstrap: () => request('/bootstrap'),
+  legal: (key) => request('/legal/' + encodeURIComponent(key)),
 
   categories: () => request('/categories'),
   subcategories: () => request('/subcategories'),
