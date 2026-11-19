@@ -488,6 +488,10 @@ class CustomerOut(ORMModel):
     # Чи доходять до людини повідомлення бота: у Mini App можна купити,
     # жодного разу не відкривши чат із ботом.
     bot_reachable: bool = True
+    # Ім'я та email із соцмережевого входу (Google) для покупців сайту.
+    display_name: str | None = None
+    email: str | None = None
+    google_connected: bool = False
 
 
 class CustomerPatch(BaseModel):
