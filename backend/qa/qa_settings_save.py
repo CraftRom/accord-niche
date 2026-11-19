@@ -88,8 +88,6 @@ def sample(name: str, field):
     annotation = str(field.annotation)
     if "bool" in annotation:
         return True
-    if name == "min_age":
-        return 21
     if name == "admin_ids":
         return "111,222"
     if name == "admin_chat_id":
@@ -177,7 +175,7 @@ async def scenario():
                 failed[:3])
 
         print("\n--- кілька полів одразу ---")
-        batch = {"shop_name": "Пакетна назва", "min_age": 21, "bonus_enabled": True}
+        batch = {"shop_name": "Пакетна назва", "currency": "UAH", "bonus_enabled": True}
         resp = await client.put("/api/settings", json=batch, headers=head(SYSADMIN))
         r.check(resp.status_code == 200, "пакетне збереження", resp.status_code)
         back = (await client.get("/api/settings", headers=head(SYSADMIN))).json()
@@ -313,8 +311,8 @@ async def scenario():
 
         print("\n--- сміття відхиляється ---")
         for payload, label in [
-            ({"min_age": 5}, "вік нижче межі"),
-            ({"min_age": "багато"}, "вік рядком"),
+            ({"min_age": 21}, "вікового обмеження більше немає — поле невідоме"),
+            ({"broadcast_rate_per_second": "багато"}, "число рядком"),
             ({"timezone": "Марс/Олімп"}, "неіснуюча зона"),
             ({"невідоме_поле": 1}, "невідоме поле"),
         ]:

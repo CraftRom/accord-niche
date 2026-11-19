@@ -20,7 +20,7 @@ SEGMENTS = {
 def build_query(segment: dict) -> Select:
     """segment: {"type": "...", "days": 30, "min_total": 5000}"""
     stype = (segment or {}).get("type", "all")
-    base = select(User).where(User.is_blocked.is_(False), User.age_confirmed.is_(True))
+    base = select(User).where(User.is_blocked.is_(False))
 
     paid_orders = (
         select(Order.user_id, func.sum(Order.total).label("spent"))

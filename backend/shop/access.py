@@ -43,7 +43,6 @@ ADMIN_FIELDS = frozenset({
     'faq_public_enabled',
     'faq_support_enabled',
     'instagram_url',
-    'min_age',
     'novaposhta_api_key',
     'novaposhta_cargo_description',
     'novaposhta_sender_city',

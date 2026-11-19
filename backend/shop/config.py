@@ -200,7 +200,6 @@ class Settings(BaseSettings):
     # --- Магазин ---
     shop_name: str = "ACCORD NICHE"
     currency: str = "грн"
-    min_age: int = 18
     referral_enabled: bool = True
     bonus_enabled: bool = True
     volume_discount_enabled: bool = False

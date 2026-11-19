@@ -108,9 +108,8 @@ ok(main.includes('StorefrontPreparing') && main.includes('гноми налаш�
 ok(main.includes('prepare-progress'), 'є видимий прогрес')
 ok(css.includes('animation: prepare-fill 4s'), 'прогрес синхронізований із 4 с очікування')
 ok(css.includes('.prepare-workshop'), 'анімована майстерня на місці')
-const gate = catalog.slice(catalog.indexOf('export function AgeGate'), catalog.indexOf('function plural'))
-ok(!gate.includes('sort ===') && !gate.includes('setInStock'),
-   'AgeGate не звертається до стану каталогу')
+ok(!catalog.includes('AgeGate') && !app.includes('age_confirmed'),
+   'вікового бар\'єра немає: парфумерія продається без підтвердження віку')
 
 console.log('\n--- доступність ---')
 ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'анімації поважають reduced motion')

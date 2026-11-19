@@ -57,7 +57,6 @@ class ShopSettings:
 
     shop_name: str
     currency: str
-    min_age: int
     # Модулі лояльності. Вимкнений модуль має бути невидимим для клієнта,
     # а не просто неактивним: інакше в профілі висять нулі, а в оформленні —
     # перемикач, який нічого не робить.
@@ -202,7 +201,6 @@ class ShopSettings:
         return cls(
             shop_name=settings.shop_name,
             currency=settings.currency,
-            min_age=settings.min_age,
             referral_enabled=settings.referral_enabled,
             referral_percent=Decimal(str(settings.referral_percent)),
             bonus_enabled=settings.bonus_enabled,

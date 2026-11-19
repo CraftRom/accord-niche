@@ -153,8 +153,9 @@ async def client_log(data: ClientLogIn, request: Request):
 class ShopConfigOut(BaseModel):
     shop_name: str
     currency: str
-    min_age: int
-    age_confirmed: bool
+    # Вікового обмеження немає (парфумерія). Поле лишається завжди True,
+    # щоб Mini App зі старого кешу не показував екран підтвердження віку.
+    age_confirmed: bool = True
     # Прапорці модулів. Вимкнений модуль вітрина ховає повністю:
     # клієнт не має бачити ні нулів, ні перемикачів, які нічого не роблять.
     referral_enabled: bool
@@ -362,8 +363,7 @@ async def create_website_link_code(
 
 def _config(shop, user) -> ShopConfigOut:
     return ShopConfigOut(
-        shop_name=shop.shop_name, currency=shop.currency, min_age=shop.min_age,
-        age_confirmed=user.age_confirmed,
+        shop_name=shop.shop_name, currency=shop.currency,
         referral_enabled=shop.referral_enabled,
         referral_percent=shop.referral_percent,
         bonus_enabled=shop.bonus_enabled,
@@ -379,7 +379,6 @@ def _config(shop, user) -> ShopConfigOut:
             "SELLER_ADDRESS": shop.seller_address,
             "SELLER_EMAIL": shop.seller_email,
             "SELLER_PHONE": shop.seller_phone,
-            "MIN_AGE": str(shop.min_age),
             "CURRENCY": shop.currency,
         },
     )
@@ -415,13 +414,9 @@ async def bootstrap(
     Раніше застосунок робив шість окремих запитів: конфіг, кошик, профіль,
     замовлення, категорії, товари. На мобільному зв'язку це шість затримок
     поспіль, а в serverless — ще й шість холодних стартів. Тепер один.
-
-    До підтвердження віку віддаємо лише конфіг: каталог за бар'єром 18+.
     """
     shop = await get_shop_settings(repo)
     config = _config(shop, user)
-    if not user.age_confirmed:
-        return BootstrapOut(config=config)
 
     # Послідовно, а не через asyncio.gather: сесія SQLAlchemy не розрахована
     # на одночасні запити й падає з IllegalStateChangeError. Виграш і так у
@@ -444,30 +439,21 @@ async def bootstrap(
 async def age_confirm(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    """Той самий 18+ бар'єр, що й у боті — вітрина не має його обходити."""
-    await repo.confirm_age(user)
+    """Сумісність зі старими версіями Mini App: підтвердження віку більше
+    не потрібне (парфумерія не має вікового обмеження), тож це лише конфіг."""
     shop = await get_shop_settings(repo)
-    # Перечитуємо: confirm_age оновлює запис, а обʼєкт у памʼяті може
-    # лишитись зі старим прапорцем — і вітрина знову показала б бар'єр віку
-    return _config(shop, await repo.get_user(user.id) or user)
-
-
-def _require_age(user: User) -> None:
-    if not user.age_confirmed:
-        raise HTTPException(403, "Спочатку підтвердьте вік")
+    return _config(shop, user)
 
 
 @router.get("/categories", response_model=list[CategoryOut])
 async def categories(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    _require_age(user)
     return await repo.list_categories(only_active=True)
 
 
 @router.get("/subcategories", response_model=list[SubcategoryOut])
 async def subcategories(category_id: int | None = None, user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    _require_age(user)
     return await repo.list_subcategories(category_id=category_id, only_active=True)
 
 
@@ -477,7 +463,6 @@ async def products(category_id: int | None = None, subcategory_id: int | None = 
                    is_sale: bool | None = None, uncategorized: bool = False,
                    limit: int = Query(500, ge=1, le=500), offset: int = Query(0, ge=0),
                    user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    _require_age(user)
     return await repo.list_products(category_id=category_id, subcategory_id=subcategory_id,
                                     search=search, only_active=True, is_new=is_new,
                                     is_sale=is_sale, uncategorized=uncategorized,
@@ -491,7 +476,6 @@ async def product(
     repo: Repository = Depends(get_repo),
 ):
     """Один товар — для сторінки з повним описом."""
-    _require_age(user)
     found = await repo.get_product(product_id)
     if not found or not found.is_published:
         raise HTTPException(404, "Товар не знайдено")
@@ -510,7 +494,6 @@ async def product_photo(
     тож віддаємо файл через себе. Товари з photo_url сюди не потрапляють —
     вітрина показує таку адресу напряму.
     """
-    _require_age(user)
     found = await repo.get_product(product_id)
     if not found or not found.photo_file_id:
         raise HTTPException(404, "Фото немає")
@@ -580,7 +563,6 @@ async def import_website_cart(
     Quantities are ABSOLUTE: repeat opening of the link cannot double items.
     Product prices and stock are always server-side, never accepted from URL.
     """
-    _require_age(user)
     ids = [line.product_id for line in data.items]
     if len(ids) != len(set(ids)):
         raise HTTPException(422, "Товар у посиланні повторюється")
@@ -596,7 +578,6 @@ async def import_website_cart(
 async def cart(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    _require_age(user)
     return await _cart_payload(repo, user.id)
 
 
@@ -606,7 +587,6 @@ async def change_cart(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     try:
         await svc.add_to_cart(repo, user.id, data.product_id, data.delta)
         return await _cart_payload(repo, user.id)
@@ -628,7 +608,6 @@ async def change_cart(
 async def clear_cart(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    _require_age(user)
     await repo.clear_cart(user.id)
     return await _cart_payload(repo, user.id)
 
@@ -639,7 +618,6 @@ async def remove_cart_line(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo),
 ):
     """Delete this customer's whole line, including unavailable products."""
-    _require_age(user)
     await repo.set_cart_qty(user.id, product_id, 0)
     return await _cart_payload(repo, user.id)
 
@@ -653,7 +631,6 @@ async def promo_check(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     subtotal = await svc.cart_subtotal(repo, user.id)
     result = await svc.check_promo(repo, data.code, user.id, subtotal)
     return PromoCheckOut(
@@ -757,7 +734,6 @@ def _wl_out(wl) -> WishlistOut:
 async def wishlists(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    _require_age(user)
     lists = await wl.hydrate(repo, await wl.ensure_lists(repo, user.id))
     return [_wl_out(x) for x in lists]
 
@@ -768,7 +744,6 @@ async def create_wishlist(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     try:
         return _wl_out(await wl.create(repo, user.id, data.name))
     except wl.WishlistError as exc:
@@ -782,7 +757,6 @@ async def rename_wishlist(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     try:
         await wl.owned(repo, wishlist_id, user.id)
     except wl.WishlistError as exc:
@@ -796,7 +770,6 @@ async def delete_wishlist(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     try:
         await wl.drop(repo, wishlist_id, user.id)
     except wl.WishlistError as exc:
@@ -811,7 +784,6 @@ async def toggle_wishlist_item(
     repo: Repository = Depends(get_repo),
 ):
     """Додає товар або прибирає його, якщо він уже в списку."""
-    _require_age(user)
     try:
         updated, _ = await wl.toggle(repo, wishlist_id, user.id, data.product_id)
     except wl.WishlistNotFound as exc:
@@ -852,7 +824,6 @@ async def order_chat_log(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     await _own_order(repo, user, order_id)
     if after_id is not None and before_id is not None:
         raise HTTPException(422, "after_id і before_id не можна використовувати одночасно")
@@ -865,7 +836,6 @@ async def order_chat_log(
 @router.post("/orders/{order_id}/chat/read")
 async def order_chat_read(order_id: int, data: MessageReadIn,
                           user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    _require_age(user)
     await _own_order(repo, user, order_id)
     return {"marked": await repo.mark_client_read(order_id, data.message_ids)}
 
@@ -873,7 +843,6 @@ async def order_chat_read(order_id: int, data: MessageReadIn,
 @router.get("/orders/{order_id}/chat/access")
 async def order_chat_access(order_id: int, user: User = Depends(require_webapp_user),
                             repo: Repository = Depends(get_repo)):
-    _require_age(user)
     order = await _own_order(repo, user, order_id)
     return {"can_chat": order.can_chat, "chat_until": order.chat_until, "completed_at": order.completed_at}
 
@@ -916,7 +885,6 @@ async def order_chat_file(
     посиланням віддати не можна: адреса файлу в Telegram містить токен
     бота у відкритому вигляді.
     """
-    _require_age(user)
     await _own_order(repo, user, order_id)
 
     messages = await repo.list_order_messages(order_id, before_id=message_id + 1, limit=1)
@@ -961,7 +929,6 @@ async def order_chat_photo(
     repo: Repository = Depends(get_repo),
 ):
     """Фото у стрічку замовлення: квитанція, фото товару, скарга."""
-    _require_age(user)
     order = await _own_order(repo, user, order_id)
     if not svc_chat.is_chattable(order):
         raise HTTPException(409, "Чат замовлення закрито. Зверніться до загальної підтримки.")
@@ -1046,7 +1013,6 @@ async def order_chat_send(
     Дублює шлях через бота, але зручніше: тут видно всю історію саме цього
     замовлення, без плутанини між кількома одночасними.
     """
-    _require_age(user)
     order = await _own_order(repo, user, order_id)
     if not svc_chat.is_chattable(order):
         raise HTTPException(409, "Чат замовлення закрито. Зверніться до загальної підтримки.")
@@ -1106,7 +1072,6 @@ async def my_orders(
     limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), paginated: bool = False,
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    _require_age(user)
     items = await _orders_payload(repo, user.id, limit=limit, offset=offset)
     if not paginated:
         return items
@@ -1116,13 +1081,11 @@ async def my_orders(
 
 @router.get("/orders/chattable")
 async def chattable_orders(user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    _require_age(user)
     return await _orders_payload(repo, user.id, limit=None, chat_only=True)
 
 
 @router.get("/orders/active")
 async def active_orders(user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    _require_age(user)
     return await _orders_payload(repo, user.id, limit=None, active_only=True)
 
 
@@ -1194,7 +1157,6 @@ async def cancel_my_order(
     чат «скасуйте, будь ласка» і чекала, а товар усі ці години лишався
     зарезервованим за нею.
     """
-    _require_age(user)
     order = await repo.get_order(order_id)
     # Чуже замовлення — 404, а не 403: підтверджувати існування чужого
     # номера немає потреби, а перебором номерів так нічого не дізнатись.
@@ -1273,7 +1235,6 @@ async def delivery_cities(
     Запит іде через наш сервер, а не з браузера: ключ приватний, ним
     створюють накладні від нашого імені.
     """
-    _require_age(user)
     key = await _novaposhta_key(repo)
     try:
         found = await np.search_settlements(key, q)
@@ -1293,7 +1254,6 @@ async def delivery_warehouses(
     repo: Repository = Depends(get_repo),
 ):
     """Відділення й поштомати обраного населеного пункту."""
-    _require_age(user)
     key = await _novaposhta_key(repo)
     try:
         found = await np.warehouses(key, city_ref, settlement_ref, q)
@@ -1323,7 +1283,6 @@ async def delivery_price(
     Сума замовлення береться з кошика на сервері, а не з запиту: інакше
     її можна було б підмінити й отримати чужий розрахунок страхування.
     """
-    _require_age(user)
     shop = await get_shop_settings(repo)
     lines = await repo.get_cart(user.id)
     subtotal = sum((line.line_total for line in lines), Decimal(0))
@@ -1412,7 +1371,6 @@ async def preview_checkout(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
     try:
         quote = await svc.checkout_quote(repo, user, promo_code=data.promo_code,
                                          use_bonus=data.use_bonus)
@@ -1427,7 +1385,6 @@ async def checkout(
     user: User = Depends(require_webapp_user),
     repo: Repository = Depends(get_repo),
 ):
-    _require_age(user)
 
     # Повтор після timeout не має створювати друге замовлення. Перевіряємо
     # ключ до читання кошика: перший успішний checkout уже очистив кошик,

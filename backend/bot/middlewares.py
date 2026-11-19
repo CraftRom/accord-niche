@@ -9,7 +9,6 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
 
-from bot import keyboards as kb
 from bot import texts
 from bot import faq
 from bot.greeting import is_command_trigger, is_private_only_command, send_greeting
@@ -354,44 +353,6 @@ async def _reply_public(event, rule) -> None:
     except Exception:
         # У каналі бот може не мати права писати — це не збій застосунку
         log.info("Не вдалося відповісти в публічному чаті", exc_info=True)
-
-
-class AgeGateMiddleware(BaseMiddleware):
-    """Нікотинові товари — 18+. Поки вік не підтверджено, доступний лише age gate.
-
-    Персонал пропускаємо: адміністратор керує замовленнями, а не купує. Інакше
-    менеджер, який не заходив у бот як покупець, не міг би ні натиснути кнопку
-    статусу в адмін-чаті, ні викликати /stats — а сама група отримувала б
-    повідомлення про підтвердження віку.
-    """
-
-    ALLOWED_CALLBACKS = ("age:",)
-
-    async def __call__(self, handler, event: TelegramObject, data: dict[str, Any]) -> Any:
-        user = data.get("user")
-        if user is None or user.age_confirmed:
-            return await handler(event, data)
-
-        tg_user = data.get("event_from_user")
-        if tg_user and tg_user.id in current().admin_id_list:
-            return await handler(event, data)
-
-        if isinstance(event, CallbackQuery):
-            if event.data and event.data.startswith(self.ALLOWED_CALLBACKS):
-                return await handler(event, data)
-            await event.answer("Спочатку підтвердьте вік", show_alert=True)
-            return None
-
-        if isinstance(event, Message):
-            if event.text and event.text.startswith("/start"):
-                return await handler(event, data)
-            repo = data.get("repo")
-            shop = await get_shop_settings(repo) if repo else None
-            min_age = shop.min_age if shop else None
-            await event.answer(texts.age_gate(min_age), reply_markup=kb.age_gate())
-            return None
-
-        return await handler(event, data)
 
 
 class BlockedUserMiddleware(BaseMiddleware):

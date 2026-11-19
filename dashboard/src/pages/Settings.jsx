@@ -90,12 +90,6 @@ const FIELDS = [
     items: [
       { key: 'shop_name', label: 'Назва магазину', hint: 'Показується у вітанні бота' },
       { key: 'currency', label: 'Валюта', hint: 'Підпис до сум: грн, ₴, UAH' },
-      {
-        key: 'min_age',
-        label: 'Мінімальний вік',
-        type: 'number',
-        hint: 'Вік у тексті підтвердження. Не менше 18',
-      },
     ],
   },
   {

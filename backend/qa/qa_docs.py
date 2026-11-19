@@ -71,7 +71,7 @@ from shop.services.wishlist import MAX_LISTS
 check(MAX_LISTS >= 1, "списки бажаного існують")
 from bot import faq
 pub = {r.key for r in faq.RULES if r.public}
-check({"delivery","payment","age","order"} <= pub, "бот сам відповідає про доставку, оплату, вік", pub)
+check({"delivery","payment","genuine","order"} <= pub, "бот сам відповідає про доставку, оплату, розпив", pub)
 
 print("\n--- розділи інструкції відповідають меню ---")
 # Menu items live in commerce.js (one table filtered per role by roles.js).
