@@ -9,7 +9,7 @@
  *   мінорна     — нова можливість
  *   виправлення — лагодження без нових можливостей
  */
-export const APP_VERSION = '1.94.0'
+export const APP_VERSION = '1.95.0'
 // A13: content digest of this bundle, injected by the Vite release plugin.
 // Test bundles built without Vite fall back to a visible "dev" marker.
 export const RELEASE_ID = typeof __ACCORD_RELEASE__ !== 'undefined' ? __ACCORD_RELEASE__ : 'dashboard+dev'

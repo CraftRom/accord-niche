@@ -162,3 +162,4 @@
 .main p a:not(.btn), .main li a:not(.btn), .main dd a:not(.btn), .notice a:not(.btn) { text-decoration: underline; text-underline-offset: 2px; }
 /* Disabled rows stay readable; the status chip carries the state. */
 .row-inactive td { color: var(--text-secondary); }
+.settings-sms-phone { max-width: 180px; }

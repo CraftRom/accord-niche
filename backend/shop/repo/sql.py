@@ -2904,6 +2904,7 @@ class SqlRepository(Repository):
         removed = {}
         for name, model in (("website_sessions", m.WebsiteSession),
                             ("website_telegram_links", m.WebsiteTelegramLink),
+                            ("website_phone_confirmations", m.WebsitePhoneConfirmation),
                             ("dashboard_sessions", m.DashboardSession)):
             total = 0
             for _ in range(max_batches):

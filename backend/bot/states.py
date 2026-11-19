@@ -12,3 +12,8 @@ class Checkout(StatesGroup):
     comment = State()
     confirm = State()
     receipt = State()
+
+
+class PhoneConfirm(StatesGroup):
+    """Website profile asked the bot to confirm the phone (start=vp_<token>)."""
+    waiting = State()

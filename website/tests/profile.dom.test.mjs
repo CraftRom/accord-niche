@@ -54,3 +54,49 @@ test('failed history loading does not claim that purchase history is empty',asyn
   assert.equal(button(app.document,'Оновити').disabled,false)
  }finally{app.close()}
 })
+
+function mountSignedIn({sms=true,telegram=true}={}){
+ const dom=new JSDOM('<html><body><div id="root"></div></body></html>',{url:'https://accordniche.pp.ua/profile',runScripts:'outside-only',pretendToBeVisual:true})
+ const window=dom.window,posts=[],opened=[]
+ const state={confirmed:false}
+ window.scrollTo=()=>{};window.open=(url)=>{opened.push(url);return null}
+ window.fetch=async(input,options={})=>{
+  const url=new URL(input,window.location.href)
+  if(options.method==='POST')posts.push(url.pathname)
+  if(url.pathname==='/api/web/session')return response({csrf:'a'.repeat(48),phone_sms_enabled:sms,phone_telegram_enabled:telegram,phone_verification_enabled:sms||telegram,
+   account:{has_session:true,signed_in:true,account_key:'acc',name:'Олена',email:'o@example.com',phone:state.confirmed?'+380671234567':null,phone_verified:state.confirmed,telegram_linked:state.confirmed}})
+  if(url.pathname==='/api/web/profile/phone/telegram')return response({url:'https://t.me/accord_shop_bot?start=vp_'+'x'.repeat(32),expires_in_seconds:600})
+  if(url.pathname==='/api/public/site-config')return response({})
+  if(url.pathname==='/api/web/profile')return response({orders_count:0,bonus_balance:0})
+  if(url.pathname==='/api/web/orders')return response({items:[],has_more:false})
+  return response({},404)
+ }
+ window.eval(bundle)
+ return {window,document:window.document,posts,opened,state,close:()=>window.close()}
+}
+async function waitLong(check,ms=6000){const until=Date.now()+ms;while(Date.now()<until){if(check())return;await new Promise(resolve=>setTimeout(resolve,25))}assert.ok(check(),'condition not reached')}
+
+test('phone is confirmed through the Telegram bot without SMS; the card updates by itself',async()=>{
+ const app=mountSignedIn()
+ try{
+  await waitLong(()=>button(app.document,'ПІДТВЕРДИТИ ЧЕРЕЗ TELEGRAM'))
+  assert.ok(button(app.document,'НАДІСЛАТИ КОД'),'SMS stays available as the second way')
+  button(app.document,'ПІДТВЕРДИТИ ЧЕРЕЗ TELEGRAM').click()
+  await waitLong(()=>app.opened.length===1)
+  assert.match(app.opened[0],/^https:\/\/t\.me\/accord_shop_bot\?start=vp_/)
+  assert.deepEqual(app.posts.filter(path=>path.includes('/profile/')),['/api/web/profile/phone/telegram'])
+  const link=[...app.document.querySelectorAll('a')].find(a=>a.textContent==='відкрийте бота')
+  assert.equal(link.getAttribute('href'),app.opened[0])
+  app.state.confirmed=true  // the bot received the user's own contact
+  await waitLong(()=>/Номер \+380671234567 підтверджено/.test(app.document.body.textContent))
+  assert.equal(button(app.document,'ПІДТВЕРДИТИ ЧЕРЕЗ TELEGRAM'),undefined)
+ }finally{app.close()}
+})
+
+test('without an SMS gateway the profile offers only Telegram, never a dead SMS form',async()=>{
+ const app=mountSignedIn({sms:false})
+ try{
+  await waitLong(()=>button(app.document,'ПІДТВЕРДИТИ ЧЕРЕЗ TELEGRAM'))
+  assert.equal(button(app.document,'НАДІСЛАТИ КОД'),undefined)
+ }finally{app.close()}
+})

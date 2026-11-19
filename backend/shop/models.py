@@ -125,6 +125,13 @@ class WebsiteAccount(Base):
     phone_send_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     phone_window_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     phone_window_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Own one-time SMS code (no paid verification service): only its HMAC is
+    # stored, bound to the number it was sent to, with an expiry and a
+    # counter of wrong attempts.
+    phone_code_hash: Mapped[str | None] = mapped_column(String(64))
+    phone_code_phone: Mapped[str | None] = mapped_column(String(32))
+    phone_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    phone_code_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -152,6 +159,22 @@ class WebsiteTelegramLink(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tg_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebsitePhoneConfirmation(Base):
+    """One-time link from the website profile to the Telegram bot.
+
+    The bot asks for the user's own contact; Telegram guarantees the number
+    belongs to that account, so the phone is confirmed without any SMS.
+    """
+    __tablename__ = "website_phone_confirmations"
+    __table_args__ = (Index("ix_website_phone_confirmations_expires_at", "expires_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("website_accounts.id", ondelete="CASCADE"), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

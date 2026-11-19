@@ -31,10 +31,10 @@ def _needs(worker_states, worker, key, title, ready_detail, absent_detail):
                    ready_detail if running else absent_detail, worker)
 
 
-def twilio_configured(shop=None) -> bool:
-    """Twilio Verify keys are set in the panel or, if empty there, in .env."""
+def sms_configured(shop=None) -> bool:
+    """SMS gateway address, login and password are set (panel or .env)."""
     from shop.services.shop_settings import current
-    return (shop or current()).twilio_ready
+    return (shop or current()).sms_ready
 
 
 async def module_report(repo, *, heartbeat_directory=None, now=None) -> dict:
@@ -76,11 +76,17 @@ async def module_report(repo, *, heartbeat_directory=None, now=None) -> dict:
                               "Відправка йде одразу; повтори й фонове читання — у планувальнику.",
                               "Нові заявки відправляються одразу, але повтори після збою й фонове "
                               "читання не працюватимуть без планувальника."))
+    from shop.services.phone_verification import telegram_ready
+    modules.append(_module(
+        "phone_telegram", "Підтвердження номера через Telegram",
+        "ready" if telegram_ready() else "not_configured",
+        "Покупці підтверджують номер на сайті кнопкою «📱 Надіслати номер» у боті." if telegram_ready() else
+        "Задайте BOT_TOKEN і BOT_USERNAME: без бота підтвердження через Telegram недоступне.", "bot"))
     modules.append(_module(
         "sms_verification", "SMS-підтвердження телефону",
-        "ready" if twilio_configured(shop) else "not_configured",
-        "Підтвердження номера на сайті через SMS доступне." if twilio_configured(shop) else
-        "Ключі Twilio Verify не задано: впишіть їх у Налаштування → Інтеграції → "
-        "«SMS-підтвердження (Twilio Verify)».", None))
+        "ready" if sms_configured(shop) else "not_configured",
+        "Коди надсилаються через ваш SMS-шлюз (Android)." if sms_configured(shop) else
+        "Необов'язково. Щоб надсилати коди в SMS, задайте SMS-шлюз у Налаштування → Інтеграції → "
+        "«SMS-шлюз (Android)».", None))
     return {"modules": modules,
             "workers": [workers[name] for name in workers]}

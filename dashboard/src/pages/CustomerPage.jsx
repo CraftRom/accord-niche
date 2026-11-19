@@ -170,7 +170,7 @@ export default function CustomerPage() {
       {customer.is_blocked && <StateBadge tone="danger">заблокований</StateBadge>}
       {summary.email && <a href={`mailto:${summary.email}`}>{summary.email}</a>}
       {phone && <a href={phoneHref(phone)}>{phone}</a>}
-      {summary.verified_phone && <span className="faint">телефон підтверджено SMS</span>}
+      {summary.verified_phone && <span className="faint">телефон підтверджено</span>}
       {customer.tg_id > 0 && customer.username && <a href={`https://t.me/${customer.username}`} target="_blank" rel="noopener noreferrer">@{customer.username}</a>}
       <span className="faint">клієнт з {date(customer.created_at)}</span>
       {customer.referral_code && <span className="faint">реф. код <span className="mono">{customer.referral_code}</span></span>}
