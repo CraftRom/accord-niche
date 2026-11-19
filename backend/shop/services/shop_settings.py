@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import asdict, dataclass, fields
 from decimal import Decimal
@@ -29,7 +30,25 @@ SECRET_FIELDS = (
     "salesdrive_form_key",
     "salesdrive_api_key",
     "salesdrive_webhook_token",
+    "twilio_auth_token",
 )
+
+# Параметри сайту, які раніше жили лише в .env. Порожнє значення в панелі
+# означає «діє змінна оточення»: свіжий деплой із заповненим .env працює
+# без жодного запису в базу, а панель лише перекриває його. Змінна
+# читається в момент запиту, а не при старті, — як і до перенесення.
+ENV_FALLBACK = {
+    "google_client_id": "ACCORD_GOOGLE_CLIENT_ID",
+    "google_site_verification": "ACCORD_GOOGLE_SITE_VERIFICATION",
+    "twilio_account_sid": "ACCORD_TWILIO_ACCOUNT_SID",
+    "twilio_auth_token": "ACCORD_TWILIO_AUTH_TOKEN",
+    "twilio_verify_service_sid": "ACCORD_TWILIO_VERIFY_SERVICE_SID",
+    "instagram_url": "ACCORD_INSTAGRAM_URL",
+    "tiktok_url": "ACCORD_TIKTOK_URL",
+    "terms_url": "ACCORD_TERMS_URL",
+    "privacy_url": "ACCORD_PRIVACY_URL",
+    "miniapp_url": "ACCORD_MINIAPP_URL",
+}
 
 
 @dataclass
@@ -137,6 +156,47 @@ class ShopSettings:
     # Верхня межа на порцію розсилки за один прохід
     broadcast_chunk: int
 
+    # --- Сайт: вхід через Google, SMS, посилання ---
+    # Поля з дефолтами: порожньо = діє змінна з ENV_FALLBACK.
+    google_client_id: str = ""
+    google_site_verification: str = ""
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_verify_service_sid: str = ""
+    instagram_url: str = ""
+    tiktok_url: str = ""
+    terms_url: str = ""
+    privacy_url: str = ""
+    miniapp_url: str = ""
+    # Скільки хвилин бездіяльності витримує сесія панелі (5–1440).
+    dashboard_idle_minutes: int = 60
+
+    def site(self, name: str) -> str:
+        """Чинне значення параметра сайту: з панелі, інакше з оточення."""
+        value = str(getattr(self, name, "") or "").strip()
+        return value or os.getenv(ENV_FALLBACK[name], "").strip()
+
+    def site_source(self, name: str) -> str:
+        """Звідки береться значення: panel, env або порожньо."""
+        if str(getattr(self, name, "") or "").strip():
+            return "panel"
+        return "env" if os.getenv(ENV_FALLBACK[name], "").strip() else ""
+
+    @property
+    def env_defaults(self) -> list[str]:
+        """Поля, які зараз діють зі змінних оточення, а не з панелі."""
+        return sorted(name for name in ENV_FALLBACK if self.site_source(name) == "env")
+
+    @property
+    def twilio_auth_connected(self) -> bool:
+        return bool(self.site("twilio_auth_token"))
+
+    @property
+    def twilio_ready(self) -> bool:
+        """Усі три параметри Twilio Verify задані (з панелі або оточення)."""
+        return all(self.site(name) for name in
+                   ("twilio_account_sid", "twilio_auth_token", "twilio_verify_service_sid"))
+
     @classmethod
     def from_env(cls) -> ShopSettings:
         return cls(
@@ -203,6 +263,7 @@ class ShopSettings:
             backup_retention_days=settings.backup_retention_days,
             log_retention_days=settings.log_retention_days,
             broadcast_chunk=settings.broadcast_chunk,
+            dashboard_idle_minutes=settings.dashboard_idle_minutes,
         )
 
     @property

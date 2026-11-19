@@ -147,3 +147,4 @@
 /* UI-028: contextual help link next to a page's description. */
 .help-link { color: var(--text-secondary); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .help-link:hover, .help-link:focus-visible { color: var(--text-primary); }
+.settings-more { margin-top: var(--space-2); }

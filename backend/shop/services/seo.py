@@ -37,6 +37,9 @@ STATIC = {
 PRIVATE = ("/checkout", "/profile", "/order/")
 _AROMA = re.compile(r"^/aroma/([1-9][0-9]{0,9})$")
 _BLOG = re.compile(r"^/blog/([^/]{1,180})$")
+# Google Search Console token (meta method). Rechecked here because the .env
+# fallback never passed the panel's validation.
+_VERIFICATION = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
 
 
 def _text(value, limit, *, markdown=False) -> str:
@@ -77,6 +80,8 @@ def render(meta: dict) -> str:
             f'<meta name="description" content="{e(meta["description"])}" />']
     if meta.get("noindex"):
         tags.append('<meta name="robots" content="noindex, follow" />')
+    if _VERIFICATION.fullmatch(meta.get("google_verification") or ""):
+        tags.append(f'<meta name="google-site-verification" content="{e(meta["google_verification"])}" />')
     if meta.get("canonical"):
         tags.append(f'<link rel="canonical" href="{e(meta["canonical"])}" />')
     tags += [f'<meta property="og:site_name" content="{SITE}" />',
@@ -155,7 +160,11 @@ async def head_for(repo, raw_path: str) -> str:
     path = normalize_path(raw_path)
     if path in STATIC:
         title, description = STATIC[path]
-        return render({"title": title, "description": description, "canonical": ORIGIN + ("" if path == "/" else path)})
+        meta = {"title": title, "description": description, "canonical": ORIGIN + ("" if path == "/" else path)}
+        if path == "/":
+            from shop.services.shop_settings import get_shop_settings
+            meta["google_verification"] = (await get_shop_settings(repo)).site("google_site_verification")
+        return render(meta)
     if any(path == p.rstrip("/") or path.startswith(p) for p in PRIVATE):
         return render({"title": DEFAULT_TITLE, "description": DEFAULT_DESCRIPTION, "noindex": True})
     meta = None

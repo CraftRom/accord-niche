@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, getSession, isSysadmin } from '../api'
 import { filterSettingGroups } from '../roles'
 import { ErrorBar, Field, Loading, useToast } from '../components/ui'
-import { SETTINGS_CATEGORIES, categoryFor, changedSettings } from '../settingsModel'
+import { SETTINGS_CATEGORIES, categoryFor, changedSettings, visibleItems } from '../settingsModel'
 import ModuleStatus from '../components/ModuleStatus'
 import { PageHeader, SectionCard } from '../components/page'
 import { StateBadge } from '../components/StateBadge'
@@ -166,6 +166,51 @@ const FIELDS = [
         hint: 'Обовʼязково https:// і точно той домен, що віддає сайт — ' +
               'разом із www, якщо він є',
       },
+      {
+        key: 'miniapp_url', label: 'Посилання на Mini App для сайту', env: true, advanced: true,
+        placeholder: 'https://t.me/accordniche_bot/shop',
+        hint: 'Кнопка «Оформити в Telegram» на сайті. Лише t.me. Порожньо — кнопки немає',
+      },
+      {
+        key: 'dashboard_idle_minutes', label: 'Вихід із панелі після бездіяльності, хв', type: 'number',
+        advanced: true,
+        hint: 'Від 5 до 1440. Сесія без жодного запиту довше за цей час закривається',
+      },
+    ],
+  },
+  {
+    title: 'Вхід через Google',
+    hint: 'Кнопка «Увійти через Google» на сайті: профіль, історія замовлень і привʼязка телефону. '
+      + 'Поки Client ID порожній, кнопки на сайті немає.',
+    items: [
+      {
+        key: 'google_client_id', label: 'OAuth Client ID', env: true,
+        placeholder: '1234567890-abc123.apps.googleusercontent.com',
+        hint: 'Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application). '
+          + 'В Authorized JavaScript origins додайте адресу сайту. Client ID публічний, секрет клієнта не потрібен',
+      },
+      {
+        key: 'google_site_verification', label: 'Код підтвердження Search Console', env: true, advanced: true,
+        hint: 'Search Console → Додати ресурс → HTML-тег: скопіюйте лише значення content. '
+          + 'Тег зʼявиться на головній сторінці',
+      },
+    ],
+  },
+  {
+    title: 'SMS-підтвердження (Twilio Verify)',
+    hint: 'Покупець підтверджує номер кодом з SMS і бачить історію замовлень із Telegram. '
+      + 'Ліміт: одне SMS на хвилину, пʼять на годину на акаунт.',
+    items: [
+      { key: 'twilio_account_sid', label: 'Account SID', env: true, placeholder: 'AC…',
+        hint: 'Twilio Console → Account Info. 34 символи, починається з AC' },
+      {
+        key: 'twilio_auth_token', label: 'Auth Token', env: true,
+        secret: 'twilio_auth_connected',
+        secretHint: 'Без нього SMS не надсилаються.',
+        hint: 'Twilio Console → Account Info → Auth Token. Зберігається зашифрованим і назад не показується',
+      },
+      { key: 'twilio_verify_service_sid', label: 'Verify Service SID', env: true, placeholder: 'VA…',
+        hint: 'Twilio Console → Verify → Services. 34 символи, починається з VA' },
     ],
   },
   {
@@ -178,6 +223,20 @@ const FIELDS = [
       { key: 'seller_address', label: 'Адреса для листування' },
       { key: 'seller_email', label: 'Email для звернень', hint: 'Вказується як контакт у документах' },
       { key: 'seller_phone', label: 'Телефон' },
+    ],
+  },
+  {
+    title: 'Посилання на сайті',
+    hint: 'Соцмережі у футері та документи біля згоди при оформленні. Порожнє поле на сайті '
+      + 'не показується. Приймаються лише адреси https://.',
+    items: [
+      { key: 'instagram_url', label: 'Instagram', env: true, placeholder: 'https://instagram.com/accordniche',
+        hint: 'Лише домен instagram.com' },
+      { key: 'tiktok_url', label: 'TikTok', env: true, placeholder: 'https://www.tiktok.com/@accordniche',
+        hint: 'Лише домен tiktok.com' },
+      { key: 'terms_url', label: 'Умови покупки (оферта)', env: true,
+        hint: 'Посилання на ваш документ. Поки порожньо, сайт не вигадує юридичного тексту' },
+      { key: 'privacy_url', label: 'Політика конфіденційності', env: true },
     ],
   },
   {
@@ -204,6 +263,7 @@ const FIELDS = [
       },
       {
         key: 'delivery_weight_per_item',
+        advanced: true,
         label: 'Припущена вага позиції, кг',
         type: 'number',
         hint: 'Точної ваги товарів у каталозі немає, тож розрахунок і '
@@ -244,6 +304,7 @@ const FIELDS = [
       },
       {
         key: 'novaposhta_cargo_description',
+        advanced: true,
         label: 'Опис вантажу в ТТН',
         hint: 'Одним словом, як вимагає перевізник: «Товари»',
       },
@@ -284,7 +345,7 @@ const FIELDS = [
         secretHint: 'Потрібен для перевірки звʼязку. Установки → Інші сервіси → API → API-ключі.',
       },
       { key: 'salesdrive_webhook_token', label: 'Адреса вебхука', webhook: 'salesdrive_webhook_connected' },
-      { key: 'salesdrive_site', label: 'Сайт у заявці', hint: 'Поле «Сайт». Порожнє — домен магазину' },
+      { key: 'salesdrive_site', advanced: true, label: 'Сайт у заявці', hint: 'Поле «Сайт». Порожнє — домен магазину' },
       { key: 'salesdrive_payment_map', label: 'Способи оплати', map: PAYMENT_KEYS,
         hint: 'Назва способу оплати так, як вона записана в SalesDrive' },
       { key: 'salesdrive_shipping_map', label: 'Способи доставки', map: SHIPPING_KEYS,
@@ -313,6 +374,7 @@ const FIELDS = [
       },
       {
         key: 'broadcast_chunk',
+        advanced: true,
         label: 'Розмір порції',
         type: 'number',
         hint: 'Скільки отримувачів обробляється за один прохід. Курсор зберігається, ' +
@@ -540,6 +602,34 @@ function SalesDriveCheck() {
   )
 }
 
+function TwilioCheck() {
+  const [state, setState] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const check = async () => {
+    setBusy(true)
+    try {
+      setState(await api.settings.twilioCheck())
+    } catch (err) {
+      setState({ ok: false, problem: err.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="row u-mt-3">
+      <button type="button" className="btn ghost small" onClick={check} disabled={busy}>
+        {busy ? 'Перевірка…' : 'Перевірити ключі Twilio'}
+      </button>
+      {state && (
+        <StateBadge tone={state.ok ? 'success' : 'danger'}>
+          {state.ok ? `Twilio відповідає${state.service ? ` · ${state.service}` : ''}` : state.problem}
+        </StateBadge>
+      )}
+      <span className="faint">Перевіряє збережені значення, SMS не надсилає</span>
+    </div>
+  )
+}
+
 export default function Settings() {
   const notify = useToast()
   const [form, setForm] = useState(null)
@@ -548,6 +638,13 @@ export default function Settings() {
   const [busy, setBusy] = useState(false)
   const savingRef = useRef(false)
   const [category, setCategory] = useState('store')
+  // Sections whose extra parameters are open («Показати додаткові параметри»).
+  const [expanded, setExpanded] = useState(() => new Set())
+  const toggleExpanded = (title) => setExpanded((prev) => {
+    const next = new Set(prev)
+    if (next.has(title)) next.delete(title); else next.add(title)
+    return next
+  })
   const [query, setQuery] = useState('')
   const [sdDicts, setSdDicts] = useState({ statuses: [], payments: [], deliveries: [] })
   const [sdDictError, setSdDictError] = useState('')
@@ -607,6 +704,8 @@ export default function Settings() {
   }
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const envActive = (item) => item.env && !String(form?.[item.key] ?? '').trim()
+    && (form?.env_defaults || []).includes(item.key)
 
   const changes = changedSettings(form, initial, editableKeys())
   const dirty = Object.keys(changes).length > 0
@@ -615,14 +714,16 @@ export default function Settings() {
   const needle = query.trim().toLocaleLowerCase('uk-UA')
   const matchesNeedle = (...values) => values.filter(Boolean).join(' ').toLocaleLowerCase('uk-UA').includes(needle)
   const shownGroups = groups.filter((group) => needle
-    ? [group.title, group.hint, ...group.items.flatMap((item) => [item.label, item.hint])].join(' ').toLocaleLowerCase('uk-UA').includes(needle)
+    ? [group.title, group.hint, ...group.items.flatMap((item) => [item.label, item.hint, item.key])].join(' ').toLocaleLowerCase('uk-UA').includes(needle)
     : categoryFor(group.title) === category)
   // Parameters that match; a group found only by its title lists all of its fields.
   const searchMatches = needle ? shownGroups.flatMap((group) => {
-    const items = group.items.filter((item) => matchesNeedle(item.label, item.hint))
+    const items = group.items.filter((item) => matchesNeedle(item.label, item.hint, item.key))
     return (items.length ? items : group.items).map((item) => ({ group, item }))
   }) : []
   const jumpToSetting = (key) => {
+    const owner = groups.find((group) => group.items.some((item) => item.key === key && item.advanced))
+    if (owner) setExpanded((prev) => new Set(prev).add(owner.title))
     const field = document.getElementById(`setting-${key}`)
     if (!field) return
     field.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -734,7 +835,7 @@ export default function Settings() {
               їх треба налаштувати ДО того, як вмикати */}
           <div className={group.toggle && !form[group.toggle] ? 'settings-paused' : ''}>
           {group.title === 'Автовідповіді' && !form.auto_replies_enabled && <p className="faint" role="status">Уся FAQ-автоматика вимкнена. Налаштування каналів збережені для наступного ввімкнення.</p>}
-          {group.items.map((item) => (
+          {visibleItems(group, { expanded: expanded.has(group.title), searching: Boolean(needle) }).map((item) => (
             <Field key={item.key} id={`setting-${item.key}`} label={item.label} hint={item.hint}>
               {item.map ? (
                 <MapEditor
@@ -777,9 +878,16 @@ export default function Settings() {
                     ? form[item.secret]
                       ? 'Збережений ключ. Впишіть новий, щоб замінити'
                       : 'Не заданий'
-                    : undefined
+                    : envActive(item) ? 'Діє значення з .env' : item.placeholder
                 }
               />
+              )}
+              {/* Порожнє поле з env: true означає «діє змінна оточення»; самого
+                  значення панель не отримує. */}
+              {envActive(item) && !item.secret && (
+                <p className="faint u-mt-2 u-mb-0">
+                  Зараз діє значення з .env. Впишіть нове тут, щоб перекрити його без перезапуску.
+                </p>
               )}
               {/* Секрет не читається назад: ключем Нової пошти
                   створюються накладні від імені магазину, тож у
@@ -788,11 +896,13 @@ export default function Settings() {
                   все налаштовано. */}
               {item.secret && (
                 <>
-                {form[item.secret] && <button type="button" className="btn ghost small" onClick={() => setForm((f) => ({ ...f, [item.key]: '' }))} disabled={form[item.key] === ''}>
+                {form[item.secret] && !envActive(item) && <button type="button" className="btn ghost small" onClick={() => setForm((f) => ({ ...f, [item.key]: '' }))} disabled={form[item.key] === ''}>
                   {form[item.key] === '' ? 'Ключ буде видалено після збереження' : 'Відключити інтеграцію'}
                 </button>}
                 <p className="faint u-mt-2 u-mb-0">
-                  {form[item.secret]
+                  {envActive(item)
+                    ? 'Підключено через .env. Щоб замінити без перезапуску, впишіть новий ключ тут.'
+                    : form[item.secret]
                     ? 'Підключено. Прочитати збережений ключ назад не можна: '
                       + 'щоб замінити — впишіть новий, щоб відключити — натисніть '
                       + '«Відключити інтеграцію» й збережіть.'
@@ -805,6 +915,15 @@ export default function Settings() {
             </Field>
           ))}
           </div>
+          {!needle && group.items.some((item) => item.advanced) && (
+            <button type="button" className="btn ghost small settings-more" aria-expanded={expanded.has(group.title)}
+              onClick={() => toggleExpanded(group.title)}>
+              {expanded.has(group.title)
+                ? 'Сховати додаткові параметри'
+                : `Показати додаткові параметри (${group.items.filter((item) => item.advanced).length})`}
+            </button>
+          )}
+          {isSysadmin() && group.title === 'SMS-підтвердження (Twilio Verify)' && <TwilioCheck />}
           {isSysadmin() && group.title === 'SalesDrive' && <>
             <div className="row u-mt-3">
               <button type="button" className="btn ghost small" onClick={loadSalesDriveDictionaries} disabled={sdDictBusy}>

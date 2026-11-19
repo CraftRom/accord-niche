@@ -97,7 +97,9 @@ async def cookie_principal(request: Request, repo) -> Principal:
     digest = digest_cookie(raw)
     row = await repo.get_dashboard_session(digest)
     now = datetime.now(timezone.utc)
-    idle = min(1440, max(5, settings.dashboard_idle_minutes))
+    # Policy from the panel (system administrator), .env value by default.
+    from shop.services.shop_settings import get_shop_settings
+    idle = min(1440, max(5, (await get_shop_settings(repo)).dashboard_idle_minutes))
     if not row or aware(row["expires_at"]) <= now or aware(row["last_seen_at"]) + timedelta(minutes=idle) <= now:
         if row:
             await repo.delete_dashboard_session(digest)
