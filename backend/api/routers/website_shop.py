@@ -174,13 +174,14 @@ def _display(account):
 async def session(request: Request, response: Response, repo: Repository = Depends(get_repo)):
     csrf = _set_csrf(request, response)
     account = await _account(request, repo)
+    shop = await get_shop_settings(repo)
     return {'csrf': csrf, 'account': _display(account),
-            'google_client_id': os.getenv('ACCORD_GOOGLE_CLIENT_ID', '').strip(),
-            'phone_verification_enabled': _twilio_ready()}
+            'google_client_id': shop.site('google_client_id'),
+            'phone_verification_enabled': shop.twilio_ready}
 
 
-async def _google_identity(token: str):
-    client_id = os.getenv('ACCORD_GOOGLE_CLIENT_ID', '').strip()
+async def _google_identity(token: str, client_id: str):
+    client_id = (client_id or '').strip()
     if not client_id:
         raise HTTPException(503, 'Вхід через Google ще не налаштовано')
     if len(token) > 8192:
@@ -229,7 +230,7 @@ async def google_login(data: GoogleIn, request: Request, response: Response,
     _require_csrf(request)
     if not _secure(request) and urlsplit(_website_origin(request)).hostname not in {'localhost','127.0.0.1'}:
         raise HTTPException(403, 'Google-вхід доступний лише через HTTPS')
-    identity = await _google_identity(data.credential)
+    identity = await _google_identity(data.credential, (await get_shop_settings(repo)).site('google_client_id'))
     sub = str(identity['sub'])
     account = await repo.s.scalar(select(m.WebsiteAccount).where(m.WebsiteAccount.google_sub == sub))
     previous = await _account(request, repo)
@@ -528,11 +529,6 @@ async def patch_profile(data: ProfileIn, request: Request, repo: Repository = De
     return {'account': _display(account)}
 
 
-def _twilio_ready():
-    return all(os.getenv(k, '').strip() for k in
-               ('ACCORD_TWILIO_ACCOUNT_SID', 'ACCORD_TWILIO_AUTH_TOKEN', 'ACCORD_TWILIO_VERIFY_SERVICE_SID'))
-
-
 def _phone(raw: str):
     digits = ''.join(c for c in str(raw) if c.isdigit())
     if digits.startswith('380') and len(digits) == 12:
@@ -548,10 +544,12 @@ def _phone(raw: str):
     return '+380' + body
 
 
-async def _twilio(method: str, suffix: str, payload: dict):
-    service = os.getenv('ACCORD_TWILIO_VERIFY_SERVICE_SID', '').strip()
-    sid = os.getenv('ACCORD_TWILIO_ACCOUNT_SID', '').strip()
-    secret = os.getenv('ACCORD_TWILIO_AUTH_TOKEN', '').strip()
+async def _twilio(repo, method: str, suffix: str, payload: dict):
+    # Keys come from the panel (encrypted in the DB) or, if empty there, .env.
+    shop = await get_shop_settings(repo)
+    service = shop.site('twilio_verify_service_sid')
+    sid = shop.site('twilio_account_sid')
+    secret = shop.site('twilio_auth_token')
     if not service or not sid or not secret:
         raise HTTPException(503, 'SMS-підтвердження ще не підключено')
     if not service.startswith('VA') or len(service) != 34:
@@ -581,7 +579,7 @@ async def phone_send(data: PhoneIn, request: Request, repo: Repository = Depends
     account = await _required_account(request, repo)
     if not account.google_sub:
         raise HTTPException(401, 'Увійдіть через Google для привʼязки номера')
-    if not _twilio_ready():
+    if not (await get_shop_settings(repo)).twilio_ready:
         raise HTTPException(503, 'SMS-підтвердження ще не підключено')
     if not _secure(request) and urlsplit(_website_origin(request)).hostname not in {'localhost','127.0.0.1'}:
         raise HTTPException(403, 'Підтвердження номера доступне лише через HTTPS')
@@ -611,7 +609,7 @@ async def phone_send(data: PhoneIn, request: Request, repo: Repository = Depends
             raise HTTPException(429, 'Повторіть запит через хвилину')
         raise HTTPException(429, 'Ліміт SMS на годину вичерпано')
     await repo.s.commit()  # limiter persists even if provider fails
-    await _twilio('POST', 'Verifications', {'To':phone,'Channel':'sms'})
+    await _twilio(repo, 'POST', 'Verifications', {'To':phone,'Channel':'sms'})
     return {'sent':True}
 
 
@@ -642,7 +640,7 @@ async def phone_check(data: PhoneCheckIn, request: Request, repo: Repository = D
     if not _secure(request) and urlsplit(_website_origin(request)).hostname not in {'localhost','127.0.0.1'}:
         raise HTTPException(403, 'Підтвердження номера доступне лише через HTTPS')
     phone = _phone(data.phone)
-    result = await _twilio('POST','VerificationCheck',{'To':phone,'Code':data.code})
+    result = await _twilio(repo, 'POST','VerificationCheck',{'To':phone,'Code':data.code})
     if result.get('status') != 'approved':
         raise HTTPException(422, 'Невірний або прострочений код')
     if account.linked_telegram_user_id:

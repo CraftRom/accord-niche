@@ -17,6 +17,11 @@ INFRA_FIELDS = frozenset({
     'backup_hour', 'backup_retention_days', 'jwt_ttl_hours',
     'salesdrive_domain', 'salesdrive_form_key', 'salesdrive_telegram_form_id',
     'salesdrive_api_key', 'salesdrive_webhook_token',
+    # Site sign-in, SMS and Mini App link: keys and identities of the shop
+    # itself, so only the system administrator changes them.
+    'google_client_id', 'google_site_verification', 'twilio_account_sid',
+    'twilio_auth_token', 'twilio_verify_service_sid', 'miniapp_url',
+    'dashboard_idle_minutes',
 })
 # Explicit allowlist: future settings default to system-administrator access.
 ADMIN_FIELDS = frozenset({
@@ -37,6 +42,7 @@ ADMIN_FIELDS = frozenset({
     'faq_private_enabled',
     'faq_public_enabled',
     'faq_support_enabled',
+    'instagram_url',
     'min_age',
     'novaposhta_api_key',
     'novaposhta_cargo_description',
@@ -44,6 +50,7 @@ ADMIN_FIELDS = frozenset({
     'novaposhta_sender_phone',
     'novaposhta_sender_warehouse',
     'novaposhta_sender_warehouse_ref',
+    'privacy_url',
     'referral_enabled',
     'referral_percent',
     'salesdrive_enabled',
@@ -57,6 +64,8 @@ ADMIN_FIELDS = frozenset({
     'seller_name',
     'seller_phone',
     'shop_name',
+    'terms_url',
+    'tiktok_url',
     'volume_discount_enabled',
     'volume_discount_min',
     'volume_discount_percent',

@@ -204,7 +204,8 @@ async def test_parallel_sms_requests_send_once_and_count_once(db, monkeypatch):
     session.add(m.WebsiteAccount(id=1, user_id=1, google_sub='audit-sub'))
     await session.commit()
     monkeypatch.setattr(web, '_require_csrf', lambda r: None)
-    monkeypatch.setattr(web, '_twilio_ready', lambda: True)
+    for name in ('ACCORD_TWILIO_ACCOUNT_SID', 'ACCORD_TWILIO_AUTH_TOKEN', 'ACCORD_TWILIO_VERIFY_SERVICE_SID'):
+        monkeypatch.setenv(name, 'configured')  # .env fallback of the panel setting
     sent, loaded, ready = [], 0, asyncio.Event()
 
     async def account(_request, repo):
@@ -242,7 +243,8 @@ async def test_sms_hourly_limit_is_enforced_atomically(db, monkeypatch):
                                  phone_window_at=old, phone_window_count=5))
     await session.commit()
     monkeypatch.setattr(web, '_require_csrf', lambda r: None)
-    monkeypatch.setattr(web, '_twilio_ready', lambda: True)
+    for name in ('ACCORD_TWILIO_ACCOUNT_SID', 'ACCORD_TWILIO_AUTH_TOKEN', 'ACCORD_TWILIO_VERIFY_SERVICE_SID'):
+        monkeypatch.setenv(name, 'configured')  # .env fallback of the panel setting
 
     async def account(_request, repo):
         return await repo.s.get(m.WebsiteAccount, 1)

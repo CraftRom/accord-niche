@@ -32,9 +32,10 @@ def _needs(worker_states, worker, key, title, ready_detail, absent_detail):
                    ready_detail if running else absent_detail, worker)
 
 
-def twilio_configured() -> bool:
-    return all(os.getenv(k, "").strip() for k in
-               ("ACCORD_TWILIO_ACCOUNT_SID", "ACCORD_TWILIO_AUTH_TOKEN", "ACCORD_TWILIO_VERIFY_SERVICE_SID"))
+def twilio_configured(shop=None) -> bool:
+    """Twilio Verify keys are set in the panel or, if empty there, in .env."""
+    from shop.services.shop_settings import current
+    return (shop or current()).twilio_ready
 
 
 async def module_report(repo, *, heartbeat_directory=None, now=None) -> dict:
@@ -78,8 +79,9 @@ async def module_report(repo, *, heartbeat_directory=None, now=None) -> dict:
                               "читання не працюватимуть без планувальника."))
     modules.append(_module(
         "sms_verification", "SMS-підтвердження телефону",
-        "ready" if twilio_configured() else "not_configured",
-        "Підтвердження номера на сайті через SMS доступне." if twilio_configured() else
-        "Ключі Twilio Verify не задано: прив’язка номера на сайті недоступна.", None))
+        "ready" if twilio_configured(shop) else "not_configured",
+        "Підтвердження номера на сайті через SMS доступне." if twilio_configured(shop) else
+        "Ключі Twilio Verify не задано: впишіть їх у Налаштування → Інтеграції → "
+        "«SMS-підтвердження (Twilio Verify)».", None))
     return {"modules": modules,
             "workers": [workers[name] for name in workers]}

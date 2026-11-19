@@ -119,3 +119,44 @@ async def integrations_health(live: bool = False, _who: Principal = Depends(requ
     """Manual diagnostics; GETs and provider read methods only. Never sends messages."""
     from shop.services.integration_health import inspect_integrations
     return await inspect_integrations(repo, live=live)
+
+
+@router.post("/twilio/check")
+async def twilio_check(_who: Principal = Depends(require_sysadmin),
+                       repo: Repository = Depends(get_repo)):
+    """Перевіряє збережені ключі Twilio Verify без надсилання SMS.
+
+    Читає опис сервісу Verify (GET /v2/Services/{sid}): відповідь 200 означає,
+    що Account SID, Auth Token і Service SID правильні й належать одному
+    акаунту. Хост і шлях фіксовані, ключі в журнал і відповідь не потрапляють.
+    """
+    import re
+
+    import httpx
+
+    from shop.services.shop_settings import get_shop_settings
+
+    shop = await get_shop_settings(repo)
+    sid, token = shop.site("twilio_account_sid"), shop.site("twilio_auth_token")
+    service = shop.site("twilio_verify_service_sid")
+    if not (sid and token and service):
+        return {"ok": False, "problem": "Задайте Account SID, Auth Token і Verify Service SID"}
+    if not re.fullmatch(r"AC[0-9a-f]{32}", sid) or not re.fullmatch(r"VA[0-9a-f]{32}", service):
+        return {"ok": False, "problem": "Невірний формат Account SID або Service SID"}
+    try:
+        async with httpx.AsyncClient(timeout=7, follow_redirects=False) as client:
+            response = await client.get(f"https://verify.twilio.com/v2/Services/{service}",
+                                        auth=(sid, token))
+    except httpx.HTTPError:
+        return {"ok": False, "problem": "Twilio не відповідає. Спробуйте пізніше"}
+    if response.status_code in (401, 403):
+        return {"ok": False, "problem": "Twilio відхилив Account SID або Auth Token"}
+    if response.status_code == 404:
+        return {"ok": False, "problem": "Сервіс Verify з таким SID не знайдено в цьому акаунті"}
+    if response.status_code != 200:
+        return {"ok": False, "problem": f"Twilio повернув помилку {response.status_code}"}
+    try:
+        name = str(response.json().get("friendly_name") or "")[:64]
+    except ValueError:
+        name = ""
+    return {"ok": True, "problem": None, "service": name}

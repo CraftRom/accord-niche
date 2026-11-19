@@ -514,6 +514,7 @@ export const api = {
     environment: () => request('/settings/environment'),
     salesdriveCheck: () => request('/integrations/salesdrive/check', { method: 'POST' }),
     salesdriveDictionaries: () => request('/integrations/salesdrive/dictionaries'),
+    twilioCheck: () => request('/integrations/twilio/check', { method: 'POST' }),
     get: () => request('/settings'),
     update: (data) => request('/settings', { method: 'PUT', body: data }),
   },

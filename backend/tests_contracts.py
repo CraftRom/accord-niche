@@ -32,7 +32,10 @@ compare(CustomerOut, User, "CustomerOut")
 
 # конфіг мусить мати дефолт для кожного поля налаштувань
 from shop.config import settings
-missing=[f.name for f in dfields(ShopSettings) if not hasattr(settings, f.name)]
+# Site fields read their .env default by the ACCORD_* name in ENV_FALLBACK at
+# request time; each of them must still name its variable.
+from shop.services.shop_settings import ENV_FALLBACK
+missing=[f.name for f in dfields(ShopSettings) if not hasattr(settings, f.name) and f.name not in ENV_FALLBACK]
 check(not missing, "у .env є дефолт для кожного налаштування", missing)
 
 # Репозиторії мають реалізовувати весь контракт.

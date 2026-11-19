@@ -706,7 +706,38 @@ class TopProduct(BaseModel):
 DERIVED_FIELDS = {
     "novaposhta_connected", "salesdrive_form_connected",
     "salesdrive_api_connected", "salesdrive_webhook_connected",
+    "twilio_auth_connected", "env_defaults",
 }
+
+# Хости, на які сайт може посилатися з профілів соцмереж. Явний перелік:
+# поле не має ставати способом показати покупцям посилання на чужий домен.
+SOCIAL_HOSTS = {
+    "instagram_url": {"instagram.com", "www.instagram.com"},
+    "tiktok_url": {"tiktok.com", "www.tiktok.com"},
+    "miniapp_url": {"t.me"},
+}
+
+
+def _https_link(value: str | None, field: str) -> str | None:
+    """https-адреса без логіна/пароля в URL; для соцмереж — лише їхній домен."""
+    if value is None:
+        return value
+    value = value.strip()
+    if not value:
+        return value
+    from urllib.parse import urlsplit
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        raise ValueError("Некоректна адреса") from None
+    if parts.scheme != "https" or not parts.hostname:
+        raise ValueError("Адреса має починатися з https://")
+    if parts.username or parts.password or any(c in value for c in ' "<>\\'):
+        raise ValueError("Адреса містить недопустимі символи")
+    hosts = SOCIAL_HOSTS.get(field)
+    if hosts and parts.hostname.lower() not in hosts:
+        raise ValueError("Дозволений домен: " + ", ".join(sorted(hosts)))
+    return value
 
 
 class ShopSettingsIn(BaseModel):
@@ -830,6 +861,38 @@ class ShopSettingsIn(BaseModel):
     backup_hour: int | None = Field(None, ge=0, le=23)
     backup_retention_days: int | None = Field(None, ge=1, le=365)
 
+    # --- сайт: Google, SMS, посилання ---
+    # Формати перевіряються суворо: помилка тут — підказка в панелі, а не
+    # «вхід через Google не працює» на сайті без жодного пояснення.
+    google_client_id: str | None = Field(
+        None, max_length=128,
+        pattern=r"^$|^[0-9]{6,32}-[a-z0-9]{8,64}\.apps\.googleusercontent\.com$")
+    google_site_verification: str | None = Field(
+        None, max_length=100, pattern=r"^$|^[A-Za-z0-9_-]{20,100}$")
+    twilio_account_sid: str | None = Field(None, max_length=34, pattern=r"^$|^AC[0-9a-f]{32}$")
+    # Секрет: записується, але не читається назад (twilio_auth_connected).
+    twilio_auth_token: str | None = Field(None, max_length=32, pattern=r"^$|^[0-9a-f]{32}$")
+    twilio_verify_service_sid: str | None = Field(None, max_length=34, pattern=r"^$|^VA[0-9a-f]{32}$")
+    instagram_url: str | None = Field(None, max_length=255)
+    tiktok_url: str | None = Field(None, max_length=255)
+    terms_url: str | None = Field(None, max_length=500)
+    privacy_url: str | None = Field(None, max_length=500)
+    miniapp_url: str | None = Field(None, max_length=255)
+    dashboard_idle_minutes: int | None = Field(None, ge=5, le=1440)
+
+    @field_validator("google_client_id", "google_site_verification", "twilio_account_sid",
+                     "twilio_auth_token", "twilio_verify_service_sid", mode="before")
+    @classmethod
+    def _strip_pasted(cls, value):
+        # Значення копіюють із консолей — пробіли по краях не мають ламати формат.
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("instagram_url", "tiktok_url", "terms_url", "privacy_url",
+                     "miniapp_url", mode="after")
+    @classmethod
+    def _check_links(cls, value, info):
+        return _https_link(value, info.field_name)
+
     @field_validator("timezone", mode="after")
     @classmethod
     def _check_timezone(cls, value):
@@ -885,6 +948,20 @@ class ShopSettingsIn(BaseModel):
 
 
 class ShopSettingsOut(BaseModel):
+    google_client_id: str = ""
+    google_site_verification: str = ""
+    twilio_account_sid: str = ""
+    twilio_auth_connected: bool = False
+    twilio_verify_service_sid: str = ""
+    instagram_url: str = ""
+    tiktok_url: str = ""
+    terms_url: str = ""
+    privacy_url: str = ""
+    miniapp_url: str = ""
+    dashboard_idle_minutes: int = 60
+    # Поля, де зараз діє значення з .env (у панелі порожньо). Самі значення
+    # оточення не віддаються — лише факт, що вони задані.
+    env_defaults: list[str] = []
     shop_name: str
     currency: str
     min_age: int

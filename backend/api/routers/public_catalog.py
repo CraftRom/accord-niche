@@ -26,7 +26,7 @@ async def site_config(repo: Repository = Depends(get_repo)):
     shop = await get_shop_settings(repo)
     # Explicit configuration only. Never send ACCORD shoppers to legacy ELFAR
     # bot as a silent fallback: no checkout link is safer than the wrong store.
-    named_app = (os.getenv("ACCORD_MINIAPP_URL", "") or (
+    named_app = (shop.site("miniapp_url") or (
         NAMED_MINIAPP_URL if os.getenv("NAMED_MINIAPP_URL") else ""
     )) if settings.bot_token else ""
     def safe_social(value):
@@ -37,16 +37,16 @@ async def site_config(repo: Repository = Depends(get_repo)):
         return value if parts.scheme == "https" and parts.netloc and not parts.username and not parts.password else ""
     return {
         "miniapp_url": named_app,
-        "instagram_url": safe_social(os.getenv("ACCORD_INSTAGRAM_URL", "")),
-        "tiktok_url": safe_social(os.getenv("ACCORD_TIKTOK_URL", "")),
+        "instagram_url": safe_social(shop.site("instagram_url")),
+        "tiktok_url": safe_social(shop.site("tiktok_url")),
         "phone": shop.seller_phone or os.getenv("ACCORD_PHONE", ""),
         "seller_name": shop.seller_name,
         "email": shop.seller_email,
         # W-10: purchase terms and privacy policy are the owner's documents.
         # They appear next to the checkout consent only when configured; the
         # site never invents legal text.
-        "terms_url": safe_social(os.getenv("ACCORD_TERMS_URL", "")),
-        "privacy_url": safe_social(os.getenv("ACCORD_PRIVACY_URL", "")),
+        "terms_url": safe_social(shop.site("terms_url")),
+        "privacy_url": safe_social(shop.site("privacy_url")),
     }
 
 # Only local product media exposed by this *product-authorized* endpoint.
