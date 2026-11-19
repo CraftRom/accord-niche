@@ -20,7 +20,8 @@ test('production CSS keeps navigation text dark after all base styles are applie
 test('active blog tabs keep readable contrast in the production theme',()=>{
  const assets=new URL('../dist/assets/',import.meta.url)
  const names=readdirSync(assets)
- const css=[...names.filter(name=>/^index-.*\.css$/.test(name)),...names.filter(name=>/^Blog-.*\.css$/.test(name))].map(name=>readFileSync(new URL(name,assets),'utf8')).join('\n')
+ // Blog styles may live in a chunk shared with other editors (Documents), so read every stylesheet.
+ const css=names.filter(name=>name.endsWith('.css')).sort((a,b)=>Number(!a.startsWith('index-'))-Number(!b.startsWith('index-'))).map(name=>readFileSync(new URL(name,assets),'utf8')).join('\n')
  const dom=new JSDOM('<!doctype html><style>'+css+'</style><div class="blog-admin-tabs"><button class="btn" aria-selected="true">Публікації</button></div>')
  try{
   const style=dom.window.getComputedStyle(dom.window.document.querySelector('button'))

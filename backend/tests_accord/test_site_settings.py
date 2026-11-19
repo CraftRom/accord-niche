@@ -87,7 +87,6 @@ async def test_empty_panel_value_falls_back_to_env_and_panel_overrides_it(repo, 
     ('instagram_url', 'https://evil.example/accord'),
     ('instagram_url', 'http://instagram.com/accord'),
     ('tiktok_url', 'https://user:pass@tiktok.com/@a'),
-    ('terms_url', 'javascript:alert(1)'),
     ('miniapp_url', 'https://example.com/app'),
     ('dashboard_idle_minutes', 2),
 ])
@@ -100,7 +99,7 @@ def test_valid_values_and_pasted_spaces_are_accepted():
     data = ShopSettingsIn(google_client_id=f'  {CLIENT} ', twilio_account_sid=SID, twilio_auth_token=TOKEN,
                           twilio_verify_service_sid=SERVICE, instagram_url='https://www.instagram.com/accord',
                           tiktok_url='https://www.tiktok.com/@accord', miniapp_url='https://t.me/bot/app',
-                          terms_url='https://accordniche.pp.ua/terms', twilio_auth_connected=True,
+                          twilio_auth_connected=True,
                           env_defaults=['google_client_id'])
     assert data.google_client_id == CLIENT
     assert ShopSettingsIn(twilio_auth_token='').twilio_auth_token == '', 'empty clears the panel value'
@@ -112,7 +111,7 @@ def test_only_system_administrator_changes_keys_and_identities():
     admin = editable_settings(Role.ADMIN, ShopSettingsIn.model_fields)
     assert keys <= INFRA_FIELDS and not keys & admin
     assert keys <= editable_settings(Role.SYSADMIN, ShopSettingsIn.model_fields)
-    assert {'instagram_url', 'tiktok_url', 'terms_url', 'privacy_url'} <= ADMIN_FIELDS
+    assert {'instagram_url', 'tiktok_url'} <= ADMIN_FIELDS
     assert not editable_settings(Role.MANAGER, ShopSettingsIn.model_fields)
 
 

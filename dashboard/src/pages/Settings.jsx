@@ -221,16 +221,13 @@ const FIELDS = [
   },
   {
     title: 'Посилання на сайті',
-    hint: 'Соцмережі у футері та документи біля згоди при оформленні. Порожнє поле на сайті '
-      + 'не показується. Приймаються лише адреси https://.',
+    hint: 'Соцмережі у футері сайту. Порожнє поле на сайті не показується. Приймаються лише адреси https://. '
+      + 'Оферта й політика конфіденційності редагуються в розділі «Документи».',
     items: [
       { key: 'instagram_url', label: 'Instagram', env: true, placeholder: 'https://instagram.com/accordniche',
         hint: 'Лише домен instagram.com' },
       { key: 'tiktok_url', label: 'TikTok', env: true, placeholder: 'https://www.tiktok.com/@accordniche',
         hint: 'Лише домен tiktok.com' },
-      { key: 'terms_url', label: 'Умови покупки (оферта)', env: true,
-        hint: 'Посилання на ваш документ. Поки порожньо, сайт не вигадує юридичного тексту' },
-      { key: 'privacy_url', label: 'Політика конфіденційності', env: true },
     ],
   },
   {

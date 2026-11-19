@@ -53,6 +53,7 @@ const Catalog = page(() => import('./pages/Catalog'))
 const CatalogProduct = page(() => import('./pages/CatalogProduct'))
 const Customers = page(() => import('./pages/Customers'))
 const Blog = page(() => import('./pages/Blog'))
+const Documents = page(() => import('./pages/Documents'))
 const Promos = page(() => import('./pages/Promos'))
 const Broadcasts = page(() => import('./pages/Broadcasts'))
 const Settings = page(() => import('./pages/Settings'))
@@ -295,6 +296,7 @@ export default function App() {
         <Route path="/catalog/products/:id" element={<Protected><CatalogProduct /></Protected>} />
         <Route path="/customers" element={<Protected><Customers /></Protected>} />
         <Route path="/blog" element={<Protected><Blog /></Protected>} />
+        <Route path="/documents" element={<Protected><Documents /></Protected>} />
         <Route path="/promos" element={<Protected><Promos /></Protected>} />
         <Route path="/broadcasts" element={<Protected><Broadcasts /></Protected>} />
         <Route path="/settings" element={<Protected><Settings /></Protected>} />

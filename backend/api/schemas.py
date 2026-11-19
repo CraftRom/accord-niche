@@ -874,8 +874,6 @@ class ShopSettingsIn(BaseModel):
     twilio_verify_service_sid: str | None = Field(None, max_length=34, pattern=r"^$|^VA[0-9a-f]{32}$")
     instagram_url: str | None = Field(None, max_length=255)
     tiktok_url: str | None = Field(None, max_length=255)
-    terms_url: str | None = Field(None, max_length=500)
-    privacy_url: str | None = Field(None, max_length=500)
     miniapp_url: str | None = Field(None, max_length=255)
     dashboard_idle_minutes: int | None = Field(None, ge=5, le=1440)
 
@@ -886,7 +884,7 @@ class ShopSettingsIn(BaseModel):
         # Значення копіюють із консолей — пробіли по краях не мають ламати формат.
         return value.strip() if isinstance(value, str) else value
 
-    @field_validator("instagram_url", "tiktok_url", "terms_url", "privacy_url",
+    @field_validator("instagram_url", "tiktok_url",
                      "miniapp_url", mode="after")
     @classmethod
     def _check_links(cls, value, info):
@@ -954,8 +952,6 @@ class ShopSettingsOut(BaseModel):
     twilio_verify_service_sid: str = ""
     instagram_url: str = ""
     tiktok_url: str = ""
-    terms_url: str = ""
-    privacy_url: str = ""
     miniapp_url: str = ""
     dashboard_idle_minutes: int = 60
     # Поля, де зараз діє значення з .env (у панелі порожньо). Самі значення
