@@ -186,6 +186,23 @@ async def test_public_contacts_read_saved_seller_settings_without_exposing_secre
         assert data['seller_name'] == 'Seller from database'
         assert data['email'] == 'shop@example.test'
         assert 'bot_token' not in data and 'card_number' not in data
+        # Legal documents are linked only when the owner configured them.
+        assert data['terms_url'] == '' and data['privacy_url'] == ''
+    finally:
+        invalidate_cache()
+
+
+@pytest.mark.asyncio
+async def test_site_config_links_only_configured_https_legal_documents(client, monkeypatch):
+    from shop.services.shop_settings import invalidate_cache
+    client, _, _ = client
+    monkeypatch.setenv('ACCORD_TERMS_URL', 'https://accordniche.pp.ua/docs/terms.pdf')
+    monkeypatch.setenv('ACCORD_PRIVACY_URL', 'http://insecure.example/privacy')
+    invalidate_cache()
+    try:
+        data = (await client.get('/api/public/site-config')).json()
+        assert data['terms_url'] == 'https://accordniche.pp.ua/docs/terms.pdf'
+        assert data['privacy_url'] == '', 'plain http or malformed links are never sent to shoppers'
     finally:
         invalidate_cache()
 

@@ -42,6 +42,11 @@ async def site_config(repo: Repository = Depends(get_repo)):
         "phone": shop.seller_phone or os.getenv("ACCORD_PHONE", ""),
         "seller_name": shop.seller_name,
         "email": shop.seller_email,
+        # W-10: purchase terms and privacy policy are the owner's documents.
+        # They appear next to the checkout consent only when configured; the
+        # site never invents legal text.
+        "terms_url": safe_social(os.getenv("ACCORD_TERMS_URL", "")),
+        "privacy_url": safe_social(os.getenv("ACCORD_PRIVACY_URL", "")),
     }
 
 # Only local product media exposed by this *product-authorized* endpoint.
