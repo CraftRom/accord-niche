@@ -260,7 +260,7 @@ export default function Operators() {
       <ErrorBar error={error} />
 
       <SectionCard title="Що може кожна група" description="Права перевіряє сервер; прихована кнопка не замінює перевірки доступу.">
-        <div className="table-wrap" aria-label="Системні групи">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Системні групи">
           <table><thead><tr><th>Системна група</th><th>Доступ</th></tr></thead><tbody>
             {['admin', 'shop_admin', 'operator'].map((role) => (
               <tr key={role}><td>{ROLE_LABEL[role]}</td><td>{ROLE_ACCESS[role].join(' · ')}{role === 'admin' ? '. Обліковий запис задається на сервері.' : ''}</td></tr>
@@ -288,7 +288,7 @@ export default function Operators() {
             </thead>
             <tbody>
               {rows.map((o) => (
-                <tr key={o.id} style={{ opacity: o.is_active ? 1 : 0.55 }}>
+                <tr key={o.id} className={o.is_active ? '' : 'row-inactive'}>
                   <td>{o.login}</td>
                   <td>{o.name || '—'}</td>
                   <td>{ROLE_LABEL[o.role] || o.role}</td>

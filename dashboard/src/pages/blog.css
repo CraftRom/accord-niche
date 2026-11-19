@@ -1,5 +1,5 @@
 .blog-admin .page-head,.blog-admin .actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.blog-admin-tabs{display:flex;flex-wrap:wrap;gap:9px;margin:22px 0}.blog-admin-tabs [aria-selected=true]{background:var(--violet,#D9C8AE);color:#19150f}
+.blog-admin-tabs{display:flex;flex-wrap:wrap;gap:9px;margin:22px 0}.blog-admin-tablist{display:flex;flex-wrap:wrap;gap:9px}.blog-admin-tabs [aria-selected=true]{background:var(--violet,#D9C8AE);color:#19150f}
 .blog-admin-filters{display:flex;gap:12px;margin-bottom:20px}.blog-admin-filters .input{max-width:380px}
 .blog-admin-posts{display:grid;gap:16px}.blog-admin-posts .card{display:flex;justify-content:space-between;align-items:center;gap:20px}.blog-admin-posts h2{font-size:20px;margin:10px 0}
 .blog-admin-status{display:inline-block;font-size:12px;padding:5px 9px;background:#a78b6318;border-radius:5px}

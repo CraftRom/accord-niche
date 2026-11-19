@@ -15,6 +15,8 @@ if [[ "${QA_BROWSER_SUITE:-all}" == "promo-codes" ]]; then
   node qa/browser-promo-codes.mjs
 elif [[ "${QA_BROWSER_SUITE:-all}" == "support-history" ]]; then
   node qa/browser-support-history.mjs
+elif [[ "${QA_BROWSER_SUITE:-all}" == "support-mobile" ]]; then
+  node qa/browser-support-mobile.mjs
 elif [[ "${QA_BROWSER_SUITE:-all}" == "financial-periods" ]]; then
   node qa/browser-financial-periods.mjs
 elif [[ "${QA_BROWSER_SUITE:-all}" == "quantity-sync" ]]; then
@@ -57,6 +59,7 @@ elif [[ "${QA_BROWSER_SUITE:-all}" == "a11y" ]]; then
 else
   node qa/browser-promo-codes.mjs
   node qa/browser-support-history.mjs
+  node qa/browser-support-mobile.mjs
   node qa/browser-financial-periods.mjs
   node qa/browser-cart-quantity-sync.mjs
   node qa/browser-cart-checkout-guard.mjs

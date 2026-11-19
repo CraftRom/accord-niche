@@ -5,7 +5,7 @@
 // background really behind it and flags functional text below 12 px.
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
-import { auditPage, auditText } from './a11y-audit.mjs'
+import { auditPage, auditText, auditAxe } from './a11y-audit.mjs'
 
 const BASE = process.env.WEBSITE_URL || 'http://127.0.0.1:5175'
 const output = process.env.QA_OUTPUT_DIR || 'qa/output'
@@ -71,6 +71,7 @@ try {
       if (screen.open) await screen.open(page)
       await page.waitForTimeout(300) // let entrance animations settle before measuring colour
       await auditPage(page, cdp, label, check, { errors })
+      await auditAxe(page, label, check)
       await auditText(page, label, check)
       if (width === 320 || width === 1280) await page.screenshot({ path: `${output}/website-a11y-${screen.name}-${width}.png` })
     }
