@@ -27,6 +27,7 @@ export function useCommerce() {
   const [account, setAccount] = useState({ signed_in:false, has_session:false })
   const [googleClient, setGoogleClient] = useState('')
   const [smsEnabled, setSmsEnabled] = useState(false)
+  const [telegramPhone, setTelegramPhone] = useState(false)
   const [ready, setReady] = useState(false)
   const csrfRef = useRef('')
   const sessionRequest=useRef(null)
@@ -35,7 +36,7 @@ export function useCommerce() {
     sessionRequest.current=customerFetch('/api/web/session',{credentials:'include',cache:'no-store'})
       .then(payload=>{
         csrfRef.current=payload.csrf;setAccount(payload.account)
-        setGoogleClient(payload.google_client_id || '');setSmsEnabled(Boolean(payload.phone_verification_enabled));setReady(true)
+        setGoogleClient(payload.google_client_id || '');setSmsEnabled(Boolean(payload.phone_sms_enabled));setTelegramPhone(Boolean(payload.phone_telegram_enabled));setReady(true)
         return payload
       }).finally(()=>{sessionRequest.current=null})
     return sessionRequest.current
@@ -56,5 +57,5 @@ export function useCommerce() {
       throw error
     }
   },[loadSession])
-  return {account, googleClient, smsEnabled, ready, refresh:loadSession, request}
+  return {account, googleClient, smsEnabled, telegramPhone, ready, refresh:loadSession, request}
 }

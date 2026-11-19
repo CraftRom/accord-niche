@@ -19,7 +19,7 @@ try {
     let data={}
     // The panel renders only the fields the session may edit (system groups);
     // a system administrator may edit every stored setting.
-    if(path==='/api/auth/session') data={role:'admin',name:'QA',csrf_token:'qa-csrf',editable_settings:[...Object.keys(settings),'twilio_auth_token']}
+    if(path==='/api/auth/session') data={role:'admin',name:'QA',csrf_token:'qa-csrf',editable_settings:[...Object.keys(settings),'sms_gateway_password']}
     else if(path==='/api/settings') {
       if(route.request().method()==='PUT'){const body=route.request().postDataJSON();updates.push(body);settings={...settings,...body}}
       data=settings
@@ -48,17 +48,17 @@ try {
   await match.click()
   check(await page.evaluate(()=>Boolean(document.activeElement?.closest('[id^="setting-"]'))), 'settings search result moves focus to the field')
   await page.getByRole('searchbox').fill('')
-  // Site integrations: Google and Twilio live in «Інтеграції»; extra fields stay hidden until asked for.
+  // Site integrations: Google and the SMS gateway live in «Інтеграції»; extra fields stay hidden until asked for.
   await page.getByRole('button',{name:'Інтеграції',exact:true}).click()
-  check(await page.getByRole('heading',{name:'SMS-підтвердження (Twilio Verify)',exact:true}).isVisible(), 'settings show the Twilio Verify section')
-  check(await page.locator('#setting-twilio_auth_token').getByText('Підключено через .env',{exact:false}).isVisible(), 'secret from .env is reported as connected, not shown')
+  check(await page.getByRole('heading',{name:'SMS-шлюз (Android)',exact:true}).isVisible(), 'settings show the SMS gateway section')
+  check(await page.locator('#setting-sms_gateway_password').getByText('Підключено через .env',{exact:false}).isVisible(), 'secret from .env is reported as connected, not shown')
   check(await page.locator('#setting-google_client_id input').getAttribute('placeholder')==='Діє значення з .env', 'empty field says the .env value applies')
   check(await page.locator('#setting-google_site_verification').count()===0, 'extra parameters are hidden by default')
   const more=page.getByRole('button',{name:/Показати додаткові параметри/}).first()
   await more.click()
   check(await page.locator('#setting-google_site_verification').isVisible() && await page.getByRole('button',{name:'Сховати додаткові параметри'}).first().getAttribute('aria-expanded')==='true', 'show button reveals extra parameters')
-  await page.getByRole('searchbox').fill('Verify Service')
-  check(await page.locator('.settings-search-match',{hasText:'Verify Service SID'}).count()===1, 'search finds the new Twilio fields')
+  await page.getByRole('searchbox').fill('Адреса API')
+  check(await page.locator('.settings-search-match',{hasText:'Адреса API'}).count()===1, 'search finds the SMS gateway fields')
   await page.getByRole('searchbox').fill('бездіяльності')
   check(await page.locator('#setting-dashboard_idle_minutes').isVisible(), 'search reaches hidden extra parameters')
   await page.getByRole('searchbox').fill('')

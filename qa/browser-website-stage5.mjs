@@ -27,7 +27,7 @@ function routes(page, { signedIn: startSignedIn = false, offline = false } = {})
     if (offline && path === '/api/public/storefront') return route.abort('internetdisconnected')
     const json = (data) => route.fulfill({ json: data })
     if (path === '/api/web/auth/logout') { signedIn = false; return json({}) }
-    if (path === '/api/web/session') return json({ account: signedIn ? { signed_in: true, has_session: true, account_key: 'k1', name: 'Олена', email: 'o@example.com', phone_verified: false, telegram_linked: false } : { signed_in: false, has_session: true, account_key: 'guest' }, csrf: 'a'.repeat(48), google_client_id: '', phone_verification_enabled: true })
+    if (path === '/api/web/session') return json({ account: signedIn ? { signed_in: true, has_session: true, account_key: 'k1', name: 'Олена', email: 'o@example.com', phone_verified: false, telegram_linked: false } : { signed_in: false, has_session: true, account_key: 'guest' }, csrf: 'a'.repeat(48), google_client_id: '', phone_verification_enabled: true, phone_sms_enabled: true, phone_telegram_enabled: true })
     if (path === '/api/public/site-config') return json({ phone: '+380501234567', email: 'shop@example.com', seller_name: 'ФОП Продавець', terms_url: 'https://accordniche.pp.ua/terms', instagram_url: 'https://instagram.com/accord' })
     if (path === '/api/public/storefront') return json({ hits: [aroma], recommended: [other], new_arrivals: [aroma], selection: [aroma, other], total: 2, available: 2, window_days: 90 })
     if (path === '/api/public/aromas') return json({ items: [aroma, other], total: 2, limit: 24, offset: 0, brands: ['BRAND'], categories: [] })

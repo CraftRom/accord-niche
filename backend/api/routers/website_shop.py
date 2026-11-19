@@ -1,6 +1,6 @@
 """ACCORD website checkout, Google identity and verified cross-channel history.
 
-Runs without Telegram and without Google/Twilio credentials (guest orders still work).
+Runs without Telegram, Google or an SMS gateway (guest orders still work).
 All payments, discounts, inventory reservations and CRM queueing reuse shop_service.
 The website shares users/orders/products with the bot and Mini App, not a copy.
 """
@@ -30,6 +30,7 @@ from shop.repo.base import Repository
 from shop.repo.factory import get_repo
 from shop.services import shop_service as svc
 from shop.services import novaposhta as np
+from shop.services import phone_verification
 from shop.services.shop_settings import get_shop_settings
 from shop.services.website_identity import _owned_user_ids, attach_guest_identity
 from shop.services.attribution import clean_attribution
@@ -176,7 +177,9 @@ async def session(request: Request, response: Response, repo: Repository = Depen
     shop = await get_shop_settings(repo)
     return {'csrf': csrf, 'account': _display(account),
             'google_client_id': shop.site('google_client_id'),
-            'phone_verification_enabled': shop.twilio_ready}
+            'phone_verification_enabled': shop.sms_ready or phone_verification.telegram_ready(),
+            'phone_sms_enabled': shop.sms_ready,
+            'phone_telegram_enabled': phone_verification.telegram_ready()}
 
 
 async def _google_identity(token: str, client_id: str):
@@ -543,27 +546,6 @@ def _phone(raw: str):
     return '+380' + body
 
 
-async def _twilio(repo, method: str, suffix: str, payload: dict):
-    # Keys come from the panel (encrypted in the DB) or, if empty there, .env.
-    shop = await get_shop_settings(repo)
-    service = shop.site('twilio_verify_service_sid')
-    sid = shop.site('twilio_account_sid')
-    secret = shop.site('twilio_auth_token')
-    if not service or not sid or not secret:
-        raise HTTPException(503, 'SMS-підтвердження ще не підключено')
-    if not service.startswith('VA') or len(service) != 34:
-        raise HTTPException(503, 'Невірні налаштування SMS-сервісу')
-    # Fixed host/path: no user-controlled URL or SSRF.
-    url = f'https://verify.twilio.com/v2/Services/{service}/{suffix}'
-    try:
-        async with httpx.AsyncClient(timeout=7, follow_redirects=False) as client:
-            r = await client.request(method, url, data=payload, auth=(sid, secret))
-            r.raise_for_status()
-            return r.json()
-    except (httpx.HTTPError, ValueError):
-        raise HTTPException(502, 'Сервіс SMS тимчасово недоступний') from None
-
-
 class PhoneIn(BaseModel):
     phone: str = Field(min_length=10, max_length=32)
 
@@ -578,7 +560,8 @@ async def phone_send(data: PhoneIn, request: Request, repo: Repository = Depends
     account = await _required_account(request, repo)
     if not account.google_sub:
         raise HTTPException(401, 'Увійдіть через Google для привʼязки номера')
-    if not (await get_shop_settings(repo)).twilio_ready:
+    shop = await get_shop_settings(repo)
+    if not shop.sms_ready:
         raise HTTPException(503, 'SMS-підтвердження ще не підключено')
     if not _secure(request) and urlsplit(_website_origin(request)).hostname not in {'localhost','127.0.0.1'}:
         raise HTTPException(403, 'Підтвердження номера доступне лише через HTTPS')
@@ -607,8 +590,14 @@ async def phone_send(data: PhoneIn, request: Request, repo: Repository = Depends
         if sent_at is not None and (sent_at if sent_at.tzinfo else sent_at.replace(tzinfo=timezone.utc)) > minute_ago:
             raise HTTPException(429, 'Повторіть запит через хвилину')
         raise HTTPException(429, 'Ліміт SMS на годину вичерпано')
-    await repo.s.commit()  # limiter persists even if provider fails
-    await _twilio(repo, 'POST', 'Verifications', {'To':phone,'Channel':'sms'})
+    await repo.s.commit()  # limiter persists even if the gateway fails
+    account = await repo.s.get(m.WebsiteAccount, account_id, populate_existing=True)
+    code = phone_verification.issue_code(account, phone)
+    await repo.s.commit()
+    try:
+        await phone_verification.send_sms(shop, phone, phone_verification.sms_text(shop.shop_name, code))
+    except phone_verification.GatewayError:
+        raise HTTPException(502, 'Не вдалося надіслати SMS. Спробуйте підтвердити номер через Telegram') from None
     return {'sent':True}
 
 
@@ -639,9 +628,16 @@ async def phone_check(data: PhoneCheckIn, request: Request, repo: Repository = D
     if not _secure(request) and urlsplit(_website_origin(request)).hostname not in {'localhost','127.0.0.1'}:
         raise HTTPException(403, 'Підтвердження номера доступне лише через HTTPS')
     phone = _phone(data.phone)
-    result = await _twilio(repo, 'POST','VerificationCheck',{'To':phone,'Code':data.code})
-    if result.get('status') != 'approved':
-        raise HTTPException(422, 'Невірний або прострочений код')
+    # Row lock: two parallel checks cannot both spend the same attempt.
+    account = await repo.s.scalar(select(m.WebsiteAccount).where(m.WebsiteAccount.id == account.id)
+                                  .with_for_update().execution_options(populate_existing=True))
+    result = phone_verification.check_code(account, phone, data.code)
+    if result != 'ok':
+        await repo.s.commit()  # a wrong attempt is counted even though we refuse
+        raise HTTPException(429 if result == 'attempts' else 422, {
+            'attempts': 'Забагато спроб. Надішліть новий код',
+            'expired': 'Код прострочений або вже використаний. Надішліть новий',
+        }.get(result, 'Невірний код'))
     if account.linked_telegram_user_id:
         tg = await repo.s.get(m.User, account.linked_telegram_user_id)
         if tg and tg.phone and tg.phone != phone:
@@ -651,6 +647,27 @@ async def phone_check(data: PhoneCheckIn, request: Request, repo: Repository = D
     await repo.s.commit()
     return {'phone_verified':True, 'telegram_linked': linked,
             'note': 'Історія Mini App підключена' if linked else 'Номер підтверджено. Для історії Mini App може знадобитися привʼязка Telegram.'}
+
+
+@router.post('/profile/phone/telegram')
+async def phone_via_telegram(request: Request, repo: Repository = Depends(get_repo)):
+    """Link to the bot that confirms the number with the user's own contact."""
+    _require_csrf(request)
+    account = await _required_account(request, repo)
+    if not account.google_sub:
+        raise HTTPException(401, 'Увійдіть через Google для привʼязки номера')
+    if not phone_verification.telegram_ready():
+        raise HTTPException(503, 'Telegram-бот ще не підключено')
+    # A new link replaces the previous one; issuing them in a burst is refused.
+    expires = await repo.s.scalar(select(m.WebsitePhoneConfirmation.expires_at)
+                                  .where(m.WebsitePhoneConfirmation.account_id == account.id))
+    expires = expires if expires is None or expires.tzinfo else expires.replace(tzinfo=timezone.utc)
+    if expires and (_now() - (expires - phone_verification.TELEGRAM_TTL)).total_seconds() < 5:
+        raise HTTPException(429, 'Зачекайте кілька секунд')
+    token, ttl = await phone_verification.create_telegram_request(repo.s, account)
+    await repo.s.commit()
+    from shop.links import chat_link
+    return {'url': chat_link(phone_verification.TELEGRAM_PREFIX + token), 'expires_in_seconds': ttl}
 
 
 class TelegramCodeIn(BaseModel):

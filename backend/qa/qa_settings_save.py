@@ -57,7 +57,7 @@ r.check(not (incoming - stored),
 # novaposhta_connected. Поіменний перелік потрібен саме для того, щоб
 # наступний секрет потрапляв сюди свідомо, а не за збігом у назві.
 WRITE_ONLY = {"novaposhta_api_key", "salesdrive_form_key",
-              "salesdrive_api_key", "salesdrive_webhook_token", "twilio_auth_token"}
+              "salesdrive_api_key", "salesdrive_webhook_token", "sms_gateway_password"}
 
 invisible = incoming - outgoing - WRITE_ONLY
 r.check(not invisible,
@@ -124,13 +124,13 @@ def sample(name: str, field):
         return "probe_bot"
     if name == "currency":
         return "PLN"
-    # Сайт: Google, Twilio, посилання — суворі формати й дозволені домени.
+    # Сайт: Google, SMS-шлюз, посилання — суворі формати й дозволені домени.
     site = {
         "google_client_id": "123456789012-probe1234567.apps.googleusercontent.com",
         "google_site_verification": "probe_verification_token_01",
-        "twilio_account_sid": "AC" + "0" * 32,
-        "twilio_auth_token": "f" * 32,
-        "twilio_verify_service_sid": "VA" + "0" * 32,
+        "sms_gateway_url": "https://api.sms-gate.app/3rdparty/v1/messages",
+        "sms_gateway_login": "PROBE",
+        "sms_gateway_password": "probe-password",
         "instagram_url": "https://instagram.com/probe",
         "tiktok_url": "https://www.tiktok.com/@probe",
         "miniapp_url": "https://t.me/probe_bot/app",

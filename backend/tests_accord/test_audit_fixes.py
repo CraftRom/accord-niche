@@ -205,8 +205,9 @@ async def test_parallel_sms_requests_send_once_and_count_once(db, monkeypatch):
     session.add(m.WebsiteAccount(id=1, user_id=1, google_sub='audit-sub'))
     await session.commit()
     monkeypatch.setattr(web, '_require_csrf', lambda r: None)
-    for name in ('ACCORD_TWILIO_ACCOUNT_SID', 'ACCORD_TWILIO_AUTH_TOKEN', 'ACCORD_TWILIO_VERIFY_SERVICE_SID'):
-        monkeypatch.setenv(name, 'configured')  # .env fallback of the panel setting
+    for name, value in (('ACCORD_SMS_GATEWAY_URL', 'https://gateway.example/messages'),
+                        ('ACCORD_SMS_GATEWAY_LOGIN', 'shop'), ('ACCORD_SMS_GATEWAY_PASSWORD', 'secret')):
+        monkeypatch.setenv(name, value)  # .env fallback of the panel setting
     sent, loaded, ready = [], 0, asyncio.Event()
 
     async def account(_request, repo):
@@ -218,12 +219,11 @@ async def test_parallel_sms_requests_send_once_and_count_once(db, monkeypatch):
         await ready.wait()  # both requests have read the same old row
         return row
 
-    async def twilio(*args):
+    async def gateway(*args):
         sent.append(args)
-        return {'status': 'pending'}
 
     monkeypatch.setattr(web, '_required_account', account)
-    monkeypatch.setattr(web, '_twilio', twilio)
+    monkeypatch.setattr(web.phone_verification, 'send_sms', gateway)
     async with factory() as a, factory() as b:
         results = await asyncio.gather(
             web.phone_send(web.PhoneIn(phone='+380671234567'), request(), SqlRepository(a)),
@@ -244,17 +244,18 @@ async def test_sms_hourly_limit_is_enforced_atomically(db, monkeypatch):
                                  phone_window_at=old, phone_window_count=5))
     await session.commit()
     monkeypatch.setattr(web, '_require_csrf', lambda r: None)
-    for name in ('ACCORD_TWILIO_ACCOUNT_SID', 'ACCORD_TWILIO_AUTH_TOKEN', 'ACCORD_TWILIO_VERIFY_SERVICE_SID'):
-        monkeypatch.setenv(name, 'configured')  # .env fallback of the panel setting
+    for name, value in (('ACCORD_SMS_GATEWAY_URL', 'https://gateway.example/messages'),
+                        ('ACCORD_SMS_GATEWAY_LOGIN', 'shop'), ('ACCORD_SMS_GATEWAY_PASSWORD', 'secret')):
+        monkeypatch.setenv(name, value)  # .env fallback of the panel setting
 
     async def account(_request, repo):
         return await repo.s.get(m.WebsiteAccount, 1)
 
-    async def twilio(*args):
-        raise AssertionError('limit must stop the provider call')
+    async def gateway(*args):
+        raise AssertionError('limit must stop the gateway call')
 
     monkeypatch.setattr(web, '_required_account', account)
-    monkeypatch.setattr(web, '_twilio', twilio)
+    monkeypatch.setattr(web.phone_verification, 'send_sms', gateway)
     async with factory() as s:
         with pytest.raises(HTTPException) as error:
             await web.phone_send(web.PhoneIn(phone='+380671234567'), request(), SqlRepository(s))

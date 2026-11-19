@@ -30,7 +30,7 @@ SECRET_FIELDS = (
     "salesdrive_form_key",
     "salesdrive_api_key",
     "salesdrive_webhook_token",
-    "twilio_auth_token",
+    "sms_gateway_password",
 )
 
 # Параметри сайту, які раніше жили лише в .env. Порожнє значення в панелі
@@ -40,9 +40,9 @@ SECRET_FIELDS = (
 ENV_FALLBACK = {
     "google_client_id": "ACCORD_GOOGLE_CLIENT_ID",
     "google_site_verification": "ACCORD_GOOGLE_SITE_VERIFICATION",
-    "twilio_account_sid": "ACCORD_TWILIO_ACCOUNT_SID",
-    "twilio_auth_token": "ACCORD_TWILIO_AUTH_TOKEN",
-    "twilio_verify_service_sid": "ACCORD_TWILIO_VERIFY_SERVICE_SID",
+    "sms_gateway_url": "ACCORD_SMS_GATEWAY_URL",
+    "sms_gateway_login": "ACCORD_SMS_GATEWAY_LOGIN",
+    "sms_gateway_password": "ACCORD_SMS_GATEWAY_PASSWORD",
     "instagram_url": "ACCORD_INSTAGRAM_URL",
     "tiktok_url": "ACCORD_TIKTOK_URL",
     "miniapp_url": "ACCORD_MINIAPP_URL",
@@ -157,9 +157,11 @@ class ShopSettings:
     # Поля з дефолтами: порожньо = діє змінна з ENV_FALLBACK.
     google_client_id: str = ""
     google_site_verification: str = ""
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    twilio_verify_service_sid: str = ""
+    # SMS через власний Android-телефон (open-source SMS Gateway for Android):
+    # коди генерує й перевіряє сам сервер, шлюз лише доставляє текст.
+    sms_gateway_url: str = ""
+    sms_gateway_login: str = ""
+    sms_gateway_password: str = ""
     instagram_url: str = ""
     tiktok_url: str = ""
     miniapp_url: str = ""
@@ -183,14 +185,14 @@ class ShopSettings:
         return sorted(name for name in ENV_FALLBACK if self.site_source(name) == "env")
 
     @property
-    def twilio_auth_connected(self) -> bool:
-        return bool(self.site("twilio_auth_token"))
+    def sms_gateway_connected(self) -> bool:
+        return bool(self.site("sms_gateway_password"))
 
     @property
-    def twilio_ready(self) -> bool:
-        """Усі три параметри Twilio Verify задані (з панелі або оточення)."""
+    def sms_ready(self) -> bool:
+        """Адреса, логін і пароль SMS-шлюзу задані (з панелі або оточення)."""
         return all(self.site(name) for name in
-                   ("twilio_account_sid", "twilio_auth_token", "twilio_verify_service_sid"))
+                   ("sms_gateway_url", "sms_gateway_login", "sms_gateway_password"))
 
     @classmethod
     def from_env(cls) -> ShopSettings:

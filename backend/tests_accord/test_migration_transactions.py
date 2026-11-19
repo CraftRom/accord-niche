@@ -325,3 +325,30 @@ def test_brands_migration_moves_products_and_category_promos_on_real_postgres(po
     # category 3 has no products -> switched off; empty/NULL lists untouched.
     assert 'promos = "1:[1, 2]:true,2:[]:false,3:[]:true,4:[]:true"' in out, out
     assert 'e2b7c4a91d05' in out
+
+
+def test_free_phone_verification_migration_drops_twilio_secrets(postgres):
+    postgres("""
+        CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY);
+        INSERT INTO alembic_version VALUES ('e2b7c4a91d05');
+        CREATE TABLE settings (key VARCHAR(64) PRIMARY KEY, value TEXT);
+        INSERT INTO settings VALUES ('twilio_auth_token','enc:v1:secret'),('twilio_account_sid','AC1'),
+            ('twilio_verify_service_sid','VA1'),('shop_name','ACCORD');
+        CREATE TABLE website_accounts (id INTEGER PRIMARY KEY, verified_phone VARCHAR(32));
+        INSERT INTO website_accounts VALUES (1, '+380671234567');
+    """)
+    postgres(upgrade_sql('e2b7c4a91d05:d4a7e2c91f60'))
+    result = postgres("""
+        SELECT string_agg(key, ',' ORDER BY key) AS keys FROM settings;
+        SELECT phone_code_attempts, verified_phone FROM website_accounts;
+        INSERT INTO website_phone_confirmations (account_id, token_hash, expires_at) VALUES (1, 'h', now());
+        SELECT count(*) AS confirmations FROM website_phone_confirmations;
+        SELECT version_num FROM alembic_version;
+    """)
+    out = result.stdout
+    assert 'keys = "shop_name"' in out and 'twilio' not in out, out
+    assert 'phone_code_attempts = "0"' in out and 'verified_phone = "+380671234567"' in out, out
+    assert 'confirmations = "1"' in out and 'd4a7e2c91f60' in out
+    duplicate = postgres("INSERT INTO website_phone_confirmations (account_id, token_hash, expires_at) VALUES (1, 'h2', now());",
+                         expect_error=True)
+    assert 'duplicate key' in duplicate.stderr, 'one live confirmation per account'

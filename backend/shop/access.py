@@ -19,8 +19,8 @@ INFRA_FIELDS = frozenset({
     'salesdrive_api_key', 'salesdrive_webhook_token',
     # Site sign-in, SMS and Mini App link: keys and identities of the shop
     # itself, so only the system administrator changes them.
-    'google_client_id', 'google_site_verification', 'twilio_account_sid',
-    'twilio_auth_token', 'twilio_verify_service_sid', 'miniapp_url',
+    'google_client_id', 'google_site_verification', 'sms_gateway_url',
+    'sms_gateway_login', 'sms_gateway_password', 'miniapp_url',
     'dashboard_idle_minutes',
 })
 # Explicit allowlist: future settings default to system-administrator access.

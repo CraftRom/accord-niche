@@ -161,18 +161,21 @@ async def test_only_expired_tokens_are_pruned_in_batches(db):
     session.add(m.WebsiteSession(account_id=1, token_hash='live', expires_at=now + timedelta(days=1)))
     session.add(m.WebsiteTelegramLink(tg_user_id=1, code_hash='oldcode', expires_at=now - timedelta(minutes=1)))
     session.add(m.WebsiteTelegramLink(tg_user_id=1, code_hash='livecode', expires_at=now + timedelta(minutes=5)))
+    session.add(m.WebsitePhoneConfirmation(account_id=1, token_hash='oldphone', expires_at=now - timedelta(minutes=1)))
     for digest, delta in (('dash-old', -1), ('dash-live', 1)):
         session.add(m.DashboardSession(id=digest, operator_id=0, login='root', csrf_token='c', auth_version=0,
                                        created_at=now, last_seen_at=now, expires_at=now + timedelta(hours=delta)))
     await session.commit()
     removed = await repo.prune_expired_tokens(now, batch=2)
-    assert removed == {'website_sessions': 5, 'website_telegram_links': 1, 'dashboard_sessions': 1}
+    assert removed == {'website_sessions': 5, 'website_telegram_links': 1,
+                       'website_phone_confirmations': 1, 'dashboard_sessions': 1}
     from sqlalchemy import func, select
     assert await session.scalar(select(func.count()).select_from(m.WebsiteSession)) == 1
     assert await session.scalar(select(func.count()).select_from(m.WebsiteAccount)) == 1
     assert await session.scalar(select(func.count()).select_from(m.User)) == 1
     assert await repo.get_dashboard_session('dash-live')
-    assert (await repo.prune_expired_tokens(now)) == {'website_sessions': 0, 'website_telegram_links': 0, 'dashboard_sessions': 0}
+    assert (await repo.prune_expired_tokens(now)) == {'website_sessions': 0, 'website_telegram_links': 0,
+                                                     'website_phone_confirmations': 0, 'dashboard_sessions': 0}
 
 
 # ------------------------------------------------------- A13 release id
