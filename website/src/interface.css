@@ -97,3 +97,21 @@ a.section-link,a.product-link{display:block}
 .variant-buttons button.selected small{color:inherit}
 .detail-stock{margin-top:6px;color:var(--text-subtle);font-size:var(--font-small)}
 .detail-stock.in-stock{color:#3E5A44}
+
+/* W-09: highlighted suggestion follows the keyboard. */
+.suggestions button.active,.suggestions button[aria-selected="true"]{background:var(--surface-warm);outline:2px solid var(--focus);outline-offset:-2px}
+/* W-10: the documents the consent refers to, folded under it. */
+.consent-docs{display:grid;gap:6px;margin:10px 0 0 28px}
+.consent-docs summary{cursor:pointer;color:var(--text-accent);font-size:13px;min-height:28px;display:flex;align-items:center}
+.consent-docs details p{margin:4px 0 8px;color:var(--text-secondary);font-size:13px;line-height:1.6}
+.consent-links{display:flex;flex-wrap:wrap;gap:16px}
+.consent-links a{color:var(--text-accent);text-decoration:underline;text-underline-offset:3px;font-size:13px;min-height:28px;display:inline-flex;align-items:center}
+
+/* W-08: checkout summary. Wide screens keep the full list on the right; on a
+   phone it sits above the form as one line (items · amount) that unfolds. */
+.summary-toggle{display:none}
+@media(max-width:930px){
+  .summary-toggle{display:flex;justify-content:space-between;gap:12px;width:100%;min-height:var(--target-min);margin:-6px 0 12px;padding:10px 0;border:0;border-bottom:1px solid #e4dfd7;background:none;color:var(--text-primary);font-size:14px;text-align:left}
+  .summary-toggle>span:last-child{color:var(--text-accent);text-decoration:underline;text-underline-offset:3px}
+  .summary-lines:not(.is-open){display:none}
+}

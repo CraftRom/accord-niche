@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { BUYER_INFO } from './info'
 import {phoneNumber,checkoutErrors,readCheckoutAttempt,rememberCheckoutAttempt,clearCheckoutAttempt,checkoutCampaign} from './checkout'
 
 const money = (amount) => new Intl.NumberFormat('uk-UA', { maximumFractionDigits:2 }).format(Number(amount || 0))
@@ -61,12 +62,46 @@ export function useCommerce() {
   return {account, googleClient, smsEnabled, ready, refresh:loadSession, request}
 }
 
-function Field({name, label, value, onChange, required=true, type='text', placeholder='', autoComplete, maxLength,error}) {
+function Field({name, label, value, onChange, required=true, type='text', placeholder='', autoComplete, maxLength,error,inputProps={}}) {
   const id='accord-'+name
-  return <label className="shop-field" htmlFor={id}><span>{label}{required ? ' *' : ''}</span><input id={id} name={name} type={type} value={value} required={required}
+  return <label className="shop-field" htmlFor={id}><span>{label}{required ? ' *' : ''}</span><input id={id} name={name} type={type} value={value} required={required} {...inputProps}
     aria-invalid={error?true:undefined} aria-describedby={error?id+'-error':undefined}
     maxLength={maxLength} placeholder={placeholder} autoComplete={autoComplete} onChange={e=>onChange(e.target.value)} />
     {error && <small className="field-error" id={id+'-error'}>{error}</small>}</label>
+}
+
+/**
+ * W-09: Nova Poshta suggestions as a combobox. Arrow keys move through the
+ * list, Enter picks the highlighted entry (without submitting the order),
+ * Escape closes the list and keeps what was typed. Pointer users click as
+ * before; options stay buttons so nothing else changes for them.
+ */
+function useSuggestions(name, options, pick, close) {
+  const [active, setActive] = useState(-1)
+  const list = 'accord-' + name + '-list'
+  // A new search result resets the highlight; re-rendering the same list does not.
+  const key = options.map(item => item.ref).join('|')
+  useEffect(() => setActive(-1), [key])
+  const onKeyDown = event => {
+    if (!options.length) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      setActive(current => (current + step + options.length) % options.length)
+    } else if (event.key === 'Enter' && active >= 0) {
+      event.preventDefault()
+      pick(options[active])
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      close()
+    }
+  }
+  const inputProps = {role:'combobox', 'aria-autocomplete':'list', 'aria-expanded':options.length > 0, 'aria-controls':list,
+    'aria-activedescendant':active >= 0 ? list + '-' + active : undefined, onKeyDown}
+  const listbox = label => options.length > 0 && <div className="suggestions" id={list} role="listbox" aria-label={label}>{options.map((item, index) =>
+    <button type="button" role="option" tabIndex={-1} id={list + '-' + index} key={item.ref} aria-selected={index === active} className={index === active ? 'active' : undefined}
+      onMouseDown={event => event.preventDefault()} onClick={() => pick(item)}>{item.label}</button>)}</div>
+  return { inputProps, listbox }
 }
 
 function GoogleLogin({ shop }) {
@@ -240,7 +275,7 @@ function checkoutForm(payload={}) {
   return result
 }
 
-export function CheckoutPage({shop,cart,products,go,complete,cartRequest,change}) {
+export function CheckoutPage({site={},shop,cart,products,go,complete,cartRequest,change}) {
   const [attempt,setAttempt]=useState(readCheckoutAttempt)
   const [form,setForm]=useState(()=>checkoutForm(attempt?.payload))
   const [quote,setQuote]=useState(null)
@@ -252,6 +287,7 @@ export function CheckoutPage({shop,cart,products,go,complete,cartRequest,change}
   const [np,setNp]=useState({courier_enabled:false,novaposhta_enabled:false})
   const [npLoaded,setNpLoaded]=useState(false)
   const [deliveryNote,setDeliveryNote]=useState('')
+  const [summaryOpen,setSummaryOpen]=useState(false)
   const [cityOptions,setCityOptions]=useState([])
   const [warehouseOptions,setWarehouseOptions]=useState([])
   const [directoryBusy,setDirectoryBusy]=useState('')
@@ -384,6 +420,10 @@ export function CheckoutPage({shop,cart,products,go,complete,cartRequest,change}
       }
     }finally{busy.current=false;if(alive.current)setSubmitting(false)}
   }
+  const pickCity=item=>{update('city',item.label);update('address','');setCityRef(item.ref);setSettlementRef(item.settlement_ref || '');setWarehouseRef('');setCityOptions([]);document.getElementById('accord-address')?.focus()}
+  const pickWarehouse=item=>{update('address',item.label);setWarehouseRef(item.ref);setWarehouseOptions([])}
+  const citySuggest=useSuggestions('city',cityOptions.slice(0,12),pickCity,()=>setCityOptions([]))
+  const warehouseSuggest=useSuggestions('address',warehouseOptions.slice(0,15),pickWarehouse,()=>setWarehouseOptions([]))
   const quoteLines=new Map((currentQuote?.items || []).map(line=>[line.product_id,line]))
   return <main className="shell commerce-page"><button className="back-link" onClick={()=>go('/catalog')}>← Повернутися в каталог</button><p className="eyebrow">ОФОРМЛЕННЯ ПОКУПКИ</p><h1>Ваше замовлення</h1>
     {attempt && <section className="checkout-recovery" role="status"><h2>Перевірка надісланого замовлення</h2><p>Повторне підтвердження використовує той самий запит і не створює дубль. Дані зафіксовані до отримання результату.</p><button type="button" className="btn outline" disabled={checking || submitting} onClick={recover}>{checking?'ПЕРЕВІРЯЄМО…':'ПЕРЕВІРИТИ РЕЗУЛЬТАТ'}</button></section>}
@@ -398,21 +438,26 @@ export function CheckoutPage({shop,cart,products,go,complete,cartRequest,change}
       </div><p className="shop-hint">Вхід у Google не потрібний для покупки. Ми зв’яжемося за цим номером щодо замовлення.</p></section>
       <section className="commerce-panel"><span className="step-label">02 / ДОСТАВКА</span><h2>Доставка Новою поштою</h2>
         {np.courier_enabled && <div className="payment-methods">{[['warehouse','Відділення / поштомат'],['courier','Кур’єр']].map(([method,label])=><label key={method}><input name="delivery-method" type="radio" checked={form.delivery_method===method} onChange={()=>{update('delivery_method',method);update('address','');setWarehouseRef('');setWarehouseOptions([])}}/>{label}</label>)}</div>}
-        <Field name="city" label="Місто / населений пункт" maxLength={128} autoComplete="address-level2" value={form.city} onChange={value=>{update('city',value);update('address','');setCityRef('');setSettlementRef('');setWarehouseRef('')}} placeholder="Почніть вводити місто" error={errors.city}/>
-        {cityOptions.length>0 && <div className="suggestions" aria-label="Знайдені населені пункти">{cityOptions.slice(0,12).map(item=><button type="button" key={item.ref} onClick={()=>{update('city',item.label);update('address','');setCityRef(item.ref);setSettlementRef(item.settlement_ref || '');setWarehouseRef('');setCityOptions([]);document.getElementById('accord-address')?.focus()}}>{item.label}</button>)}</div>}
-        <Field name="address" label={form.delivery_method==='courier'?'Адреса доставки':'Номер або адреса відділення / поштомата'} maxLength={255} autoComplete={form.delivery_method==='courier'?'street-address':'off'} value={form.address} onChange={value=>{update('address',value);setWarehouseRef('')}} placeholder={form.delivery_method==='courier'?'Вулиця, будинок, квартира':'Відділення №… або поштомат №…'} error={errors.address}/>
-        {warehouseOptions.length>0 && <div className="suggestions" aria-label="Знайдені відділення">{warehouseOptions.slice(0,15).map(item=><button type="button" key={item.ref} onClick={()=>{update('address',item.label);setWarehouseRef(item.ref);setWarehouseOptions([])}}>{item.label}</button>)}</div>}
+        <Field name="city" label="Місто / населений пункт" maxLength={128} autoComplete="address-level2" value={form.city} onChange={value=>{update('city',value);update('address','');setCityRef('');setSettlementRef('');setWarehouseRef('')}} placeholder="Почніть вводити місто" error={errors.city} inputProps={np.novaposhta_enabled?citySuggest.inputProps:{}}/>
+        {citySuggest.listbox('Знайдені населені пункти')}
+        <Field name="address" label={form.delivery_method==='courier'?'Адреса доставки':'Номер або адреса відділення / поштомата'} maxLength={255} autoComplete={form.delivery_method==='courier'?'street-address':'off'} value={form.address} onChange={value=>{update('address',value);setWarehouseRef('')}} placeholder={form.delivery_method==='courier'?'Вулиця, будинок, квартира':'Відділення №… або поштомат №…'} error={errors.address} inputProps={np.novaposhta_enabled&&form.delivery_method==='warehouse'?warehouseSuggest.inputProps:{}}/>
+        {warehouseSuggest.listbox('Знайдені відділення')}
         {directoryBusy && <p className="shop-hint" role="status">Шукаємо {directoryBusy==='city'?'населений пункт':'відділення'}…</p>}
         <p className="shop-hint" role="status">{deliveryNote || 'Якщо потрібного варіанта немає в довіднику, введіть населений пункт і повну адресу вручну.'}</p>
       </section>
       <section className="commerce-panel"><span className="step-label">03 / ОПЛАТА</span><h2>Спосіб оплати</h2><div className="payment-methods"><label><input name="payment" type="radio" checked={form.payment_method==='cod'} onChange={()=>update('payment_method','cod')}/>Оплата при отриманні</label><label><input name="payment" type="radio" checked={form.payment_method==='card'} onChange={()=>update('payment_method','card')}/>Переказ за реквізитами після підтвердження менеджером</label></div><p className="shop-hint">Реквізити надає менеджер після підтвердження замовлення.</p><label className="shop-field"><span>Коментар до замовлення</span><textarea maxLength={500} rows={3} value={form.comment} onChange={event=>update('comment',event.target.value)} placeholder="Необов’язково"/></label></section>
       <section className="commerce-panel"><span className="step-label">04 / ПІДТВЕРДЖЕННЯ</span><h2>Перевірка замовлення</h2><div className="field-grid"><Field name="promo_code" label="Промокод" required={false} maxLength={64} value={form.promo_code} onChange={value=>update('promo_code',value)} error={errors.promo_code}/><div className="preview-button"><button type="button" className="btn outline" disabled={quoting || blocked} onClick={preview}>{quoting?'ПЕРЕРАХОВУЄМО…':'ПЕРЕРАХУВАТИ'}</button></div></div>
         {shop.account.has_session && Number(currentQuote?.bonus_available)>0 && <label className="checkbox-line"><input type="checkbox" checked={form.use_bonus} onChange={event=>update('use_bonus',event.target.checked)}/>Використати бонуси: до {money(currentQuote.bonus_available)} грн</label>}
-        <label className="checkbox-line"><input name="terms_accepted" type="checkbox" checked={form.terms_accepted} required aria-invalid={errors.terms_accepted?true:undefined} aria-describedby={errors.terms_accepted?'checkout-terms-error':undefined} onChange={event=>update('terms_accepted',event.target.checked)}/>Погоджуюся з умовами покупки, доставки та обробкою персональних даних для оформлення й доставки замовлення</label>{errors.terms_accepted && <p className="field-error" id="checkout-terms-error">{errors.terms_accepted}</p>}
+        <label className="checkbox-line"><input name="terms_accepted" type="checkbox" checked={form.terms_accepted} required aria-invalid={errors.terms_accepted?true:undefined} aria-describedby={errors.terms_accepted?'checkout-terms-error':undefined} onChange={event=>update('terms_accepted',event.target.checked)}/>Погоджуюся з умовами покупки, доставки та обробкою персональних даних для оформлення й доставки замовлення</label>
+        {/* W-10: what the consent refers to, readable without leaving the form. */}
+        <div className="consent-docs">
+          {['delivery','returns'].map(key=><details key={key}><summary>{BUYER_INFO[key][0]}</summary><p>{BUYER_INFO[key][1]}</p></details>)}
+          {(site.terms_url || site.privacy_url) && <p className="consent-links">{site.terms_url && <a href={site.terms_url} target="_blank" rel="noopener noreferrer">Умови покупки</a>}{site.privacy_url && <a href={site.privacy_url} target="_blank" rel="noopener noreferrer">Політика конфіденційності</a>}</p>}
+        </div>{errors.terms_accepted && <p className="field-error" id="checkout-terms-error">{errors.terms_accepted}</p>}
       </section></fieldset>
       {error && <div className="shop-error" role="alert" tabIndex={-1} ref={alert}>{error}</div>}
       <button type="submit" className="btn primary place-order" disabled={submitting || quoting || checking || (!attempt&&blocked)}>{submitting?'ОБРОБЛЯЄМО…':attempt?'ПОВТОРИТИ ПІДТВЕРДЖЕННЯ':currentQuote?'ПІДТВЕРДИТИ ЗАМОВЛЕННЯ':'ПЕРЕВІРИТИ СУМУ'}</button>
-    </form><aside className="order-summary"><h2>Ваші аромати</h2>{shownLines.map(({product,qty})=><div className="summary-line" key={product.id}><span>{product.brand && product.brand+' · '}{product.name}<small>{product.volume_ml ? product.volume_ml+' мл · ':''}{qty} шт.</small>{!attempt&&change && <span className="qty-control"><button type="button" aria-label={'Зменшити кількість '+product.name} onClick={()=>change(product.id,qty-1)}>−</button><span>{qty}</span><button type="button" aria-label={'Збільшити кількість '+product.name} disabled={qty>=product.stock || qty>=99} onClick={()=>change(product.id,qty+1)}>+</button><button type="button" onClick={()=>change(product.id,0)}>Прибрати</button></span>}</span><strong>{money(quoteLines.get(product.id)?.line_total ?? Number(product.price)*qty)} грн</strong></div>)}
+    </form><aside className="order-summary"><h2>Ваші аромати</h2>{/* W-08: on a phone the list folds into one line above the form. */}<button type="button" className="summary-toggle" aria-expanded={summaryOpen} aria-controls="checkout-summary-lines" onClick={()=>setSummaryOpen(open=>!open)}><span>{shownLines.reduce((sum,line)=>sum+line.qty,0)} шт. · {money(attempt?.total ?? currentQuote?.total ?? subtotal)} грн</span><span>{summaryOpen?'Сховати товари':'Показати товари'}</span></button><div id="checkout-summary-lines" className={'summary-lines'+(summaryOpen?' is-open':'')}>{shownLines.map(({product,qty})=><div className="summary-line" key={product.id}><span>{product.brand && product.brand+' · '}{product.name}<small>{product.volume_ml ? product.volume_ml+' мл · ':''}{qty} шт.</small>{!attempt&&change && <span className="qty-control"><button type="button" aria-label={'Зменшити кількість '+product.name} onClick={()=>change(product.id,qty-1)}>−</button><span>{qty}</span><button type="button" aria-label={'Збільшити кількість '+product.name} disabled={qty>=product.stock || qty>=99} onClick={()=>change(product.id,qty+1)}>+</button><button type="button" onClick={()=>change(product.id,0)}>Прибрати</button></span>}</span><strong>{money(quoteLines.get(product.id)?.line_total ?? Number(product.price)*qty)} грн</strong></div>)}</div>
       <div className="summary-total"><span>Товари</span><strong>{money(currentQuote?.subtotal ?? subtotal)} грн</strong></div>{currentQuote && <><div className="summary-total"><span>Знижка</span><strong>−{money(currentQuote.discount)} грн</strong></div><div className="summary-total"><span>Бонуси</span><strong>−{money(currentQuote.bonus_used)} грн</strong></div></>}
       <div className="summary-total final"><span>{attempt||currentQuote?'За товари':'Попередня сума'}</span><strong>{money(attempt?.total ?? currentQuote?.total ?? subtotal)} грн</strong></div><p>Доставка та послуга післяплати оплачуються окремо за тарифами перевізника. Сума за товари розраховується сервером.</p>{quoting && <p role="status">Оновлюємо підсумок…</p>}
     </aside></div>}

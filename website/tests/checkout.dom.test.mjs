@@ -10,7 +10,7 @@ const product={id:42,name:'Реальний аромат 5 мл',brand:'Брен
 const button=(document,text)=>[...document.querySelectorAll('button')].find(node=>node.textContent.trim()===text)
 async function waitFor(check){const until=Date.now()+5000;while(Date.now()<until){if(check())return;await new Promise(resolve=>setTimeout(resolve,15))}assert.ok(check(),'Checkout DOM did not become ready')}
 function input(window,node,value){Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new window.Event('input',{bubbles:true}))}
-function mount({mode='normal',path='/checkout',pending=null,defaults=null,cityRequests=null}={}){
+function mount({mode='normal',path='/checkout',pending=null,defaults=null,cityRequests=null,site={}}={}){
   const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',{url:'https://accordniche.pp.ua'+path,runScripts:'outside-only',pretendToBeVisual:true})
   const window=dom.window,calls=[]
   let price=100,cartFailure=false,accepted=pending?99:null,posts=0
@@ -21,7 +21,7 @@ function mount({mode='normal',path='/checkout',pending=null,defaults=null,cityRe
     const url=new URL(input,window.location.href),method=options.method || 'GET'
     calls.push({url,method,options})
     if(url.pathname==='/api/web/session')return response({account:{has_session:true,signed_in:false,account_key:'guest-one'},csrf:'a'.repeat(48)})
-    if(url.pathname==='/api/public/site-config')return response({})
+    if(url.pathname==='/api/public/site-config')return response(site)
     if(url.pathname==='/api/public/products')return cartFailure?response({},503):response([{...product,price:String(price)}])
     if(url.pathname==='/api/web/delivery/config')return response({courier_enabled:true,novaposhta_enabled:Boolean(cityRequests)})
     if(url.pathname==='/api/web/checkout/defaults')return defaults?defaults:response({})
@@ -202,5 +202,68 @@ test('opening success URL directly never claims an order was created',async()=>{
     await waitFor(()=>app.document.querySelector('h1'))
     assert.equal(app.document.querySelector('h1').textContent,'Перевірка замовлення')
     assert.doesNotMatch(app.document.body.textContent,/Замовлення №.*прийнято|Дякуємо за замовлення/)
+  }finally{app.close()}
+})
+
+test('Nova Poshta suggestions are a keyboard combobox; Enter picks without submitting (W-09)',async()=>{
+  const app=mount({cityRequests:()=>response({items:[{ref:'kyiv',label:'Київ'},{ref:'lviv',label:'Львів'}]})})
+  try{
+    await waitFor(()=>app.document.getElementById('accord-city'))
+    const city=app.document.getElementById('accord-city')
+    input(app.window,city,'Ки')
+    await waitFor(()=>city.getAttribute('aria-expanded')==='true')
+    assert.equal(city.getAttribute('role'),'combobox')
+    const list=app.document.getElementById(city.getAttribute('aria-controls'))
+    assert.equal(list.getAttribute('role'),'listbox')
+    assert.deepEqual([...list.querySelectorAll('[role="option"]')].map(o=>o.textContent),['Київ','Львів'])
+    const key=name=>{const event=new app.window.KeyboardEvent('keydown',{key:name,bubbles:true,cancelable:true});city.dispatchEvent(event);return event}
+    key('ArrowDown');key('ArrowDown')
+    await waitFor(()=>city.getAttribute('aria-activedescendant')===list.id+'-1')
+    assert.equal(app.document.getElementById(city.getAttribute('aria-activedescendant')).getAttribute('aria-selected'),'true')
+    const enter=key('Enter')
+    assert.equal(enter.defaultPrevented,true,'Enter picks the suggestion instead of submitting the order')
+    await waitFor(()=>city.value==='Львів')
+    assert.equal(city.getAttribute('aria-expanded'),'false')
+    assert.equal(app.calls.filter(call=>call.url.pathname==='/api/web/checkout').length,0)
+    input(app.window,city,'Ки')
+    await waitFor(()=>city.getAttribute('aria-expanded')==='true')
+    key('Escape')
+    await waitFor(()=>city.getAttribute('aria-expanded')==='false')
+    assert.equal(city.value,'Ки','Escape closes the list and keeps what was typed')
+  }finally{app.close()}
+})
+
+test('the consent shows the delivery and return terms in place; legal links only when configured (W-10)',async()=>{
+  const app=mount()
+  try{
+    await waitFor(()=>app.document.querySelector('.consent-docs'))
+    const docs=app.document.querySelector('.consent-docs')
+    assert.deepEqual([...docs.querySelectorAll('summary')].map(s=>s.textContent),['Доставка й оплата','Повернення та скасування'])
+    assert.equal(docs.querySelector('.consent-links'),null,'no invented legal documents when none are configured')
+  }finally{app.close()}
+})
+
+test('configured terms and privacy open in a new tab so the form is kept (W-10)',async()=>{
+  const app=mount({site:{terms_url:'https://accordniche.pp.ua/docs/terms.pdf',privacy_url:'https://accordniche.pp.ua/docs/privacy.pdf'}})
+  try{
+    await waitFor(()=>app.document.querySelector('.consent-links'))
+    const links=[...app.document.querySelectorAll('.consent-links a')]
+    assert.deepEqual(links.map(a=>[a.textContent,a.getAttribute('href'),a.target]),[['Умови покупки','https://accordniche.pp.ua/docs/terms.pdf','_blank'],['Політика конфіденційності','https://accordniche.pp.ua/docs/privacy.pdf','_blank']])
+    assert.ok(links.every(a=>a.rel.includes('noopener')))
+  }finally{app.close()}
+})
+
+test('the order summary folds into one line with a labelled toggle (W-08)',async()=>{
+  const app=mount()
+  try{
+    await waitFor(()=>app.document.querySelector('.summary-toggle'))
+    const toggle=app.document.querySelector('.summary-toggle')
+    assert.equal(toggle.getAttribute('aria-expanded'),'false')
+    assert.equal(toggle.getAttribute('aria-controls'),'checkout-summary-lines')
+    assert.match(toggle.textContent,/1 шт\. · 100 грн/)
+    toggle.click()
+    await waitFor(()=>toggle.getAttribute('aria-expanded')==='true')
+    assert.ok(app.document.getElementById('checkout-summary-lines').classList.contains('is-open'))
+    assert.match(toggle.textContent,/Сховати товари/)
   }finally{app.close()}
 })
