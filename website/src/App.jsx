@@ -6,6 +6,7 @@ import {recordVisit,rememberCampaign} from './checkout'
 import {useDialog} from './useDialog'
 import { useCommerce, CheckoutPage, CheckoutSuccess, ProfilePage } from './commerce'
 import { BUYER_INFO } from './info'
+import { startReveal, withViewTransition } from './motion'
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
 const fmt = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 })
@@ -15,15 +16,19 @@ function useRoute() {
   const read = () => (location.pathname.slice(BASE.length) || '/') + location.search
   const [route, setRoute] = useState(read)
   useEffect(() => {
-    const pop = () => setRoute(read())
+    const pop = () => withViewTransition(() => setRoute(read()))
     window.addEventListener('popstate', pop)
     return () => window.removeEventListener('popstate', pop)
   }, [])
   function go(to, options = {}) {
     const next = BASE + to
     if (location.pathname + location.search !== next) history[options.replace ? 'replaceState' : 'pushState'](null, '', next)
-    setRoute(to)
-    if (options.scroll !== false) window.scrollTo({top: 0, behavior: 'instant'})
+    // A new page cross-fades; switching a volume on the same page does not.
+    const apply = () => {
+      setRoute(to)
+      if (options.scroll !== false) window.scrollTo({top: 0, behavior: 'instant'})
+    }
+    if (options.scroll === false) apply(); else withViewTransition(apply)
   }
   return [route, go]
 }
@@ -78,7 +83,7 @@ function Header({go, onCart, count, account, route}) {
     <nav className={'header-nav' + (menu ? ' open' : '')} id="store-navigation" aria-label="Головна навігація">{nav.map(([path,label]) => <SiteLink key={path} to={path} onNavigate={navigate} current={route === path}>{label}</SiteLink>)}</nav>
     <div className="header-actions"><button className="icon-btn" aria-label="Профіль" title={account?.signed_in ? 'Мій профіль' : 'Увійти'} onClick={() => navigate('/profile')}><Icon name="user"/></button>
       <button className="icon-btn" ref={searchButton} aria-label="Пошук" aria-expanded={search} aria-controls="store-search" onClick={() => {setMenu(false);setSearch(value => !value)}}><Icon name="search"/></button>
-      <button className="icon-btn cart-button" aria-label={'Кошик, товарів ' + count} onClick={()=>{setMenu(false);setSearch(false);onCart()}}><Icon name="bag"/>{count > 0 && <span className="cart-count">{count}</span>}</button>
+      <button className="icon-btn cart-button" aria-label={'Кошик, товарів ' + count} onClick={()=>{setMenu(false);setSearch(false);onCart()}}><Icon name="bag"/>{count > 0 && <span className="cart-count" key={count}>{count}</span>}</button>
       <button className="icon-btn menu-btn" ref={menuButton} aria-label="Меню" aria-expanded={menu} aria-controls="store-navigation" onClick={() => {setSearch(false);setMenu(value => !value)}}><Icon name={menu ? 'close' : 'menu'}/></button></div></div>
     {search && <form id="store-search" className="search-strip shell" role="search" onSubmit={event => {event.preventDefault(); navigate('/catalog?q=' + encodeURIComponent(query.trim()))}}><Icon name="search"/><input aria-label="Знайти аромат або бренд" maxLength={120} autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Знайти аромат або бренд…"/><button className="text-action" type="submit">Знайти →</button></form>}
   </header>
@@ -257,6 +262,7 @@ function InfoModal({name, close, site}) {
 
 export default function App() {
   const [route, go] = useRoute()
+  useEffect(() => startReveal(), [])
   // UTM first, then the visit, so the visit carries the landing campaign.
   useEffect(()=>{rememberCampaign(location.search);recordVisit()},[route])
   const path = route.split('?')[0].replace(/\/+$/, '') || '/'
