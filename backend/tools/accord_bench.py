@@ -30,8 +30,8 @@ async def main(path):
         await c.execute(insert(m.User), [{'id': 1, 'tg_id': -1, 'referral_code': 'A'}, {'id': 2, 'tg_id': 99, 'referral_code': 'B'}]
                         + [{'id': 10 + i, 'tg_id': -(10 + i), 'referral_code': f'U{i}'} for i in range(2000)])
         await c.execute(insert(m.WebsiteAccount), [{'id': 1, 'user_id': 1, 'google_sub': 'g', 'linked_telegram_user_id': 2}])
-        await c.execute(insert(m.Category), [{'id': i, 'name': f'Cat {i}', 'is_active': True} for i in range(1, 51)])
-        await c.execute(insert(m.Product), [{'id': i, 'category_id': 1 + i % 50, 'name': f'Aroma {i // 3} {50 + 25 * (i % 3)} мл',
+        await c.execute(insert(m.Brand), [{'id': i + 1, 'name': f'B{i}', 'name_key': f'b{i}', 'is_active': True} for i in range(40)])
+        await c.execute(insert(m.Product), [{'id': i, 'brand_id': 1 + i % 40, 'name': f'Aroma {i // 3} {50 + 25 * (i % 3)} мл',
             'sku': f'SKU-{i:05d}', 'price': Decimal(100 + i % 500), 'stock': i % 7, 'is_active': True, 'brand': f'B{i % 40}',
             'volume_ml': 50 + 25 * (i % 3), 'name_lower': ''} for i in range(1, 10001)])
         orders = []

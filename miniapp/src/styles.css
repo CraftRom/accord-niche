@@ -2165,3 +2165,7 @@ input, textarea, select {
 .cart-availability{margin:6px 0 4px;padding:6px 8px;border-left:3px solid var(--accent);border-radius:4px;background:var(--accent-soft);font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 
 .cart-quantity-state{grid-column:1/-1;margin:0;color:var(--tg-hint);font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+
+/* Brands replaced categories: one flat, searchable list in the sheet. */
+.brand-list { display: grid; gap: 4px; }
+.brand-list .category-tree-root { width: 100%; }

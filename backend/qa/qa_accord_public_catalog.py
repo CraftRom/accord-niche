@@ -14,7 +14,7 @@ from shop.entities import Product
 
 
 def perfume(id=12, brand='CREED', active=True, photo='https://images.example/test.jpg'):
-    return Product(id=id, name='Aventus 2 мл', category_id=None, price=Decimal('190.00'),
+    return Product(id=id, name='Aventus 2 мл', price=Decimal('190.00'),
                    brand=brand, gender='male', volume_ml=2, stock=4,
                    is_active=active, is_featured=True, photo_url=photo, photo_file_id='fileid')
 

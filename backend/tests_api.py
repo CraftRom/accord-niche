@@ -84,13 +84,13 @@ async def _suite(app, backend: str) -> None:
               (await client.get("/api/catalog/products")).status_code == 401)
 
         # --- каталог
-        response = await client.post("/api/catalog/categories", headers=headers,
+        response = await client.post("/api/catalog/brands", headers=headers,
                                json={"name": "Поди", "sort_order": 0, "is_active": True})
-        check("категорія створена", response.status_code == 201, response.text[:120])
+        check("бренд створено", response.status_code == 201, response.text[:120])
         category_id = response.json()["id"]
 
         response = await client.post("/api/catalog/products", headers=headers, json={
-            "category_id": category_id, "name": "Elf Bar BC5000",
+            "brand_id": category_id, "name": "Elf Bar BC5000",
             "price": 400, "stock": 10, "is_active": True,
         })
         check("товар створений", response.status_code == 201, response.text[:120])
@@ -105,33 +105,34 @@ async def _suite(app, backend: str) -> None:
                                 headers=headers, json={"stock": 7})
         check("залишок оновлено", response.json()["stock"] == 7)
 
-        # DELETE категорії — це м'яке видалення: категорія та її товари
-        # зникають з бота, але лишаються в базі. Тест раніше очікував 409,
-        # тобто заборону — поведінка змінилась, а перевірка ні, і сценарій
-        # мовчки ховав товар, з яким далі мав збиратися кошик.
-        #
-        # Видаляємо окрему категорію, а не робочу: перевірка не має ламати
-        # те, що йде після неї.
-        response = await client.post("/api/catalog/categories", headers=headers,
+        # Бренд із товарами не видаляється (409): товар не може лишитись без
+        # пояснення, куди подівся. Його бренд можна приховати — тоді товар
+        # зникає з вітрини, а його власний прапорець лишається.
+        response = await client.post("/api/catalog/brands", headers=headers,
                                json={"name": "Тимчасова", "sort_order": 9, "is_active": True})
         spare_id = response.json()["id"]
         response = await client.post("/api/catalog/products", headers=headers, json={
-            "category_id": spare_id, "name": "Тимчасовий товар",
+            "brand_id": spare_id, "name": "Тимчасовий товар",
             "price": 100, "stock": 5, "is_active": True,
         })
         spare_product = response.json()["id"]
 
-        response = await client.delete(f"/api/catalog/categories/{spare_id}", headers=headers)
-        check("категорія прихована разом із товарами", response.status_code == 200,
+        response = await client.delete(f"/api/catalog/brands/{spare_id}", headers=headers)
+        check("бренд із товарами не видаляється", response.status_code == 409,
               f"{response.status_code}")
-        check("приховано рівно один товар", response.json()["hidden_products"] == 1,
+        response = await client.patch(f"/api/catalog/brands/{spare_id}", headers=headers,
+                                      json={"is_active": False})
+        check("бренд приховано", response.status_code == 200 and response.json()["is_active"] is False,
               response.text[:120])
 
         response = await client.get(f"/api/catalog/products/{spare_product}", headers=headers)
         check("прихований товар лишився в базі", response.status_code == 200,
               f"{response.status_code}")
-        check("але вже неактивний", response.json()["is_active"] is False,
+        check("власний прапорець товару не переписано", response.json()["is_active"] is True,
               response.text[:120])
+        response = await client.get("/api/catalog/products", headers=headers,
+                                    params={"only_active": True, "search": "Тимчасовий"})
+        check("товар прихованого бренду не продається", response.json() == [], response.text[:120])
 
         response = await client.get("/api/catalog/products", headers=headers,
                               params={"search": "BC5000"})

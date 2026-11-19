@@ -1,15 +1,14 @@
-"""Shared category and monetary rules for quotes, bot and locked checkout."""
+"""Shared brand and monetary rules for quotes, bot and locked checkout."""
 from decimal import Decimal
 
 
-def eligible_subtotal(lines, category_ids, subcategory_parents=None):
-    selected = set(category_ids or [])
-    parents = subcategory_parents or {}
+def eligible_subtotal(lines, brand_ids):
+    """Sum of the lines a promo applies to. Empty brand_ids — the whole cart."""
+    selected = set(brand_ids or [])
     return sum((
         line.product.price * line.qty for line in lines
         if line.product and line.product.is_active and line.qty > 0 and (
-            not selected or line.product.category_id in selected
-            or parents.get(line.product.subcategory_id) in selected
+            not selected or getattr(line.product, "brand_id", None) in selected
         )
     ), Decimal(0))
 

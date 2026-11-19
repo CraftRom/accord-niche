@@ -83,22 +83,22 @@ async def main():
     print("\n--- відкат транзакції ---")
     async with Session() as s:
         repo = SqlRepository(s)
-        cat = await repo.create_category({"name":"К","sort_order":0,"is_active":True})
-        before = len(await repo.list_categories())
+        cat = await repo.create_brand({"name":"К","sort_order":0,"is_active":True})
+        before = len(await repo.list_brands())
         try:
-            await repo.create_category({"name":"Тимчасова","sort_order":0,"is_active":True})
+            await repo.create_brand({"name":"Тимчасова","sort_order":0,"is_active":True})
             raise RuntimeError("штучний збій")
         except RuntimeError:
             await s.rollback()
-        # create_category комітить одразу — перевіряємо, що поведінка передбачувана
-        after = len(await repo.list_categories())
+        # create_brand комітить одразу — перевіряємо, що поведінка передбачувана
+        after = len(await repo.list_brands())
         r.check(after >= before, "після відкату база узгоджена", f"{before} -> {after}")
 
     print("\n--- цілісність після видалення ---")
     async with Session() as s:
         repo = SqlRepository(s)
-        cat = await repo.create_category({"name":"К2","sort_order":0,"is_active":True})
-        p = await repo.create_product({"category_id":cat.id,"name":"Т","price":Decimal(100),"stock":5,"is_active":True})
+        cat = await repo.create_brand({"name":"К2","sort_order":0,"is_active":True})
+        p = await repo.create_product({"brand_id":cat.id,"name":"Т","price":Decimal(100),"stock":5,"is_active":True})
         u = await repo.get_user_by_tg(1)
         o = await repo.create_order(Order(id=0,user_id=u.id,subtotal=Decimal(100),discount=Decimal(0),
             bonus_used=Decimal(0),total=Decimal(100),promo_code_id=None,payment_method="cod",

@@ -74,12 +74,8 @@ class ImportApplier:
     def __init__(self, repo, mode: str, prices: str, stats: dict):
         self.repo, self.mode, self.prices, self.stats = repo, mode, prices, stats
         self.seen: set[str] = set()
-        self.cats: dict = {}
-        self.subs: dict = {}
 
     async def prepare(self, done_rows=()):
-        self.cats = {c.name.strip().casefold(): c for c in await self.repo.list_categories()}
-        self.subs = {(s.category_id, s.name.strip().casefold()): s for s in await self.repo.list_subcategories()}
         # Duplicate-SKU detection must survive a resume from a checkpoint.
         for item in done_rows:
             sku = str(item.get("sku") or "").strip()
@@ -112,31 +108,11 @@ class ImportApplier:
             if self.mode=='add' and existing or self.mode=='update' and not existing:
                 self.stats['skipped']+=1
                 return
-            cid=sid=None
-            if item.get('hierarchy'):
-                cname=item['category']
-                if cname:
-                    key=cname.casefold(); cat=self.cats.get(key)
-                    if not cat:
-                        cat=await self.repo.create_category({'name':cname,'is_active':True}); self.cats[key]=cat
-                    cid=cat.id
-                sname=item.get('subcategory')
-            else:
-                # SalesDrive's former single category is now a subcategory.
-                sname=item['category']
-            sub_parent=cid
-            if item.get('subcategory_parent') and sub_parent is None:
-                pname=item['subcategory_parent']; pk=pname.casefold(); parent=self.cats.get(pk)
-                if not parent:
-                    parent=await self.repo.create_category({'name':pname,'is_active':True}); self.cats[pk]=parent
-                sub_parent=parent.id
-            if sname:
-                key=(sub_parent,sname.casefold()); sub=self.subs.get(key)
-                if not sub:
-                    sub=await self.repo.create_subcategory({'category_id':sub_parent,'name':sname,'is_active':True}); self.subs[key]=sub
-                sid=sub.id
-            data={'category_id':cid,'subcategory_id':sid,'name':item['name'],
+            data={'name':item['name'],
                   'description':item.get('description') or None,'photo_url':item.get('photo_url') or None}
+            # The brand column (own export) sets the brand, creating it when new.
+            if item.get('brand') is not None:
+                data['brand']=item['brand']
             if item.get('hierarchy') and item.get('external_sku') is not None:
                 data['external_sku']=str(item['external_sku']).strip()[:255] or None
             elif source_sku and (not existing or source_sku != existing.sku):
@@ -215,9 +191,11 @@ async def run_job(digest: str, *, open_repo=None, owner: str | None = None, now=
                                 extra={"event": "catalog.import.lease_lost"})
                     return "lost"
             await repo.finish_catalog_import(digest, applier.stats, owner=owner)
+            # «created» is a reserved LogRecord attribute: logging it raised
+            # KeyError after a successful import and reported it as failed.
             log.info("Імпорт каталогу завершено", extra={"event": "catalog.import.done", "jobId": digest[:12],
-                     "created": applier.stats["created"], "updated": applier.stats["updated"],
-                     "errors": len(applier.stats["errors"])})
+                     "createdCount": applier.stats["created"], "updatedCount": applier.stats["updated"],
+                     "errorCount": len(applier.stats["errors"])})
             return "done"
         except Exception as exc:
             log.exception("Імпорт каталогу перервано", extra={"event": "catalog.import.failed", "jobId": digest[:12]})

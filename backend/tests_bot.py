@@ -220,11 +220,11 @@ async def run(backend: str) -> None:
     await init_db()
 
     async with open_repo() as repo:
-        category = await repo.create_category(
+        category = await repo.create_brand(
             {"name": "Одноразові поди", "sort_order": 0, "is_active": True}
         )
         pod = await repo.create_product({
-            "category_id": category.id, "name": "Elf Bar BC5000",
+            "brand_id": category.id, "name": "Elf Bar BC5000",
             "description": "5000 затяжок", "price": Decimal(400),
             "stock": 10, "is_active": True,
         })
@@ -264,15 +264,19 @@ async def run(backend: str) -> None:
     print("\n2. Каталог")
 
     await feed(message_update(bot, "🛍 Каталог"))
-    check("заголовок каталогу", "Оберіть розділ" in session.all_text(),
+    check("заголовок каталогу", "Оберіть бренд" in session.all_text(),
           session.all_text()[:80])
-    # Назви категорій живуть у кнопках, а не в тексті повідомлення
-    check("категорія в кнопках", "Одноразові поди" in str(session.keyboards()),
+    # Назви брендів живуть у кнопках, а не в тексті повідомлення
+    check("бренд у кнопках", "Одноразові поди" in str(session.keyboards()),
+          str(session.keyboards())[:120])
+
+    await feed(callback_update(bot, f"brand:{category.id}"))
+    check("товар у списку бренду", "Elf Bar" in str(session.keyboards()),
           str(session.keyboards())[:120])
 
     await feed(callback_update(bot, f"root:{category.id}"))
-    check("товар у списку категорії", "Elf Bar" in str(session.keyboards()),
-          str(session.keyboards())[:120])
+    check("кнопка старого каталогу категорій веде до брендів",
+          any("бренд" in a for a in session.alerts()), str(session.alerts()))
 
     await feed(callback_update(bot, f"prod:{pod.id}"))
     check("картка товару з ціною", "400" in session.all_text(),

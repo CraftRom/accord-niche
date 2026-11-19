@@ -85,9 +85,9 @@ class FakeSalesDrive:
 
 async def make_order(repo, tg_id, payment="card", with_refs=True, surname="Шевченко"):
     user = await repo.create_user(tg_id, f"u{tg_id}", "Клієнт", None)
-    category = await repo.create_category({"name": f"Кат{tg_id}"})
+    category = await repo.create_brand({"name": f"Кат{tg_id}"})
     product = await repo.create_product({
-        "name": f"Рідина {tg_id} 30 мл 50 мг", "category_id": category.id,
+        "name": f"Рідина {tg_id} 30 мл 50 мг", "brand_id": category.id,
         "price": Decimal(349), "stock": 10, "is_active": True,
     })
     order = await repo.create_order(

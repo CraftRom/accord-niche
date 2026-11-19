@@ -1,9 +1,9 @@
 import { Field } from '../ui'
 import ImageField from '../ImageField'
 
-export const emptyProduct = { brand: '', gender: 'unisex', volume_ml: '', is_featured: false, name: '', category_id: '', subcategory_id: '', description: '', photo_url: '', price: '', old_price: '', stock: 0, sort_order: 0, is_active: true, is_new: false, is_sale: false }
+export const emptyProduct = { brand_id: '', gender: 'unisex', volume_ml: '', is_featured: false, name: '', description: '', photo_url: '', price: '', old_price: '', stock: 0, sort_order: 0, is_active: true, is_new: false, is_sale: false }
 export const changeField = (setForm, key) => (event) => setForm((form) => ({ ...form, [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value }))
-export function groupPayload(form) { return { category_id: form.category_id ? Number(form.category_id) : null, subcategory_id: form.subcategory_id ? Number(form.subcategory_id) : null } }
+export function brandPayload(form) { return { brand_id: form.brand_id ? Number(form.brand_id) : null, ...(form.brand_id ? {} : { brand: '' }) } }
 export function pricePayload(form) { return { price: Number(form.price), old_price: form.old_price === '' || form.old_price == null ? null : Number(form.old_price), is_sale: Boolean(form.is_sale) } }
 export function validateProduct(form) {
   if (!form.name?.trim()) return 'Вкажіть назву товару'
@@ -13,16 +13,15 @@ export function validateProduct(form) {
   if (!Number.isInteger(Number(form.stock)) || Number(form.stock) < 0) return 'Залишок має бути цілим невід’ємним числом'
   return ''
 }
-export function TaxonomyFields({ form, setForm, categories, subcategories }) {
-  const available = subcategories.filter((s) => !form.category_id || !s.category_id || Number(s.category_id) === Number(form.category_id))
-  const changeCategory = (event) => {
-    const category_id = event.target.value
-    const current = subcategories.find((s) => s.id === Number(form.subcategory_id))
-    setForm((old) => ({ ...old, category_id, subcategory_id: category_id && current?.category_id && current.category_id !== Number(category_id) ? '' : old.subcategory_id }))
-  }
-  return <div className="grid k2">
-    <Field label="Категорія" hint="Можна залишити порожньою"><select className="input" aria-label="Категорія товару" value={form.category_id ?? ''} onChange={changeCategory}><option value="">Без категорії</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}{!c.is_active ? ' · прихована' : ''}</option>)}</select></Field>
-    <Field label="Субкатегорія" hint="Може існувати без категорії"><select className="input" aria-label="Субкатегорія товару" value={form.subcategory_id ?? ''} onChange={changeField(setForm, 'subcategory_id')}><option value="">Без субкатегорії</option>{available.map((s) => <option key={s.id} value={s.id}>{s.name}{s.category_name ? ` · ${s.category_name}` : ''}{!s.is_active ? ' · прихована' : ''}</option>)}</select></Field>
+// Бренд замість категорії: товар обирає бренд зі списку. Новий бренд
+// додається в «Бренди» над каталогом, тож назва пишеться однаково скрізь.
+export function BrandFields({ form, setForm, brands, onManage }) {
+  return <div className="stack">
+    <Field label="Бренд" hint="Аромат шукають саме за брендом: на сайті, в Mini App і в боті"><select className="input" aria-label="Бренд товару" value={form.brand_id ?? ''} onChange={changeField(setForm, 'brand_id')}>
+      <option value="">Без бренду</option>
+      {brands.map((b) => <option key={b.id} value={b.id}>{b.name}{!b.is_active ? ' · прихований' : ''}</option>)}
+    </select></Field>
+    {onManage && <button type="button" className="btn ghost small" onClick={onManage}>Додати або змінити бренд</button>}
   </div>
 }
 export function PriceFields({ form, setForm }) {
@@ -51,7 +50,6 @@ export function ProductImageField({ form, setForm }) {
 export function PerfumeFields({ form, setForm }) {
   return <div className="stack">
     <div className="grid k2">
-      <Field label="Бренд парфуму"><input className="input" aria-label="Бренд парфуму" maxLength={100} value={form.brand || ''} onChange={changeField(setForm, 'brand')} placeholder="CREED" /></Field>
       <Field label="Обʼєм атомайзера, мл"><input className="input" aria-label="Обʼєм атомайзера" type="number" min="1" max="1000" step="1" value={form.volume_ml ?? ''} onChange={changeField(setForm, 'volume_ml')} placeholder="Не задано" /></Field>
       <Field label="Для кого"><select className="input" aria-label="Стать аромату" value={form.gender || 'unisex'} onChange={changeField(setForm, 'gender')}><option value="male">Чоловічий</option><option value="female">Жіночий</option><option value="unisex">Унісекс</option></select></Field>
     </div>
@@ -59,4 +57,4 @@ export function PerfumeFields({ form, setForm }) {
     <p className="muted">Хіти визначаються автоматично за підтвердженими продажами за 90 днів; ця позначка керує окремою добіркою рекомендацій. Кожен обʼєм — окремий товар (SKU) зі своєю ціною та залишком. Ціна в усіх каналах є ціною за атомайзер, а сайт обчислює вартість за 1 мл.</p>
   </div>
 }
-export function perfumePayload(f) { return { brand: (f.brand || '').trim(), gender: f.gender || 'unisex', volume_ml: f.volume_ml === '' || f.volume_ml == null ? null : Number(f.volume_ml), is_featured: Boolean(f.is_featured) } }
+export function perfumePayload(f) { return { gender: f.gender || 'unisex', volume_ml: f.volume_ml === '' || f.volume_ml == null ? null : Number(f.volume_ml), is_featured: Boolean(f.is_featured) } }

@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from shop.entities import (
     Operator, OrderMessage, SupportMessage, SupportThread, Wishlist,
-    Broadcast, CartLine, Category, Order, OrderLine,
+    Brand, Broadcast, CartLine, Order, OrderLine,
     OrderStatus, Product, Promo, Stats, User,
 )
 
@@ -102,24 +102,27 @@ class Repository(ABC):
     # ---------------------------------------------------------- catalog
 
     @abstractmethod
-    async def list_categories(self, only_active: bool = False) -> list[Category]: ...
+    async def list_brands(self, only_active: bool = False) -> list[Brand]:
+        """Бренди за алфавітом (з урахуванням sort_order) і кількістю товарів."""
 
     @abstractmethod
-    async def get_category(self, category_id: int) -> Category | None: ...
+    async def get_brand(self, brand_id: int) -> Brand | None: ...
 
     @abstractmethod
-    async def create_category(self, data: dict) -> Category: ...
+    async def create_brand(self, data: dict) -> Brand:
+        """Новий бренд. Назва унікальна без урахування регістру (ValueError)."""
 
     @abstractmethod
-    async def update_category(self, category_id: int, data: dict) -> Category | None: ...
+    async def update_brand(self, brand_id: int, data: dict) -> Brand | None:
+        """Перейменування оновлює назву бренду в усіх його товарах."""
 
     @abstractmethod
-    async def purge_category(self, category_id: int) -> int:
-        """Стирає категорію і всі її товари НАЗАВЖДИ. Повертає кількість товарів.
+    async def delete_brand(self, brand_id: int) -> bool:
+        """Видаляє бренд без товарів. Бренд із товарами — ValueError."""
 
-        Історія замовлень не страждає: позиції зберігають знімок назви й ціни,
-        а посилання на товар обнуляється.
-        """
+    @abstractmethod
+    async def ensure_brand(self, name: str) -> Brand | None:
+        """Бренд за назвою (без урахування регістру); створює, якщо його немає."""
 
     @abstractmethod
     async def purge_product(self, product_id: int) -> bool:
@@ -133,43 +136,17 @@ class Repository(ABC):
         """
 
     @abstractmethod
-    async def delete_category(self, category_id: int) -> int:
-        """Ховає категорію разом із її товарами. Повертає кількість схованих товарів.
-
-        Семантика та сама, що в товарів і промокодів: запис лишається в базі,
-        але зникає з бота. Інакше історія замовлень посилалася б у порожнечу.
-        """
-
-    @abstractmethod
-    async def list_subcategories(self, category_id=None, only_active=False): ...
-
-    @abstractmethod
-    async def get_subcategory(self, subcategory_id): ...
-
-    @abstractmethod
-    async def create_subcategory(self, data): ...
-
-    @abstractmethod
-    async def update_subcategory(self, subcategory_id, data): ...
-
-    @abstractmethod
-    async def delete_subcategory(self, subcategory_id): ...
-
-    @abstractmethod
-    async def purge_subcategory(self, subcategory_id): ...
-
-    @abstractmethod
     async def list_products(
-        self, category_id: int | None = None, search: str | None = None,
+        self, brand_id: int | None = None, search: str | None = None,
         only_active: bool = False, limit: int = 500, offset: int = 0,
-        subcategory_id: int | None = None, is_new: bool | None = None,
-        is_sale: bool | None = None, uncategorized: bool = False,
+        is_new: bool | None = None,
+        is_sale: bool | None = None, without_brand: bool = False,
         perfume_only: bool = False,
         inventory: str | None = None, sort: str | None = None,
     ) -> list[Product]: ...
 
     @abstractmethod
-    async def count_products(self, category_id=None, only_active: bool = True, **filters) -> int: ...
+    async def count_products(self, brand_id=None, only_active: bool = True, **filters) -> int: ...
 
     @abstractmethod
     async def products_by_ids(self, ids: list[int]) -> list[Product]:

@@ -24,14 +24,15 @@ export function Catalog({route, go, sets = false}) {
   const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1)
   const apiParams = new URLSearchParams(params)
   apiParams.delete('page')
+  apiParams.delete('category') // categories were replaced by brands; old links keep working
   apiParams.set('kind', kind)
   apiParams.set('limit', '24')
   apiParams.set('offset', String((page - 1) * 24))
   const request = useStoreRequest('/api/public/aromas?' + apiParams)
   const data = request.data
-  const [facets, setFacets] = useState({brands:[], categories:[], volumes:[]})
+  const [facets, setFacets] = useState({brands:[], volumes:[]})
   useEffect(() => {
-    if (data) setFacets({brands:data.brands, categories:data.categories, volumes:data.volumes || []})
+    if (data) setFacets({brands:data.brands, volumes:data.volumes || []})
   }, [data])
   const titles = {all:'Каталог',hits:'Хіти продажів',new:'Новинки',recommended:'Рекомендуємо',sets:'Набори пробників'}
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -41,7 +42,6 @@ export function Catalog({route, go, sets = false}) {
   const chips = [
     params.get('q') && {key:'q', label:'Пошук: «' + params.get('q') + '»'},
     params.get('brand') && {key:'brand', label:'Бренд: ' + params.get('brand')},
-    params.get('category') && {key:'category', label:'Категорія: ' + params.get('category')},
     params.get('gender') && {key:'gender', label:'Аромат для: ' + (genders[params.get('gender')] || params.get('gender'))},
     params.get('volume') && {key:'volume', label:params.get('volume') + ' мл'},
     params.get('available') === 'true' && {key:'available', label:'Лише в наявності'},
@@ -56,7 +56,6 @@ export function Catalog({route, go, sets = false}) {
       <button type="button" className="catalog-filters-toggle" aria-expanded={filtersOpen} aria-controls="catalog-filter-panel" onClick={() => setFiltersOpen(open => !open)}>Фільтри{refineCount ? ` (${refineCount})` : ''}</button>
       <div className={'catalog-filter-panel' + (filtersOpen ? ' is-open' : '')} id="catalog-filter-panel">
       <label>БРЕНД<select value={params.get('brand') || ''} onChange={event => update('brand', event.target.value)}><option value="">Усі бренди</option>{(data?.brands || facets.brands).map(brand => <option key={brand}>{brand}</option>)}</select></label>
-      <label>КАТЕГОРІЯ<select value={params.get('category') || ''} onChange={event => update('category', event.target.value)}><option value="">Усі категорії</option>{(data?.categories || facets.categories).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label>АРОМАТ ДЛЯ<select value={params.get('gender') || ''} onChange={event => update('gender', event.target.value)}><option value="">Для всіх</option><option value="female">Жіночий</option><option value="male">Чоловічий</option><option value="unisex">Унісекс</option></select></label>
       <label>ОБ’ЄМ<select value={params.get('volume') || ''} onChange={event => update('volume', event.target.value)}><option value="">Усі об’єми</option>{(data?.volumes || facets.volumes).map(volume => <option key={volume} value={volume}>{volume} мл</option>)}</select></label>
       <label className="stock-filter"><input type="checkbox" checked={params.get('available') === 'true'} onChange={event => update('available', event.target.checked ? 'true' : '')}/>Лише в наявності</label>

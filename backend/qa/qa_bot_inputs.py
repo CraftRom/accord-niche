@@ -40,7 +40,7 @@ async def main():
     prime_cache(replace(ShopSettings.from_env(), bonus_enabled=False, volume_discount_enabled=False))
     class Repo:
         async def get_cart(self,uid):
-            return [CartLine(product_id=i+1, qty=1, product=Product(id=i+1, category_id=1, name='<Товар & QA>', price=Decimal(10), stock=10)) for i in range(120)]
+            return [CartLine(product_id=i+1, qty=1, product=Product(id=i+1, name='<Товар & QA>', price=Decimal(10), stock=10)) for i in range(120)]
     context=State(Checkout.comment.state,{'name':'<Імʼя>','phone':'+380671234567','city':'Київ & область','address':'<Адреса>','comment':'<script>','payment':'cod'})
     message=Message('')
     await checkout._show_summary(message,context,Repo(),SimpleNamespace(id=1,bonus_balance=0))

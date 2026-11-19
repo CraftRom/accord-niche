@@ -11,8 +11,8 @@ c = TestClient(app, client=("127.0.0.1", 50000)); r = Report("SECURITY")
 A = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"admin","password":"secret"}).json()["access_token"]}
 c.post("/api/operators", json={"login":"olena","name":"Олена","password":"kvitka-sadok-2026"}, headers=A)
 O = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"olena","password":"kvitka-sadok-2026"}).json()["access_token"]}
-cat = c.post("/api/catalog/categories", json={"name":"К","sort_order":0,"is_active":True}, headers=A).json()
-pr = c.post("/api/catalog/products", json={"category_id":cat["id"],"name":"Т","price":"300","stock":9,"is_active":True}, headers=A).json()
+cat = c.post("/api/catalog/brands", json={"name":"К","sort_order":0,"is_active":True}, headers=A).json()
+pr = c.post("/api/catalog/products", json={"brand_id":cat["id"],"name":"Т","price":"300","stock":9,"is_active":True}, headers=A).json()
 
 print("\n--- Broken Access Control ---")
 for path in ["/api/orders","/api/customers","/api/promos","/api/settings","/api/operators","/api/stats/summary"]:
@@ -55,7 +55,7 @@ resp = c.get("/api/orders", params={"search": inj}, headers=A)
 r.check(resp.status_code == 200, "SQL-ін'єкція в пошуку не ламає", resp.status_code)
 r.check(c.get("/api/orders", headers=A).status_code == 200, "таблиця замовлень ціла")
 xss = "<script>alert(1)</script>"
-p = c.post("/api/catalog/products", json={"category_id":cat["id"],"name":xss,"price":"1","stock":1,"is_active":True}, headers=A).json()
+p = c.post("/api/catalog/products", json={"brand_id":cat["id"],"name":xss,"price":"1","stock":1,"is_active":True}, headers=A).json()
 r.check(p["name"] == xss, "XSS зберігається як текст, не виконується на сервері")
 from shop.services.notifications import esc
 r.check("<script>" not in esc(xss) and "&lt;script&gt;" in esc(xss), "екранування для Telegram працює")

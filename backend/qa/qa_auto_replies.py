@@ -30,8 +30,8 @@ async def main():
         repo = SqlRepository(session)
         await seed_operators(repo, {5: ('adminshop', 'A', OperatorRole.ADMIN), 7: ('manager', 'M', OperatorRole.MANAGER)})
         user = await repo.create_user(tg_id=721, username='qa', first_name='QA', referrer_id=None)
-        category = await repo.create_category({'name': 'QA', 'is_active': True})
-        product = await repo.create_product({'category_id': category.id, 'name': 'QA', 'price': Decimal(10), 'stock': 5, 'is_active': True})
+        category = await repo.create_brand({'name': 'QA', 'is_active': True})
+        product = await repo.create_product({'brand_id': category.id, 'name': 'QA', 'price': Decimal(10), 'stock': 5, 'is_active': True})
         order = await repo.create_order(Order(id=0, user_id=user.id, subtotal=Decimal(10), total=Decimal(10), discount=Decimal(0), bonus_used=Decimal(0), promo_code_id=None, payment_method='cod', contact_name='QA', contact_phone='+380671234567'), [OrderLine(product_id=product.id, name='QA', price=Decimal(10), qty=1)])
         shop = await save_shop_settings(repo, {'auto_replies_enabled': False})
         for public in (False, True):

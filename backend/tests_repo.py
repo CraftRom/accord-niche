@@ -36,21 +36,21 @@ def check(label: str, condition: bool, detail: str = "") -> None:
 
 async def scenario(repo) -> None:
     # --- каталог
-    category = await repo.create_category({"name": "Поди", "sort_order": 0, "is_active": True})
-    check("категорія створена", category.id > 0)
+    category = await repo.create_brand({"name": "Поди", "sort_order": 0, "is_active": True})
+    check("бренд створено", category.id > 0)
 
     pod = await repo.create_product({
-        "category_id": category.id, "name": "Elf Bar BC5000",
+        "brand_id": category.id, "name": "Elf Bar BC5000",
         "price": Decimal(400), "stock": 10, "is_active": True,
     })
     liquid = await repo.create_product({
-        "category_id": category.id, "name": "Рідина 30 мл",
+        "brand_id": category.id, "name": "Рідина 30 мл",
         "price": Decimal(250), "stock": 4, "is_active": True,
     })
     check("товар створений з ціною 400", pod.price == Decimal("400.00"), f"{pod.price}")
 
-    cats = await repo.list_categories()
-    check("лічильник товарів у категорії = 2", cats[0].products_count == 2,
+    cats = await repo.list_brands()
+    check("лічильник товарів бренду = 2", cats[0].products_count == 2,
           f"{cats[0].products_count}")
 
     found = await repo.list_products(search="BC5000")

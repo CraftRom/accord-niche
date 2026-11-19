@@ -7,7 +7,7 @@ try {
   for (const [width, timezoneId] of [[320, 'Asia/Tokyo'], [390, 'America/New_York'], [1280, 'UTC']]) {
     const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId })
     const errors = []; page.on('pageerror', (e) => errors.push(e.message))
-    const categories = [
+    const categories = [ // brands of the perfume shop (names kept short for the checks)
       { id: 1, name: 'Рідини', is_active: true, products_count: 12 },
       { id: 2, name: 'Пристрої', is_active: true, products_count: 7 },
       { id: 3, name: 'Аксесуари', is_active: false, products_count: 5 },
@@ -17,8 +17,8 @@ try {
       const path = new URL(route.request().url()).pathname, method = route.request().method()
       let data = {}
       if (path.endsWith('/auth/session')) data = { role: 'admin', name: 'QA', csrf_token: 'qa' }
-      else if (path.endsWith('/catalog/categories')) {
-        if (categoryFail) return route.fulfill({ status: 503, json: { detail: 'Категорії тимчасово недоступні' } })
+      else if (path.endsWith('/catalog/brands')) {
+        if (categoryFail) return route.fulfill({ status: 503, json: { detail: 'Бренди тимчасово недоступні' } })
         data = categories
       } else if (path.includes('/promos') && ['POST', 'PUT'].includes(method)) {
         writes++; lastBody = route.request().postDataJSON()
@@ -48,22 +48,22 @@ try {
     await dialog.getByLabel('На одного клієнта', { exact: true }).fill('')
     check(await save.isDisabled(), `${width}: empty customer limit rejected`)
     await dialog.getByLabel('На одного клієнта', { exact: true }).fill('1')
-    await dialog.getByRole('radio', { name: 'Обрані категорії', exact: true }).check()
-    check(await save.isDisabled(), `${width}: empty category selection cannot become unrestricted`)
+    await dialog.getByRole('radio', { name: 'Обрані бренди', exact: true }).check()
+    check(await save.isDisabled(), `${width}: empty brand selection cannot become unrestricted`)
     if (categoryFail) {
-      await dialog.getByText('Категорії тимчасово недоступні', { exact: true }).waitFor()
-      check(await save.isDisabled(), `${width}: category fetch failure blocks scoped save`)
+      await dialog.getByText('Бренди тимчасово недоступні', { exact: true }).waitFor()
+      check(await save.isDisabled(), `${width}: brand fetch failure blocks scoped save`)
       categoryFail = false
-      await dialog.getByRole('button', { name: 'Завантажити категорії повторно' }).click()
+      await dialog.getByRole('button', { name: 'Завантажити бренди повторно' }).click()
     }
-    await dialog.getByLabel('Пошук категорій').fill('Рідини')
+    await dialog.getByLabel('Пошук брендів').fill('Рідини')
     await dialog.getByRole('checkbox', { name: /Рідини/ }).check()
-    await dialog.getByLabel('Пошук категорій').fill('Пристрої')
+    await dialog.getByLabel('Пошук брендів').fill('Пристрої')
     await dialog.getByRole('button', { name: 'Вибрати знайдені', exact: true }).click()
-    check(await dialog.getByRole('button', { name: /Прибрати категорію Рідини/ }).count() === 1 && await dialog.getByRole('checkbox', { name: /Пристрої/ }).isChecked(), `${width}: category search retains selections`)
+    check(await dialog.getByRole('button', { name: /Прибрати бренд Рідини/ }).count() === 1 && await dialog.getByRole('checkbox', { name: /Пристрої/ }).isChecked(), `${width}: brand search retains selections`)
     await dialog.getByRole('button', { name: 'Очистити', exact: true }).click()
     check(await save.isDisabled(), `${width}: clearing categories blocks save`)
-    await dialog.getByLabel('Пошук категорій').fill('Рідини')
+    await dialog.getByLabel('Пошук брендів').fill('Рідини')
     await dialog.getByRole('checkbox', { name: /Рідини/ }).check()
     await dialog.getByLabel('Діє до', { exact: true }).fill('2027-07-10')
     await dialog.getByRole('button', { name: 'Згенерувати', exact: true }).click()
@@ -80,7 +80,7 @@ try {
     await page.keyboard.press('Escape')
     check(await dialog.isVisible(), `${width}: pending write keeps dialog open`)
     while (!release) await page.waitForTimeout(20)
-    check(lastBody.code === 'WELCOME' && lastBody.value === '10.25' && lastBody.category_ids.join() === '1', `${width}: normalized code, exact amount and scope submitted`)
+    check(lastBody.code === 'WELCOME' && lastBody.value === '10.25' && lastBody.brand_ids.join() === '1', `${width}: normalized code, exact amount and scope submitted`)
     check(lastBody.expires_on === '2027-07-10' && lastBody.max_uses === null && lastBody.per_user_limit === 1, `${width}: timezone-independent date and limits`)
     release(); release = null
     await dialog.waitFor({ state: 'hidden' })
@@ -94,7 +94,7 @@ try {
     release(); release = null
     await dialog.waitFor({ state: 'hidden' })
     await page.getByLabel('Пошук промокодів').fill('Рідини')
-    check(await page.locator('.promo-card').count() === 1, `${width}: category search finds promotion`)
+    check(await page.locator('.promo-card').count() === 1, `${width}: brand search finds promotion`)
     await page.getByLabel('Статус промокодів').selectOption('inactive')
     await page.getByText('Промокодів за цими умовами немає', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Скинути пошук і фільтр' }).click()

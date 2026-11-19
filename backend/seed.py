@@ -10,23 +10,20 @@ from decimal import Decimal
 from shop.entities import PromoType
 from shop.repo.factory import open_repo
 
+# Демо-каталог парфумерії на розпив: бренд → аромати (назва, опис, ціна, залишок, мл).
 CATALOG = {
-    "Одноразові поди": [
-        ("Elf Bar BC5000", "5000 затяжок, 13 мл, акумулятор 650 mAh", 420, 40),
-        ("Elf Bar BC10000", "10000 затяжок, дисплей заряду, Type-C", 620, 25),
-        ("Lost Mary OS5000", "5000 затяжок, сітчастий випарник", 480, 30),
+    "Creed": [
+        ("Aventus 5 мл", "Ананас, береза, мускус. Розпив з оригінального флакона", 650, 10, 5),
+        ("Aventus 10 мл", "Ананас, береза, мускус. Розпив з оригінального флакона", 1200, 6, 10),
     ],
-    "Багаторазові пристрої": [
-        ("Vaporesso XROS 3", "1000 mAh, регулювання потоку повітря", 890, 15),
-        ("Uwell Caliburn G3", "900 mAh, змінні картриджі 2 мл", 950, 12),
+    "Kilian": [
+        ("Angels' Share 5 мл", "Коньяк, кориця, ваніль", 720, 8, 5),
     ],
-    "Рідини": [
-        ("Рідина 30 мл, 50 мг", "Сольовий нікотин, банка 30 мл", 260, 60),
-        ("Рідина 15 мл, 30 мг", "Сольовий нікотин, банка 15 мл", 180, 45),
+    "Nasomatto": [
+        ("Black Afgano 2 мл", "Смоли, тютюн, кава", 380, 12, 2),
     ],
-    "Картриджі та аксесуари": [
-        ("Картридж XROS, 2 шт", "Сумісний з XROS 1/2/3", 190, 50),
-        ("Кабель Type-C", "Для заряджання пристроїв", 90, 100),
+    "Amouage": [
+        ("Interlude Man 5 мл", "Ладан, амбра, шкіра", 690, 7, 5),
     ],
 }
 
@@ -44,17 +41,15 @@ async def main() -> None:
     await init_db()
 
     async with open_repo() as repo:
-        if await repo.list_products(limit=1) or await repo.list_categories() or await repo.list_subcategories():
+        if await repo.list_products(limit=1) or await repo.list_brands():
             print("У базі вже є дані — сідинг пропущено.")
             return
 
-        for order, (name, products) in enumerate(CATALOG.items()):
-            category = await repo.create_subcategory(
-                {"name": name, "sort_order": order, "is_active": True}
-            )
-            for p_order, (p_name, description, price, stock) in enumerate(products):
+        for name, products in CATALOG.items():
+            brand = await repo.create_brand({"name": name, "is_active": True})
+            for p_order, (p_name, description, price, stock, volume) in enumerate(products):
                 await repo.create_product({
-                    "subcategory_id": category.id, "name": p_name,
+                    "brand_id": brand.id, "name": p_name, "volume_ml": volume,
                     "description": description, "price": Decimal(price),
                     "stock": stock, "sort_order": p_order, "is_active": True,
                 })
@@ -62,7 +57,7 @@ async def main() -> None:
         for promo in PROMOS:
             await repo.create_promo(promo | {"is_active": True})
 
-        print(f"Готово: {len(CATALOG)} категорій, {len(PROMOS)} промокоди "
+        print(f"Готово: {len(CATALOG)} брендів, {len(PROMOS)} промокоди "
               "(база: Postgres).")
 
 

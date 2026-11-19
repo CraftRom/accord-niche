@@ -85,17 +85,14 @@ ok(src.includes('<Field'),
 ok(src.includes('search-clear'), 'набране можна стерти одним дотиком')
 
 console.log('\n--- відновлення навігації ---')
-const cats = [{ id: 1 }, { id: 2 }], subs = [{ id: 10, category_id: 1 }, { id: 20, category_id: null }, { id: 30, category_id: 99 }]
-ok(normalizeCatalogState({ active: '1', subcategory: '10' }).active === 1, 'збережені текстові ID нормалізуються')
-ok(resolveCatalogState({ active: 999, subcategory: 999 }, cats, subs).active === null, 'видалена категорія не блокує асортимент')
-ok(resolveCatalogState({ active: 999, subcategory: 999 }, cats, subs).subcategory === null, 'видалена підкатегорія скидається')
-ok(resolveCatalogState({ active: 2, subcategory: 10 }, cats, subs).active === 1, 'переміщена підкатегорія узгоджується з актуальним батьком')
-ok(resolveCatalogState({ active: 1, subcategory: 20 }, cats, subs).active === null, 'самостійна група не поєднується зі стороннім батьком')
-ok(resolveCatalogState({ subcategory: 30 }, cats, subs).subcategory === null, 'підкатегорія прихованого батька не зберігається')
-ok(resolveCatalogState({ active: 1, subcategory: 10, ungrouped: true }, cats, subs).active === null, 'без груп виключає інші групи')
-ok(resolveCatalogState({ active: 1, search: 'SKU', inStock: true, sort: 'sale' }, cats, subs).sort === 'sale', 'чинні ручні умови зберігаються')
-ok(normalizeCatalogState({ sort: 'removed', active: -1 }).sort === DEFAULT_SORT, 'невідоме сортування відновлює початкове')
-ok(normalizeCatalogState().subcategory === null && !normalizeCatalogState().inStock && !normalizeCatalogState().search, 'повне скидання очищає всі умови')
+const brands = [{ id: 1 }, { id: 2 }]
+ok(normalizeCatalogState({ brand: '1' }).brand === 1, 'збережений текстовий ID бренду нормалізується')
+ok(resolveCatalogState({ brand: 999 }, brands).brand === null, 'видалений чи прихований бренд не блокує асортимент')
+ok(resolveCatalogState({ brand: 2 }, brands).brand === 2, 'чинний бренд зберігається')
+ok(resolveCatalogState({ active: 1, subcategory: 10, ungrouped: true }, brands).brand === null && !('subcategory' in resolveCatalogState({ subcategory: 10 }, brands)), 'стара навігація категоріями з кешу не відновлюється')
+ok(resolveCatalogState({ brand: 1, search: 'SKU', inStock: true, sort: 'sale' }, brands).sort === 'sale', 'чинні ручні умови зберігаються')
+ok(normalizeCatalogState({ sort: 'removed', brand: -1 }).sort === DEFAULT_SORT, 'невідоме сортування відновлює початкове')
+ok(normalizeCatalogState().brand === null && !normalizeCatalogState().inStock && !normalizeCatalogState().search, 'повне скидання очищає всі умови')
 console.log('\n--- понад 500 товарів ---')
 const large = Array.from({ length: 1001 }, (_, i) => ({ id: i + 1, is_new: i === 1000 }))
 const calls = []

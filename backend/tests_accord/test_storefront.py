@@ -32,7 +32,7 @@ async def store():
 
 
 def product(id, **changes):
-    values = dict(id=id, category_id=None, sku='TEST-' + str(id), name='Aroma 5 мл',
+    values = dict(id=id, sku='TEST-' + str(id), name='Aroma 5 мл',
                   price=Decimal('100'), stock=3, brand='REAL BRAND', volume_ml=5)
     values.update(changes)
     return Product(**values)

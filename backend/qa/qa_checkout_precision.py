@@ -78,8 +78,8 @@ async def run():
     prime_cache(BASE)
     async with Session() as session:
         repo = SqlRepository(session)
-        category = await repo.create_category({'name': 'QA'})
-        product = await repo.create_product({'category_id': category.id, 'name': 'Товар <X>',
+        category = await repo.create_brand({'name': 'QA'})
+        product = await repo.create_product({'brand_id': category.id, 'name': 'Товар <X>',
                                              'price': Decimal('199.90'), 'stock': 30})
         user = await repo.create_user(8001, None, 'Тест', None)
         await repo.confirm_age(user)

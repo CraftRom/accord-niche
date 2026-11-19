@@ -315,10 +315,10 @@ async def scenario():
 
         # Розрахунок рахується від кошика на сервері, тож для перевірки
         # там має щось лежати. Порожній кошик — окремий випадок нижче.
-        cat = (await client.post("/api/catalog/categories",
+        cat = (await client.post("/api/catalog/brands",
                                  json={"name": "Одноразки"}, headers=token)).json()
         prod = (await client.post("/api/catalog/products", json={
-            "category_id": cat["id"], "name": "Elf Bar 5000",
+            "brand_id": cat["id"], "name": "Elf Bar 5000",
             "price": "315", "stock": 10, "is_active": True,
         }, headers=token)).json()
         await client.post("/api/shop/cart",

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { api } from '../../api'
 import { ErrorBar, Field, Modal, useToast } from '../ui'
-import { DescriptionField, DisplayFields, PriceFields, ProductImageField, TaxonomyFields, PerfumeFields, perfumePayload, changeField, emptyProduct, groupPayload, pricePayload, validateProduct } from './ProductFields'
+import { BrandFields, DescriptionField, DisplayFields, PriceFields, ProductImageField, PerfumeFields, perfumePayload, changeField, emptyProduct, brandPayload, pricePayload, validateProduct } from './ProductFields'
 
-export default function NewProductModal({ categories, subcategories, onClose, onSaved }) {
+export default function NewProductModal({ brands, onManageBrands, onClose, onSaved }) {
   const [form, setForm] = useState({ ...emptyProduct })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -15,7 +15,7 @@ export default function NewProductModal({ categories, subcategories, onClose, on
     if (problem) { setError(problem); return }
     setBusy(true); setError('')
     try {
-      const product = await api.products.create({ ...form, name: form.name.trim(), ...groupPayload(form), ...pricePayload(form), ...perfumePayload(form), stock: Number(form.stock), sort_order: Number(form.sort_order), description: form.description || null, photo_url: form.photo_url || null })
+      const product = await api.products.create({ ...form, name: form.name.trim(), ...brandPayload(form), ...pricePayload(form), ...perfumePayload(form), stock: Number(form.stock), sort_order: Number(form.sort_order), description: form.description || null, photo_url: form.photo_url || null })
       onSaved(product); notify(`Товар створено · ${product.sku}`); onClose()
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
@@ -25,8 +25,7 @@ export default function NewProductModal({ categories, subcategories, onClose, on
       <ErrorBar error={error} />
       <fieldset disabled={busy}>
         <section className="catalog-form-section"><h3>Основне</h3><Field label="Назва товару"><input className="input" aria-label="Назва товару" required maxLength={255} autoFocus value={form.name} onChange={changeField(setForm, 'name')} /></Field><div className="catalog-sku-note"><strong>Артикул (SKU) · автоматично</strong><span>Унікальний артикул з’явиться після створення. Він зберігається при всіх подальших змінах.</span></div></section>
-        <section className="catalog-form-section"><h3>Категорія та субкатегорія</h3><TaxonomyFields form={form} setForm={setForm} categories={categories} subcategories={subcategories} /></section>
-        <section className="catalog-form-section"><h3>Характеристики парфуму</h3><PerfumeFields form={form} setForm={setForm} /></section>
+        <section className="catalog-form-section"><h3>Бренд і характеристики</h3><BrandFields form={form} setForm={setForm} brands={brands} onManage={onManageBrands} /><PerfumeFields form={form} setForm={setForm} /></section>
         <section className="catalog-form-section"><h3>Ціни</h3><PriceFields form={form} setForm={setForm} /></section>
         <section className="catalog-form-section"><h3>Опис і зображення</h3><DescriptionField form={form} setForm={setForm} /><ProductImageField form={form} setForm={setForm} /></section>
         <section className="catalog-form-section"><h3>Відображення та склад</h3><DisplayFields form={form} setForm={setForm} /></section>
