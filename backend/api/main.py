@@ -13,7 +13,7 @@ from api.routers import (
     logs as logs_router, media as media_router,
     integrations, orders, promos, support, shop_support, notifications, realtime,
     settings as settings_router, operators, shop as shop_router, stats, telegram, public_catalog, website_shop, blog,
-    system as system_router, seo as seo_router,
+    system as system_router, seo as seo_router, legal as legal_router,
 )
 from api.schemas import LoginIn, TokenOut
 from shop.config import settings
@@ -329,3 +329,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
 app.include_router(blog.admin, prefix='/api/blog', tags=['blog-admin'])
 app.include_router(blog.public, prefix='/api/public/blog', tags=['blog'])
 app.include_router(blog.web, prefix='/api/web/blog', tags=['blog-comments'])
+app.include_router(legal_router.admin, prefix='/api/legal', tags=['legal-admin'])
+app.include_router(legal_router.public, prefix='/api/public', tags=['legal'])
+# The Mini App host only serves /api/shop/*: the same read-only documents there.
+app.include_router(legal_router.public, prefix='/api/shop', tags=['legal'])

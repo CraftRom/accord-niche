@@ -47,7 +47,7 @@ export const INVENTORY=[['available','У наявності'],['low','Залиш
 
 const groups=[
   {title:'Продажі',items:[['/','Огляд магазину'],['/orders','Замовлення','orders'],['/customers','Клієнти'],['/support','Підтримка','support']]},
-  {title:'Вітрина й контент',items:[['/catalog','Товари та залишки'],['/blog','Блог']]},
+  {title:'Вітрина й контент',items:[['/catalog','Товари та залишки'],['/blog','Блог'],['/documents','Документи']]},
   {title:'Маркетинг',items:[['/promos','Промокоди'],['/broadcasts','Розсилки']]},
   {title:'Керування',items:[['/operators','Команда та доступ'],['/settings','Налаштування'],['/logs','Журнал'],['/backups','Резервні копії'],['/instructions','Інструкції']]},
 ]

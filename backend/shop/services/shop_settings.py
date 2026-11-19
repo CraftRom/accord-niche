@@ -45,8 +45,6 @@ ENV_FALLBACK = {
     "twilio_verify_service_sid": "ACCORD_TWILIO_VERIFY_SERVICE_SID",
     "instagram_url": "ACCORD_INSTAGRAM_URL",
     "tiktok_url": "ACCORD_TIKTOK_URL",
-    "terms_url": "ACCORD_TERMS_URL",
-    "privacy_url": "ACCORD_PRIVACY_URL",
     "miniapp_url": "ACCORD_MINIAPP_URL",
 }
 
@@ -164,8 +162,6 @@ class ShopSettings:
     twilio_verify_service_sid: str = ""
     instagram_url: str = ""
     tiktok_url: str = ""
-    terms_url: str = ""
-    privacy_url: str = ""
     miniapp_url: str = ""
     # Скільки хвилин бездіяльності витримує сесія панелі (5–1440).
     dashboard_idle_minutes: int = 60

@@ -251,3 +251,7 @@ a.section-link,a.product-link{display:block}
   .header .logout-btn{display:none}
   .header .header-nav .nav-logout{display:block;margin-top:8px;border-top:1px solid #eee7dd;padding-top:16px;color:var(--text-danger)}
 }
+
+/* Documents (/terms, /privacy): the article layout, numbered clauses read easily. */
+.legal-page .blog-prose h2{font-size:24px;margin-top:1.6em}
+.legal-switch{margin-top:40px;padding-top:16px;border-top:1px solid #e8e3dc}

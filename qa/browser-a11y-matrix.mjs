@@ -30,6 +30,9 @@ const product = (id) => ({ id, sku: `SKU-${id}`, name: `Товар ${id}`, brand
 function data(path) {
   if (path.endsWith('/auth/session')) return { role: 'admin', name: 'QA', csrf_token: 'qa', operator_id: 1, editable_settings: Object.keys(settings) }
   if (path === '/api/settings') return settings
+  if (path === '/api/legal') return { seller_ready: false, defaults: { terms: '## 1. Умови', privacy: '## 1. Дані' }, items: [
+    { key: 'terms', title: 'Публічна оферта', body: '## 1. Умови\n\nТекст.', is_default: true, updated_at: null, updated_by: null },
+    { key: 'privacy', title: 'Політика конфіденційності', body: '## 1. Дані\n\nТекст.', is_default: false, updated_at: '2026-11-19T10:00:00Z', updated_by: 'admin' }] }
   if (path.endsWith('/stats/report')) return structuredClone(analytics)
   if (path.endsWith('/stats/months')) return { months: [], timezone: 'Europe/Kyiv' }
   if (path.endsWith('/stats/order-sources')) return { total: 0, items: [] }
@@ -61,7 +64,7 @@ function data(path) {
   return {}
 }
 
-const PAGES = ['/', '/orders', '/orders/41', '/catalog', '/customers', '/support', '/promos', '/broadcasts', '/blog', '/logs', '/settings', '/operators', '/backups', '/instructions']
+const PAGES = ['/', '/orders', '/orders/41', '/catalog', '/customers', '/support', '/promos', '/broadcasts', '/blog', '/documents', '/logs', '/settings', '/operators', '/backups', '/instructions']
 const WIDTHS = [320, 768, 1280]
 
 const browser = await chromium.launch()
