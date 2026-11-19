@@ -1,11 +1,12 @@
 // W-01 / W-02 / W-14: readable text on the light storefront.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {readFileSync} from 'node:fs'
+import {readFileSync, readdirSync} from 'node:fs'
 
 const read = name => readFileSync(new URL('../src/' + name, import.meta.url), 'utf8')
 const tokens = read('tokens.css')
-const css = ['styles.css', 'interface.css', 'motion.css'].map(read).join('\n')
+// Every stylesheet under src/, so a new file cannot slip past the checks.
+const css = readdirSync(new URL('../src/', import.meta.url), {recursive: true}).filter(name => name.endsWith('.css') && name !== 'tokens.css').map(read).join('\n')
 const hex = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)) }
 const lum = rgb => rgb.map(v => v / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4).reduce((s, c, i) => s + c * [.2126, .7152, .0722][i], 0)
 const ratio = (a, b) => { const x = lum(hex(a)), y = lum(hex(b)); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05) }

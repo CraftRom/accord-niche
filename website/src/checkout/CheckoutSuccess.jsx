@@ -1,0 +1,6 @@
+import { formatAmount } from '../format'
+
+export function CheckoutSuccess({result,go}) {
+  if(!result?.order_id)return <main className="shell commerce-page"><h1>Перевірка замовлення</h1><div className="commerce-panel"><p>На цій сторінці немає підтвердження нової покупки. Перевірте історію замовлень у своєму профілі.</p><button className="btn primary" onClick={()=>go('/profile')}>ІСТОРІЯ ЗАМОВЛЕНЬ</button></div></main>
+  return <main className="shell commerce-page success-page"><p className="eyebrow">ACCORD NICHE</p><h1>Дякуємо за замовлення</h1><div className="commerce-panel"><h2>Замовлення №{result.order_id} прийнято</h2><p>Менеджер опрацює його та зв’яжеться за вказаним номером телефону.</p><p className="order-success-total">За товари: <strong>{formatAmount(result.total)} грн</strong></p><p className="shop-hint">Це підтвердження створення замовлення. Статус оплати й доставки доступний у профілі цього браузера; для доступу з інших пристроїв увійдіть через Google.</p><div className="success-actions"><button className="btn primary" onClick={()=>go('/profile')}>ІСТОРІЯ ЗАМОВЛЕНЬ</button><button className="btn outline" onClick={()=>go('/catalog')}>ПРОДОВЖИТИ ПОКУПКИ</button></div></div></main>
+}

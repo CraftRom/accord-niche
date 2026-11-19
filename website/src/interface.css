@@ -193,3 +193,10 @@ a.section-link,a.product-link{display:block}
 .footer-links button,.footer-links a{font-size:13px}
 @media(max-width:900px){.footer-links{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:750px){.footer-links button,.footer-links a{min-height:var(--target-min)}}
+
+/* W-35: badges share one size, line and alignment; meaning is in the words,
+   colour only supports it. */
+.product-badges{align-items:flex-start}
+.product-badges>span{display:inline-flex;align-items:center;min-height:24px;line-height:1.2;letter-spacing:.02em;border:1px solid transparent}
+.product-badges .stock-badge{background:var(--surface);color:var(--text-secondary);border-color:#d8cfc2}
+.header-actions .icon-btn svg,.icon-btn svg{flex:none}
