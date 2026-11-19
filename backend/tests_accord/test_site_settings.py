@@ -29,8 +29,8 @@ from shop.services.shop_settings import (ENV_FALLBACK, SECRET_FIELDS, ShopSettin
 
 GATEWAY = 'https://api.sms-gate.app/3rdparty/v1/messages'
 LOGIN = 'ACCORDSHOP'
-TOKEN = 'p4ss-W0rd!'
-SMS = {'sms_gateway_url': GATEWAY, 'sms_gateway_login': LOGIN, 'sms_gateway_password': TOKEN}
+TOKEN = 'qa-gateway-value'
+SMS = {'sms_gateway_url': GATEWAY, 'sms_gateway_login': LOGIN, 'sms_gateway_token': TOKEN}
 CLIENT = '123456789012-abcdefgh12345678.apps.googleusercontent.com'
 
 
@@ -50,25 +50,25 @@ async def repo(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sms_gateway_password_is_encrypted_at_rest_and_never_returned(repo):
+async def test_sms_gateway_token_is_encrypted_at_rest_and_never_returned(repo):
     saved = await save_shop_settings(repo, SMS)
-    assert 'sms_gateway_password' in SECRET_FIELDS and saved.sms_ready
-    stored = (await repo.s.execute(select(m.Setting.value).where(m.Setting.key == 'sms_gateway_password'))).scalar_one()
+    assert 'sms_gateway_token' in SECRET_FIELDS and saved.sms_ready
+    stored = (await repo.s.execute(select(m.Setting.value).where(m.Setting.key == 'sms_gateway_token'))).scalar_one()
     assert stored.startswith('enc:v1:') and TOKEN not in stored
     out = settings_api._out(saved).model_dump()
-    assert 'sms_gateway_password' not in out and TOKEN not in str(out)
+    assert 'sms_gateway_token' not in out and TOKEN not in str(out)
     assert out['sms_gateway_connected'] is True and out['sms_gateway_url'] == GATEWAY
     invalidate_cache()
-    assert (await get_shop_settings(repo)).site('sms_gateway_password') == TOKEN
+    assert (await get_shop_settings(repo)).site('sms_gateway_token') == TOKEN
 
 
 @pytest.mark.asyncio
 async def test_empty_panel_value_falls_back_to_env_and_panel_overrides_it(repo, monkeypatch):
     monkeypatch.setenv('ACCORD_GOOGLE_CLIENT_ID', 'env-' + CLIENT)
-    monkeypatch.setenv('ACCORD_SMS_GATEWAY_PASSWORD', 'from-env')
+    monkeypatch.setenv('ACCORD_SMS_GATEWAY_TOKEN', 'from-env')
     shop = await get_shop_settings(repo)
     assert shop.site('google_client_id') == 'env-' + CLIENT
-    assert shop.env_defaults == ['google_client_id', 'sms_gateway_password']
+    assert shop.env_defaults == ['google_client_id', 'sms_gateway_token']
     out = settings_api._out(shop).model_dump()
     assert out['google_client_id'] == '' and out['sms_gateway_connected'] is True
     assert 'from-env' not in str(out), '.env values are reported as «set», never sent to the panel'
@@ -83,7 +83,7 @@ async def test_empty_panel_value_falls_back_to_env_and_panel_overrides_it(repo, 
     ('sms_gateway_url', 'http://api.sms-gate.app/3rdparty/v1/messages'),
     ('sms_gateway_url', 'https://user:pass@gateway.example/messages'),
     ('sms_gateway_login', 'bad login'),
-    ('sms_gateway_password', 'has space'),
+    ('sms_gateway_token', 'has space'),
     ('google_site_verification', '"><script>'),
     ('instagram_url', 'https://evil.example/accord'),
     ('instagram_url', 'http://instagram.com/accord'),
@@ -98,17 +98,17 @@ def test_formats_and_hosts_are_validated(field, value):
 
 def test_valid_values_and_pasted_spaces_are_accepted():
     data = ShopSettingsIn(google_client_id=f'  {CLIENT} ', sms_gateway_url=f' {GATEWAY} ', sms_gateway_login=LOGIN,
-                          sms_gateway_password=TOKEN, instagram_url='https://www.instagram.com/accord',
+                          sms_gateway_token=TOKEN, instagram_url='https://www.instagram.com/accord',
                           tiktok_url='https://www.tiktok.com/@accord', miniapp_url='https://t.me/bot/app',
                           sms_gateway_connected=True,
                           env_defaults=['google_client_id'])
     assert data.google_client_id == CLIENT and data.sms_gateway_url == GATEWAY
-    assert ShopSettingsIn(sms_gateway_password='').sms_gateway_password == '', 'empty clears the panel value'
+    assert ShopSettingsIn(sms_gateway_token='').sms_gateway_token == '', 'empty clears the panel value'
 
 
 def test_only_system_administrator_changes_keys_and_identities():
     keys = {'google_client_id', 'google_site_verification', 'sms_gateway_url', 'sms_gateway_login',
-            'sms_gateway_password', 'miniapp_url', 'dashboard_idle_minutes'}
+            'sms_gateway_token', 'miniapp_url', 'dashboard_idle_minutes'}
     admin = editable_settings(Role.ADMIN, ShopSettingsIn.model_fields)
     assert keys <= INFRA_FIELDS and not keys & admin
     assert keys <= editable_settings(Role.SYSADMIN, ShopSettingsIn.model_fields)

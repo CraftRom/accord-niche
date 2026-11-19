@@ -66,7 +66,7 @@ def fresh_environment() -> dict[str, str]:
         'ADMIN_CHAT_ID': '0', 'ADMIN_IDS': '', 'OPTIONAL_TELEGRAM': 'true',
         'ACCORD_MINIAPP_URL': '', 'MINIAPP_SHORT_NAME': '',
         'ACCORD_GOOGLE_CLIENT_ID': '', 'ACCORD_SMS_GATEWAY_URL': '',
-        'ACCORD_SMS_GATEWAY_LOGIN': '', 'ACCORD_SMS_GATEWAY_PASSWORD': '',
+        'ACCORD_SMS_GATEWAY_LOGIN': '', 'ACCORD_SMS_GATEWAY_TOKEN': '',
         'ACCORD_INSTAGRAM_URL': '', 'ACCORD_TIKTOK_URL': '', 'ACCORD_PHONE': '',
         'SALESDRIVE_ENABLED': 'false', 'AUTO_REPLIES_ENABLED': 'false',
         'REFERRAL_ENABLED': 'false', 'LOG_JSON': '1',

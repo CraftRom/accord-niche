@@ -34,7 +34,7 @@ from shop.services.shop_settings import ENV_FALLBACK, invalidate_cache
 
 PHONE = '+380671234567'
 GATEWAY = {'ACCORD_SMS_GATEWAY_URL': 'https://gateway.example/3rdparty/v1/messages',
-           'ACCORD_SMS_GATEWAY_LOGIN': 'shop', 'ACCORD_SMS_GATEWAY_PASSWORD': 'secret-pass'}
+           'ACCORD_SMS_GATEWAY_LOGIN': 'shop', 'ACCORD_SMS_GATEWAY_TOKEN': 'qa-gateway-value'}
 
 
 @pytest_asyncio.fixture

@@ -889,14 +889,14 @@ class ShopSettingsIn(BaseModel):
     sms_gateway_url: str | None = Field(None, max_length=255)
     sms_gateway_login: str | None = Field(None, max_length=64, pattern=r"^$|^[A-Za-z0-9_.@-]{1,64}$")
     # Секрет: записується, але не читається назад (sms_gateway_connected).
-    sms_gateway_password: str | None = Field(None, max_length=128, pattern=r"^$|^[\x21-\x7e]{4,128}$")
+    sms_gateway_token: str | None = Field(None, max_length=128, pattern=r"^$|^[\x21-\x7e]{4,128}$")
     instagram_url: str | None = Field(None, max_length=255)
     tiktok_url: str | None = Field(None, max_length=255)
     miniapp_url: str | None = Field(None, max_length=255)
     dashboard_idle_minutes: int | None = Field(None, ge=5, le=1440)
 
     @field_validator("google_client_id", "google_site_verification", "sms_gateway_url",
-                     "sms_gateway_login", "sms_gateway_password", mode="before")
+                     "sms_gateway_login", "sms_gateway_token", mode="before")
     @classmethod
     def _strip_pasted(cls, value):
         # Значення копіюють із консолей — пробіли по краях не мають ламати формат.

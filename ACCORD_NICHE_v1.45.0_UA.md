@@ -61,7 +61,7 @@ Twilio Verify прибрано повністю: платних сервісів
   - нові поля коду на акаунті сайту;
   - нова таблиця `website_phone_confirmations`;
   - збережені ключі Twilio, зокрема зашифрований Auth Token, **видаляються** з бази.
-- **`.env`:** змінні `ACCORD_TWILIO_*` більше не використовуються. Замість них, за потреби, `ACCORD_SMS_GATEWAY_URL`, `ACCORD_SMS_GATEWAY_LOGIN`, `ACCORD_SMS_GATEWAY_PASSWORD`.
+- **`.env`:** змінні `ACCORD_TWILIO_*` більше не використовуються. Замість них, за потреби, `ACCORD_SMS_GATEWAY_URL`, `ACCORD_SMS_GATEWAY_LOGIN`, `ACCORD_SMS_GATEWAY_TOKEN`.
 - **Політика конфіденційності:** шаблон більше не згадує Twilio. Серед отримувачів даних тепер Telegram і оператор мобільного зв’язку магазину.
 
 ## Тести

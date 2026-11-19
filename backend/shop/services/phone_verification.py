@@ -107,7 +107,7 @@ async def send_sms(shop, phone: str, text: str) -> None:
     are followed and the credentials never reach logs or responses.
     """
     url, login, password = (shop.site("sms_gateway_url"), shop.site("sms_gateway_login"),
-                            shop.site("sms_gateway_password"))
+                            shop.site("sms_gateway_token"))
     if not (url and login and password):
         raise GatewayError("not_configured")
     if not url.startswith("https://"):

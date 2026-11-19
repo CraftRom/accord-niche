@@ -202,7 +202,7 @@ const FIELDS = [
       { key: 'sms_gateway_login', label: 'Логін', env: true,
         hint: 'Застосунок → Home → Cloud server → Username' },
       {
-        key: 'sms_gateway_password', label: 'Пароль', env: true,
+        key: 'sms_gateway_token', label: 'Пароль', env: true,
         secret: 'sms_gateway_connected',
         secretHint: 'Без нього SMS не надсилаються.',
         hint: 'Застосунок → Home → Cloud server → Password. Зберігається зашифрованим і назад не показується',

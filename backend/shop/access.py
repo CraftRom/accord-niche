@@ -20,7 +20,7 @@ INFRA_FIELDS = frozenset({
     # Site sign-in, SMS and Mini App link: keys and identities of the shop
     # itself, so only the system administrator changes them.
     'google_client_id', 'google_site_verification', 'sms_gateway_url',
-    'sms_gateway_login', 'sms_gateway_password', 'miniapp_url',
+    'sms_gateway_login', 'sms_gateway_token', 'miniapp_url',
     'dashboard_idle_minutes',
 })
 # Explicit allowlist: future settings default to system-administrator access.

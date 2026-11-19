@@ -30,7 +30,7 @@ SECRET_FIELDS = (
     "salesdrive_form_key",
     "salesdrive_api_key",
     "salesdrive_webhook_token",
-    "sms_gateway_password",
+    "sms_gateway_token",
 )
 
 # Параметри сайту, які раніше жили лише в .env. Порожнє значення в панелі
@@ -42,7 +42,7 @@ ENV_FALLBACK = {
     "google_site_verification": "ACCORD_GOOGLE_SITE_VERIFICATION",
     "sms_gateway_url": "ACCORD_SMS_GATEWAY_URL",
     "sms_gateway_login": "ACCORD_SMS_GATEWAY_LOGIN",
-    "sms_gateway_password": "ACCORD_SMS_GATEWAY_PASSWORD",
+    "sms_gateway_token": "ACCORD_SMS_GATEWAY_TOKEN",
     "instagram_url": "ACCORD_INSTAGRAM_URL",
     "tiktok_url": "ACCORD_TIKTOK_URL",
     "miniapp_url": "ACCORD_MINIAPP_URL",
@@ -161,7 +161,7 @@ class ShopSettings:
     # коди генерує й перевіряє сам сервер, шлюз лише доставляє текст.
     sms_gateway_url: str = ""
     sms_gateway_login: str = ""
-    sms_gateway_password: str = ""
+    sms_gateway_token: str = ""
     instagram_url: str = ""
     tiktok_url: str = ""
     miniapp_url: str = ""
@@ -186,13 +186,13 @@ class ShopSettings:
 
     @property
     def sms_gateway_connected(self) -> bool:
-        return bool(self.site("sms_gateway_password"))
+        return bool(self.site("sms_gateway_token"))
 
     @property
     def sms_ready(self) -> bool:
         """Адреса, логін і пароль SMS-шлюзу задані (з панелі або оточення)."""
         return all(self.site(name) for name in
-                   ("sms_gateway_url", "sms_gateway_login", "sms_gateway_password"))
+                   ("sms_gateway_url", "sms_gateway_login", "sms_gateway_token"))
 
     @classmethod
     def from_env(cls) -> ShopSettings:

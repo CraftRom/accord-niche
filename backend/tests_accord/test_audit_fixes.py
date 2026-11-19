@@ -206,7 +206,7 @@ async def test_parallel_sms_requests_send_once_and_count_once(db, monkeypatch):
     await session.commit()
     monkeypatch.setattr(web, '_require_csrf', lambda r: None)
     for name, value in (('ACCORD_SMS_GATEWAY_URL', 'https://gateway.example/messages'),
-                        ('ACCORD_SMS_GATEWAY_LOGIN', 'shop'), ('ACCORD_SMS_GATEWAY_PASSWORD', 'secret')):
+                        ('ACCORD_SMS_GATEWAY_LOGIN', 'shop'), ('ACCORD_SMS_GATEWAY_TOKEN', 'secret')):
         monkeypatch.setenv(name, value)  # .env fallback of the panel setting
     sent, loaded, ready = [], 0, asyncio.Event()
 
@@ -245,7 +245,7 @@ async def test_sms_hourly_limit_is_enforced_atomically(db, monkeypatch):
     await session.commit()
     monkeypatch.setattr(web, '_require_csrf', lambda r: None)
     for name, value in (('ACCORD_SMS_GATEWAY_URL', 'https://gateway.example/messages'),
-                        ('ACCORD_SMS_GATEWAY_LOGIN', 'shop'), ('ACCORD_SMS_GATEWAY_PASSWORD', 'secret')):
+                        ('ACCORD_SMS_GATEWAY_LOGIN', 'shop'), ('ACCORD_SMS_GATEWAY_TOKEN', 'secret')):
         monkeypatch.setenv(name, value)  # .env fallback of the panel setting
 
     async def account(_request, repo):

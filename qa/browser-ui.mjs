@@ -19,7 +19,7 @@ try {
     let data={}
     // The panel renders only the fields the session may edit (system groups);
     // a system administrator may edit every stored setting.
-    if(path==='/api/auth/session') data={role:'admin',name:'QA',csrf_token:'qa-csrf',editable_settings:[...Object.keys(settings),'sms_gateway_password']}
+    if(path==='/api/auth/session') data={role:'admin',name:'QA',csrf_token:'qa-csrf',editable_settings:[...Object.keys(settings),'sms_gateway_token']}
     else if(path==='/api/settings') {
       if(route.request().method()==='PUT'){const body=route.request().postDataJSON();updates.push(body);settings={...settings,...body}}
       data=settings
@@ -51,7 +51,7 @@ try {
   // Site integrations: Google and the SMS gateway live in «Інтеграції»; extra fields stay hidden until asked for.
   await page.getByRole('button',{name:'Інтеграції',exact:true}).click()
   check(await page.getByRole('heading',{name:'SMS-шлюз (Android)',exact:true}).isVisible(), 'settings show the SMS gateway section')
-  check(await page.locator('#setting-sms_gateway_password').getByText('Підключено через .env',{exact:false}).isVisible(), 'secret from .env is reported as connected, not shown')
+  check(await page.locator('#setting-sms_gateway_token').getByText('Підключено через .env',{exact:false}).isVisible(), 'secret from .env is reported as connected, not shown')
   check(await page.locator('#setting-google_client_id input').getAttribute('placeholder')==='Діє значення з .env', 'empty field says the .env value applies')
   check(await page.locator('#setting-google_site_verification').count()===0, 'extra parameters are hidden by default')
   const more=page.getByRole('button',{name:/Показати додаткові параметри/}).first()

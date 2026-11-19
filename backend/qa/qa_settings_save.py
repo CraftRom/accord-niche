@@ -57,7 +57,7 @@ r.check(not (incoming - stored),
 # novaposhta_connected. Поіменний перелік потрібен саме для того, щоб
 # наступний секрет потрапляв сюди свідомо, а не за збігом у назві.
 WRITE_ONLY = {"novaposhta_api_key", "salesdrive_form_key",
-              "salesdrive_api_key", "salesdrive_webhook_token", "sms_gateway_password"}
+              "salesdrive_api_key", "salesdrive_webhook_token", "sms_gateway_token"}
 
 invisible = incoming - outgoing - WRITE_ONLY
 r.check(not invisible,
@@ -130,7 +130,7 @@ def sample(name: str, field):
         "google_site_verification": "probe_verification_token_01",
         "sms_gateway_url": "https://api.sms-gate.app/3rdparty/v1/messages",
         "sms_gateway_login": "PROBE",
-        "sms_gateway_password": "probe-password",
+        "sms_gateway_token": "probe-password",
         "instagram_url": "https://instagram.com/probe",
         "tiktok_url": "https://www.tiktok.com/@probe",
         "miniapp_url": "https://t.me/probe_bot/app",
