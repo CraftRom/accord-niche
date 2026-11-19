@@ -63,6 +63,11 @@ def upgrade():
     with op.batch_alter_table("promo_codes") as batch:
         batch.add_column(sa.Column("brand_ids", JSON, nullable=False, server_default=sa.text("'[]'")))
 
+    if op.get_context().as_sql:
+        # `alembic upgrade --sql` has no rows to read: emit the same data
+        # migration as set-based PostgreSQL statements.
+        _upgrade_data_offline()
+        return
     bind = op.get_bind()
     # 1. Brand dictionary from the products' brand names.
     seen = {}
@@ -106,6 +111,50 @@ def upgrade():
                 sa.bindparam("ids", type_=JSON)), {"ids": brand_ids, "id": promo_id})
         else:
             bind.execute(sa.text("UPDATE promo_codes SET is_active = :off WHERE id = :id"), {"off": False, "id": promo_id})
+
+
+# Brand name exactly as the online path normalises it: whitespace collapsed,
+# trimmed, at most 100 characters; the key is its lower case.
+_NAME = "left(regexp_replace(btrim(coalesce({col}, '')), '\\s+', ' ', 'g'), 100)"
+_CATS = ("SELECT c::int FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(pc.category_ids::jsonb) = 'array' "
+         "THEN pc.category_ids::jsonb ELSE '[]'::jsonb END) AS c WHERE c ~ '^-?[0-9]+$'")
+
+
+def _upgrade_data_offline():
+    name = _NAME.format(col="brand")
+    # 1. One brand per case-insensitive name; the first product's spelling wins.
+    op.execute(f"""
+        INSERT INTO brands (name, name_key, sort_order, is_active)
+        SELECT DISTINCT ON (lower(name)) name, lower(name), 0, true
+        FROM (SELECT id, {name} AS name FROM products) AS src
+        WHERE name <> '' ORDER BY lower(name), id
+    """)
+    op.execute(f"""
+        UPDATE products SET brand_id = b.id, brand = b.name
+        FROM brands b WHERE b.name_key = lower({_NAME.format(col='products.brand')})
+    """)
+    # 2. Keep products hidden that only an inactive group was hiding.
+    op.execute("""
+        UPDATE products SET is_active = false
+        WHERE is_active = true AND (
+            category_id IN (SELECT id FROM categories WHERE is_active = false)
+            OR subcategory_id IN (SELECT id FROM subcategories WHERE is_active = false)
+            OR subcategory_id IN (SELECT s.id FROM subcategories s JOIN categories c ON c.id = s.category_id
+                                  WHERE c.is_active = false))
+    """)
+    # 3. Category promos become brand promos (or are switched off).
+    op.execute(f"""
+        UPDATE promo_codes AS pc SET brand_ids = COALESCE((
+            SELECT jsonb_agg(DISTINCT p.brand_id ORDER BY p.brand_id) FROM products p
+            LEFT JOIN subcategories s ON s.id = p.subcategory_id
+            WHERE p.brand_id IS NOT NULL AND (p.category_id IN ({_CATS}) OR s.category_id IN ({_CATS}))
+        ), '[]'::jsonb)
+        WHERE EXISTS ({_CATS})
+    """)
+    op.execute(f"""
+        UPDATE promo_codes AS pc SET is_active = false
+        WHERE EXISTS ({_CATS}) AND pc.brand_ids::jsonb = '[]'::jsonb
+    """)
 
 
 def downgrade():
