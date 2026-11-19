@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useProductImage } from '../components/catalog/useProductImage'
 import NewProductModal from '../components/catalog/NewProductModal'
-import TaxonomyManager from '../components/catalog/TaxonomyManager'
+import BrandManager from '../components/catalog/BrandManager'
 
 import { api, isAdmin } from '../api'
 import { useFilters } from '../components/useFilters'
@@ -128,22 +128,21 @@ export default function Catalog() {
   const catalogBack = location.pathname + location.search
   const loadSequence = useRef(0)
   const notify = useToast()
-  const [categories, setCategories] = useState([])
-  const [subcategories, setSubcategories] = useState([])
+  const [brands, setBrands] = useState([])
   const [products, setProducts] = useState(null)
-  // Категорія, пошук і сортування живуть в адресі: менеджер може
+  // Бренд, пошук і сортування живуть в адресі: менеджер може
   // повернутися зі сторінки товару або надіслати колезі саме цей відбір.
-  const [{ category, subcategory, feature, search, sort, inventory, page:rawPage, pageSize:rawSize }, setQuery, resetFilters] = useFilters(
-    { category: '', subcategory: '', feature: '', search: '', sort: 'name-asc',inventory:'',page:1,pageSize:20 },
+  const [{ brand, feature, search, sort, inventory, page:rawPage, pageSize:rawSize }, setQuery, resetFilters] = useFilters(
+    { brand: '', feature: '', search: '', sort: 'name-asc',inventory:'',page:1,pageSize:20 },
   )
-  const filter = category
-  const setFilter = (value) => setQuery('category', value)
+  const filter = brand
+  const setFilter = (value) => setQuery('brand', value)
   const setSearch = (value) => setQuery('search', value)
   const setSort = (value) => setQuery('sort', value)
 
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(null)
-  const [managingCategories, setManagingCategories] = useState(false)
+  const [managingBrands, setManagingBrands] = useState(false)
   const [importing, setImporting] = useState(false)
   // A10: managers read the catalog; changes are administrative (the API enforces it too).
   const canEdit = isAdmin()
@@ -155,7 +154,7 @@ export default function Catalog() {
   const [loading,setLoading]=useState(true)
   const [loadedKey,setLoadedKey]=useState('')
   const [failedKey,setFailedKey]=useState('')
-  const queryKey=JSON.stringify([filter,subcategory,feature,search,inventory,sort,page,pageSize])
+  const queryKey=JSON.stringify([filter,feature,search,inventory,sort,page,pageSize])
   const currentProducts=loadedKey===queryKey?products:null
   const currentError=failedKey===queryKey?error:''
   const [selected, setSelected] = useState(() => new Set())
@@ -167,19 +166,19 @@ export default function Catalog() {
     const sequence = ++loadSequence.current
     setError('');setFailedKey('');setLoading(true)
     try {
-      const [cats, subs, prods] = await Promise.all([
-        api.categories.list(), api.subcategories.list(),
-        api.products.list({ category_id: filter || undefined, subcategory_id: subcategory || undefined, search: search || undefined, is_new: feature === 'new' ? true : undefined, is_sale: feature === 'sale' ? true : undefined, uncategorized: feature === 'ungrouped' ? true : undefined, inventory:inventory || undefined,sort,paginated:true,limit:pageSize,offset:(page-1)*pageSize }),
+      const [brandList, prods] = await Promise.all([
+        api.brands.list(),
+        api.products.list({ brand_id: filter || undefined, search: search || undefined, is_new: feature === 'new' ? true : undefined, is_sale: feature === 'sale' ? true : undefined, without_brand: feature === 'no_brand' ? true : undefined, inventory:inventory || undefined,sort,paginated:true,limit:pageSize,offset:(page-1)*pageSize }),
       ])
       if (sequence !== loadSequence.current) return
-      setCategories(cats); setSubcategories(subs)
+      setBrands(brandList)
       setProducts(prods.items);setTotal(prods.total);setLoadedKey(queryKey)
       const lastPage=Math.max(1,Math.ceil(prods.total/pageSize))
       if(page>lastPage)setQuery('page',lastPage)
     } catch (err) {
       if (sequence === loadSequence.current){setError(err.message);setFailedKey(queryKey)}
     }finally{if(sequence===loadSequence.current)setLoading(false)}
-  }, [filter, subcategory, feature, search, inventory,sort,page,pageSize])
+  }, [filter, feature, search, inventory,sort,page,pageSize])
 
   useEffect(() => {
     const timer = setTimeout(load, search ? 350 : 0)
@@ -188,7 +187,7 @@ export default function Catalog() {
 
   useEffect(() => {
     setSelected(new Set())
-  }, [filter, subcategory, feature, search, inventory, sort, pageSize, page])
+  }, [filter, feature, search, inventory, sort, pageSize, page])
 
   const updateStock = (product, delta) => {
     // Кожен товар має власну Promise-чергу. Серверний delta атомарний, а
@@ -319,10 +318,10 @@ export default function Catalog() {
             {canEdit && <><button className="btn ghost" onClick={() => setImporting(true)}>Імпорт XLSX</button>
             <button
               className="btn ghost catalog-categories-btn"
-              onClick={() => setManagingCategories(true)}
-              title="Керувати категоріями"
+              onClick={() => setManagingBrands(true)}
+              title="Керувати брендами"
             >
-              <span className="catalog-categories-wide">Категорії</span>
+              <span className="catalog-categories-wide">Бренди</span>
               <span className="catalog-categories-short" aria-hidden="true">▦</span>
             </button>
             <button className="btn catalog-add-btn" onClick={() => setEditing({})}>
@@ -336,11 +335,11 @@ export default function Catalog() {
 
       <div className="catalog-toolbar">
         <label className="catalog-filter">
-          <span>Категорія</span>
-          <select className="input" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="">Усі категорії</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name} ({c.products_count})</option>
+          <span>Бренд</span>
+          <select className="input" aria-label="Фільтр бренду" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">Усі бренди</option>
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>{b.name} ({b.products_count}){b.is_active ? '' : ' · прихований'}</option>
             ))}
           </select>
         </label>
@@ -374,18 +373,17 @@ export default function Catalog() {
       </div>
 
       <div className="catalog-extra-filters"><label><span>Стан товарів</span><select className="input" aria-label="Стан товарів" value={inventory} onChange={event=>setQuery('inventory',event.target.value)}><option value="">Усі стани</option>{INVENTORY.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-        <label><span>Субкатегорія</span><select className="input" aria-label="Фільтр субкатегорії" value={subcategory} onChange={(e) => setQuery('subcategory', e.target.value)}><option value="">Усі субкатегорії</option>{subcategories.map((s) => <option key={s.id} value={s.id}>{s.name}{s.category_name ? ` · ${s.category_name}` : ''}</option>)}</select></label>
-        <label><span>Відображення</span><select className="input" aria-label="Фільтр відображення" value={feature} onChange={(e) => setQuery('feature', e.target.value)}><option value="">Усі товари</option><option value="new">Новинки</option><option value="sale">Акції</option><option value="ungrouped">Без категорій і субкатегорій</option></select></label>
+        <label><span>Відображення</span><select className="input" aria-label="Фільтр відображення" value={feature} onChange={(e) => setQuery('feature', e.target.value)}><option value="">Усі товари</option><option value="new">Новинки</option><option value="sale">Акції</option><option value="no_brand">Без бренду</option></select></label>
       </div>
-      {(category || subcategory || inventory || feature || search || sort!=='name-asc') && <button className="btn ghost small" onClick={resetFilters}>Скинути всі фільтри</button>}
+      {(brand || inventory || feature || search || sort!=='name-asc') && <button className="btn ghost small" onClick={resetFilters}>Скинути всі фільтри</button>}
       <ErrorBar error={currentError}/>{currentError && <div className="commerce-actions"><span className="faint">{currentProducts?'Показані попередні дані.':'Каталог не завантажено.'}</span><button className="btn ghost small" disabled={loading} onClick={load}>Повторити</button></div>}{loading && currentProducts && <p className="faint" role="status">Оновлюємо товари…</p>}
 
       {!currentProducts ? (
         currentError?null:<Loading />
       ) : currentProducts.length === 0 ? (
-        (category || subcategory || feature || inventory || search) ? (
+        (brand || feature || inventory || search) ? (
           <Empty title="Нічого не знайдено">
-            За цим відбором товарів немає. Можливо, вони в іншій категорії.
+            За цим відбором товарів немає. Можливо, вони в іншого бренду.
             <div className="u-mt-3">
               <button className="btn ghost small" onClick={resetFilters}>
                 Показати всі товари
@@ -409,7 +407,7 @@ export default function Catalog() {
               />
             </label>
             <span>Товар</span>
-            <span>Категорія</span>
+            <span>Бренд</span>
             <span>Ціна</span>
             <span>Залишок</span>
             <span>Статус</span>
@@ -434,11 +432,11 @@ export default function Catalog() {
                     <Link className="catalog-product-link" to={`/catalog/products/${p.id}`} state={{ catalogBack }}><strong title={p.name}>{p.name}</strong></Link>
                     <span className="mono muted" style={{fontSize: 12}}>{p.sku}</span>
                     {p.description && <p>{p.description}</p>}
-                    <span className="catalog-mobile-category">{[p.category_name, p.subcategory_name].filter(Boolean).join(" / ") || "Без груп"}</span>
+                    <span className="catalog-mobile-category">{p.brand || "Без бренду"}</span>
                   </div>
                 </div>
 
-                <div className="catalog-category muted">{[p.category_name, p.subcategory_name].filter(Boolean).join(" / ") || "Без груп"}</div>
+                <div className="catalog-category muted">{p.brand || "Без бренду"}</div>
 
                 <div className="catalog-price">
                   <strong>{money(p.price)}</strong>
@@ -578,8 +576,8 @@ export default function Catalog() {
 
       {importing && <ImportProductsModal onClose={() => setImporting(false)} onDone={load} />}
 
-      {editing && <NewProductModal categories={categories} subcategories={subcategories} onClose={() => setEditing(null)} onSaved={(product) => navigate(`/catalog/products/${product.id}`, { state: { catalogBack } })} />}
-      {managingCategories && <TaxonomyManager categories={categories} subcategories={subcategories} onClose={() => setManagingCategories(false)} onChanged={load} />}
+      {editing && <NewProductModal brands={brands} onManageBrands={() => setManagingBrands(true)} onClose={() => setEditing(null)} onSaved={(product) => navigate(`/catalog/products/${product.id}`, { state: { catalogBack } })} />}
+      {managingBrands && <BrandManager brands={brands} onClose={() => setManagingBrands(false)} onChanged={load} />}
 
     </>
   )

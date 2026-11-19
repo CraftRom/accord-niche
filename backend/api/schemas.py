@@ -40,37 +40,52 @@ class TokenOut(BaseModel):
 
 # -------------------------------------------------------------------- каталог
 
-class CategoryIn(BaseModel):
-    name: str = Field(min_length=1, max_length=128)
-    description: str | None = None
-    sort_order: int = 0
+class BrandIn(BaseModel):
+    """Бренд парфумерії — група товарів у каталозі (замість категорій)."""
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=2000)
+    sort_order: int = Field(0, ge=-100000, le=100000)
     is_active: bool = True
 
     @field_validator("name")
     @classmethod
     def nonempty_name(cls, value):
-        if not value.strip(): raise ValueError("Назва групи не може бути порожньою")
-        return value.strip()
+        value = " ".join(value.split())
+        if not value: raise ValueError("Назва бренду не може бути порожньою")
+        return value
 
 
-class CategoryOut(ORMModel, CategoryIn):
+class BrandPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=2000)
+    sort_order: int | None = Field(None, ge=-100000, le=100000)
+    is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def nonempty_name(cls, value):
+        if value is None: return value
+        value = " ".join(value.split())
+        if not value: raise ValueError("Назва бренду не може бути порожньою")
+        return value
+
+
+class BrandOut(ORMModel):
     id: int
-    products_count: int = 0
-
-
-class SubcategoryIn(CategoryIn):
-    category_id: int | None = Field(None, gt=0)
-
-
-class SubcategoryOut(ORMModel, SubcategoryIn):
-    id: int
-    category_name: str | None = None
+    name: str
+    description: str | None = None
+    sort_order: int = 0
+    is_active: bool = True
     products_count: int = 0
 
 
 class ProductIn(BaseModel):
-    category_id: int | None = Field(None, gt=0)
-    subcategory_id: int | None = Field(None, gt=0)
+    # Бренд обирається зі списку брендів (brand_id). Назва (brand) приймається
+    # для імпорту й старих клієнтів: бренд із такою назвою знаходиться або
+    # створюється автоматично.
+    brand_id: int | None = Field(None, gt=0)
     name: str = Field(min_length=1, max_length=255)
     # Accepted for old clients, but never used as the system article.
     sku: str | None = None
@@ -99,8 +114,7 @@ class ProductIn(BaseModel):
 
 class ProductPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    category_id: int | None = Field(None, gt=0)
-    subcategory_id: int | None = Field(None, gt=0)
+    brand_id: int | None = Field(None, gt=0)
     name: str | None = Field(None, min_length=1, max_length=255)
     external_sku: str | None = Field(None, max_length=255)
     brand: str | None = Field(None, max_length=100)
@@ -131,8 +145,6 @@ class ProductPatch(BaseModel):
 
 class ProductOut(ORMModel, ProductIn):
     id: int
-    category_name: str | None = None
-    subcategory_name: str | None = None
     photo_file_id: str | None = Field(None, exclude=True)
 
     @computed_field
@@ -500,11 +512,12 @@ class PromoIn(BaseModel):
     # This is an input-only convenience; the database still stores expires_at.
     expires_on: date | None = Field(None, exclude=True)
     is_active: bool = True
-    category_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(default_factory=list, max_length=1000)
+    # Промокод лише на товари цих брендів; порожньо — на весь кошик.
+    brand_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(default_factory=list, max_length=1000)
 
-    @field_validator("category_ids")
+    @field_validator("brand_ids")
     @classmethod
-    def unique_categories(cls, value):
+    def unique_brands(cls, value):
         return sorted(set(value))
 
     @field_validator("code", mode="before")
@@ -555,7 +568,7 @@ class PromoOut(ORMModel):
     is_active: bool
     used_count: int = 0
     created_at: datetime | None = None
-    category_ids: list[int] = Field(default_factory=list)
+    brand_ids: list[int] = Field(default_factory=list)
 
 
 # -------------------------------------------------------------------- розсилки

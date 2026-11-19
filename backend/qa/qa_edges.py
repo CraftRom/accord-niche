@@ -37,9 +37,9 @@ async def scenario():
 
     async with open_repo() as repo:
         user = await repo.create_user(1, "u", "U", None)
-        category = await repo.create_category({"name": "K"})
+        category = await repo.create_brand({"name": "K"})
         product = await repo.create_product({
-            "name": "Товар", "category_id": category.id,
+            "name": "Товар", "brand_id": category.id,
             "price": Decimal(100), "stock": 50, "is_active": True,
         })
 
@@ -83,7 +83,7 @@ async def scenario():
         # Якщо залишок не захищений, обидва отримають підтвердження, а
         # товар є лише один — і хтось дізнається про це вже після оплати.
         single = await repo.create_product({
-            "name": "Останній", "category_id": category.id,
+            "name": "Останній", "brand_id": category.id,
             "price": Decimal(100), "stock": 1, "is_active": True,
         })
         second = await repo.create_user(2, "u2", "U2", None)

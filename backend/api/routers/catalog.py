@@ -11,61 +11,58 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 
 from api.auth import Principal, require_admin, require_staff
-from api.schemas import CategoryIn, CategoryOut, SubcategoryIn, SubcategoryOut, ProductIn, ProductOut, ProductPatch, StockDeltaIn, StockIn
+from api.schemas import BrandIn, BrandOut, BrandPatch, ProductIn, ProductOut, ProductPatch, StockDeltaIn, StockIn
 from shop.repo.base import Repository
 from shop.repo.factory import get_repo
 
 router = APIRouter(dependencies=[Depends(require_staff)])
 
 
-@router.get("/categories", response_model=list[CategoryOut])
-async def list_categories(repo: Repository = Depends(get_repo)):
-    return await repo.list_categories()
+# Бренди замість категорій: парфумерія групується за брендом. Кожен товар
+# обирає бренд зі списку; прихований бренд ховає свої товари з вітрини.
+
+@router.get("/brands", response_model=list[BrandOut])
+async def list_brands(repo: Repository = Depends(get_repo)):
+    return await repo.list_brands()
 
 
-@router.post("/categories", response_model=CategoryOut, status_code=201, dependencies=[Depends(require_admin)])
-async def create_category(data: CategoryIn, repo: Repository = Depends(get_repo)):
-    return await repo.create_category(data.model_dump())
+@router.post("/brands", response_model=BrandOut, status_code=201, dependencies=[Depends(require_admin)])
+async def create_brand(data: BrandIn, repo: Repository = Depends(get_repo)):
+    try:
+        return await repo.create_brand(data.model_dump())
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
-@router.get("/categories/{category_id}", response_model=CategoryOut)
-async def get_category(category_id: int, repo: Repository = Depends(get_repo)):
-    found = await repo.get_category(category_id)
+@router.get("/brands/{brand_id}", response_model=BrandOut)
+async def get_brand(brand_id: int, repo: Repository = Depends(get_repo)):
+    found = await repo.get_brand(brand_id)
     if not found:
-        raise HTTPException(404, "Категорію не знайдено")
+        raise HTTPException(404, "Бренд не знайдено")
     return found
 
 
-@router.put("/categories/{category_id}", response_model=CategoryOut, dependencies=[Depends(require_admin)])
-async def update_category(
-    category_id: int, data: CategoryIn, repo: Repository = Depends(get_repo)
-):
-    category = await repo.update_category(category_id, data.model_dump())
-    if not category:
-        raise HTTPException(404, "Категорію не знайдено")
-    return category
+@router.patch("/brands/{brand_id}", response_model=BrandOut, dependencies=[Depends(require_admin)])
+async def update_brand(brand_id: int, data: BrandPatch, repo: Repository = Depends(get_repo)):
+    try:
+        found = await repo.update_brand(brand_id, data.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not found:
+        raise HTTPException(404, "Бренд не знайдено")
+    return found
 
 
-@router.delete("/categories/{category_id}", dependencies=[Depends(require_admin)])
-async def delete_category(category_id: int, repo: Repository = Depends(get_repo)):
-    """М'яке видалення: категорія та її товари зникають з бота, але лишаються в базі."""
-    if not await repo.get_category(category_id):
-        raise HTTPException(404, "Категорію не знайдено")
-    hidden = await repo.delete_category(category_id)
-    return {"hidden_products": hidden}
-
-
-@router.delete("/categories/{category_id}/purge", dependencies=[Depends(require_admin)])
-async def purge_category(category_id: int, repo: Repository = Depends(get_repo)):
-    """Остаточне видалення: категорія та її товари стираються з бази назавжди.
-
-    Окремий шлях, а не прапорець у DELETE — щоб випадковий запит не зніс дані.
-    Історія замовлень лишається читабельною: позиції зберігають знімок
-    назви й ціни, обнуляється лише посилання на товар.
-    """
-    if not await repo.get_category(category_id):
-        raise HTTPException(404, "Категорію не знайдено")
-    return {"purged_products": await repo.purge_category(category_id)}
+@router.delete("/brands/{brand_id}", status_code=204, dependencies=[Depends(require_admin)])
+async def delete_brand(brand_id: int, repo: Repository = Depends(get_repo)):
+    """Видаляє лише бренд без товарів: товар не може лишитися без пояснення,
+    куди він подівся. Бренд із товарами можна приховати (is_active=false)."""
+    try:
+        deleted = await repo.delete_brand(brand_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not deleted:
+        raise HTTPException(404, "Бренд не знайдено")
 
 
 @router.delete("/products/{product_id}/purge", status_code=204, dependencies=[Depends(require_admin)])
@@ -73,43 +70,6 @@ async def purge_product(product_id: int, repo: Repository = Depends(get_repo)):
     if not await repo.purge_product(product_id):
         raise HTTPException(404, "Товар не знайдено")
 
-
-@router.get("/subcategories", response_model=list[SubcategoryOut])
-async def list_subcategories(category_id: int | None = None, repo: Repository = Depends(get_repo)):
-    return await repo.list_subcategories(category_id=category_id)
-
-
-@router.post("/subcategories", response_model=SubcategoryOut, status_code=201, dependencies=[Depends(require_admin)])
-async def create_subcategory(data: SubcategoryIn, repo: Repository = Depends(get_repo)):
-    try:
-        return await repo.create_subcategory(data.model_dump())
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.put("/subcategories/{subcategory_id}", response_model=SubcategoryOut, dependencies=[Depends(require_admin)])
-async def update_subcategory(subcategory_id: int, data: SubcategoryIn, repo: Repository = Depends(get_repo)):
-    try:
-        found = await repo.update_subcategory(subcategory_id, data.model_dump())
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if not found:
-        raise HTTPException(404, "Субкатегорію не знайдено")
-    return found
-
-
-@router.delete("/subcategories/{subcategory_id}", dependencies=[Depends(require_admin)])
-async def delete_subcategory(subcategory_id: int, repo: Repository = Depends(get_repo)):
-    if not await repo.get_subcategory(subcategory_id):
-        raise HTTPException(404, "Субкатегорію не знайдено")
-    return {"hidden_products": await repo.delete_subcategory(subcategory_id)}
-
-
-@router.delete("/subcategories/{subcategory_id}/purge", dependencies=[Depends(require_admin)])
-async def purge_subcategory(subcategory_id: int, repo: Repository = Depends(get_repo)):
-    if not await repo.get_subcategory(subcategory_id):
-        raise HTTPException(404, "Субкатегорію не знайдено")
-    return {"purged_products": await repo.purge_subcategory(subcategory_id)}
 
 
 class ProductPage(BaseModel):
@@ -119,16 +79,16 @@ class ProductPage(BaseModel):
     offset:int
 
 @router.get("/products", response_model=list[ProductOut] | ProductPage)
-async def list_products(category_id: int | None = None, subcategory_id: int | None = None,
+async def list_products(brand_id: int | None = Query(None, gt=0),
                         search: str | None = Query(None,max_length=160), only_active: bool = False,
                         is_new: bool | None = None, is_sale: bool | None = None,
-                        uncategorized: bool = False,paginated:bool=False,
+                        without_brand: bool = False,paginated:bool=False,
                         limit:int=Query(500,ge=1,le=1000),offset:int=Query(0,ge=0,le=1000000),
                         inventory:Literal['','available','low','out','unpriced','hidden','missing_photos']='',
                         sort:Literal['','name-asc','name-desc','stock-asc','stock-desc','price-asc','price-desc']='',
                         repo: Repository = Depends(get_repo)):
-    filters=dict(category_id=category_id,subcategory_id=subcategory_id,search=search,only_active=only_active,
-                 is_new=is_new,is_sale=is_sale,uncategorized=uncategorized)
+    filters=dict(brand_id=brand_id,search=search,only_active=only_active,
+                 is_new=is_new,is_sale=is_sale,without_brand=without_brand)
     if inventory:filters['inventory']=inventory
     items=await repo.list_products(**filters,limit=limit,offset=offset,**({'sort':sort} if sort else {}))
     if not paginated:return items
@@ -309,5 +269,5 @@ async def import_status(job_id: str, repo: Repository = Depends(get_repo)):
 @router.get('/product-transfer/export')
 async def export_products_endpoint(repo: Repository = Depends(get_repo)):
     products=await repo.list_products(limit=10000)
-    body=await run_in_threadpool(export_xlsx, products, await repo.list_subcategories())
+    body=await run_in_threadpool(export_xlsx, products)
     return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename="elfar-products.xlsx"'})

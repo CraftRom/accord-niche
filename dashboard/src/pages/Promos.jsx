@@ -24,7 +24,7 @@ const EMPTY = {
   max_uses: '',
   per_user_limit: 1,
   is_active: true,
-  category_ids: [],
+  brand_ids: [],
 }
 const STATUS = {
   active: ['Активний', 'ok'],
@@ -47,8 +47,8 @@ const discountLabel = (promo) =>
   promo.type === 'percent'
     ? `${Number(promo.value || 0)}%`
     : money(promo.value || 0)
-const categoryLabel = (id, categories) =>
-  categories.find((c) => c.id === id)?.name || `Категорія #${id}`
+const brandLabel = (id, brands) =>
+  brands.find((c) => c.id === id)?.name || `Бренд #${id}`
 
 const usesLabel = (count) => {
   const last = count % 10,
@@ -87,9 +87,9 @@ function PromoIcon({ kind }) {
 
 function PromoForm({
   promo,
-  categories,
-  categoryError,
-  reloadCategories,
+  brands,
+  brandError,
+  reloadBrands,
   onClose,
   onSaved,
 }) {
@@ -101,10 +101,10 @@ function PromoForm({
     ...promo,
     expires_on: initialDate,
     max_uses: promo?.max_uses ?? '',
-    category_ids: [...(promo?.category_ids || [])],
+    brand_ids: [...(promo?.brand_ids || [])],
   })
   const [scope, setScope] = useState(
-    promo?.category_ids?.length ? 'categories' : 'all',
+    promo?.brand_ids?.length ? 'brands' : 'all',
   )
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
@@ -114,14 +114,14 @@ function PromoForm({
   const validAmount = !validation.value && !validation.min_order
   const validLimits =
     !validation.max_uses && !validation.per_user_limit && !validation.expires_at
-  const selected = new Set(form.category_ids)
-  const visible = (categories || []).filter((c) =>
+  const selected = new Set(form.brand_ids)
+  const visible = (brands || []).filter((c) =>
     c.name
       .toLocaleLowerCase('uk')
       .includes(search.trim().toLocaleLowerCase('uk')),
   )
-  const missing = form.category_ids.filter(
-    (id) => !categories?.some((c) => c.id === id),
+  const missing = form.brand_ids.filter(
+    (id) => !brands?.some((c) => c.id === id),
   )
   const set = (key) => (event) =>
     setForm((f) => ({
@@ -134,9 +134,9 @@ function PromoForm({
   const toggle = (id) =>
     setForm((f) => ({
       ...f,
-      category_ids: f.category_ids.includes(id)
-        ? f.category_ids.filter((value) => value !== id)
-        : [...f.category_ids, id],
+      brand_ids: f.brand_ids.includes(id)
+        ? f.brand_ids.filter((value) => value !== id)
+        : [...f.brand_ids, id],
     }))
   const generate = () => {
     const values = crypto.getRandomValues(new Uint8Array(6))
@@ -156,11 +156,11 @@ function PromoForm({
       return
     }
     if (
-      scope === 'categories' &&
-      (!selected.size || !categories || categoryError || missing.length)
+      scope === 'brands' &&
+      (!selected.size || !brands || brandError || missing.length)
     ) {
       setError(
-        'Виберіть хоча б одну доступну категорію. Видалені категорії потрібно прибрати з вибору.',
+        'Виберіть хоча б один доступний бренд. Видалені бренди потрібно прибрати з вибору.',
       )
       return
     }
@@ -171,7 +171,7 @@ function PromoForm({
       {
         ...form,
         expires_at: form.expires_on,
-        category_ids: scope === 'categories' ? form.category_ids : [],
+        brand_ids: scope === 'brands' ? form.brand_ids : [],
       },
       promo,
     )
@@ -214,10 +214,10 @@ function PromoForm({
               !validCode ||
               !validAmount ||
               !validLimits ||
-              (scope === 'categories' &&
+              (scope === 'brands' &&
                 (!selected.size ||
-                  !categories ||
-                  !!categoryError ||
+                  !brands ||
+                  !!brandError ||
                   !!missing.length))
             }
           >
@@ -349,8 +349,7 @@ function PromoForm({
                 <div>
                   <h3 id="promo-scope">На які товари діє</h3>
                   <p>
-                    Знижка поширюється на всі товари обраних категорій та їхніх
-                    підкатегорій
+                    Знижка поширюється на всі товари обраних брендів
                   </p>
                 </div>
               </div>
@@ -368,36 +367,36 @@ function PromoForm({
                   />
                   Усі товари
                 </label>
-                <label className={scope === 'categories' ? 'selected' : ''}>
+                <label className={scope === 'brands' ? 'selected' : ''}>
                   <input
                     type="radio"
                     name="promo-scope"
-                    checked={scope === 'categories'}
-                    onChange={() => setScope('categories')}
+                    checked={scope === 'brands'}
+                    onChange={() => setScope('brands')}
                   />
-                  Обрані категорії
+                  Обрані бренди
                 </label>
               </div>
-              {scope === 'categories' && (
+              {scope === 'brands' && (
                 <div className="promo-category-picker">
-                  <ErrorBar error={categoryError} />
-                  {categoryError ? (
+                  <ErrorBar error={brandError} />
+                  {brandError ? (
                     <button
                       type="button"
                       className="btn ghost small"
-                      onClick={reloadCategories}
+                      onClick={reloadBrands}
                     >
-                      Завантажити категорії повторно
+                      Завантажити бренди повторно
                     </button>
-                  ) : !categories ? (
+                  ) : !brands ? (
                     <Loading rows={2} />
                   ) : (
                     <>
                       <input
                         className="input"
                         type="search"
-                        aria-label="Пошук категорій"
-                        placeholder="Знайти категорію…"
+                        aria-label="Пошук брендів"
+                        placeholder="Знайти бренд…"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
@@ -409,9 +408,9 @@ function PromoForm({
                           onClick={() =>
                             setForm((f) => ({
                               ...f,
-                              category_ids: [
+                              brand_ids: [
                                 ...new Set([
-                                  ...f.category_ids,
+                                  ...f.brand_ids,
                                   ...visible.map((c) => c.id),
                                 ]),
                               ],
@@ -424,7 +423,7 @@ function PromoForm({
                           type="button"
                           disabled={!selected.size}
                           onClick={() =>
-                            setForm((f) => ({ ...f, category_ids: [] }))
+                            setForm((f) => ({ ...f, brand_ids: [] }))
                           }
                         >
                           Очистити
@@ -432,7 +431,7 @@ function PromoForm({
                       </div>
                       <div
                         className="promo-category-list"
-                        aria-label="Категорії товарів"
+                        aria-label="Бренди товарів"
                       >
                         {visible.map((c) => (
                           <label
@@ -447,7 +446,7 @@ function PromoForm({
                             <span>
                               {c.name}
                               {!c.is_active && (
-                                <small>Прихована категорія</small>
+                                <small>Прихований бренд</small>
                               )}
                             </span>
                             <small>{c.products_count || 0} тов.</small>
@@ -455,23 +454,23 @@ function PromoForm({
                         ))}
                         {!visible.length && (
                           <p className="muted">
-                            {categories.length
-                              ? 'Категорій за цим запитом немає'
-                              : 'Спочатку створіть категорії в каталозі'}
+                            {brands.length
+                              ? 'Брендів за цим запитом немає'
+                              : 'Спочатку створіть бренди в каталозі'}
                           </p>
                         )}
                       </div>
                       {!!selected.size && (
                         <div className="promo-selected-categories">
-                          {form.category_ids.map((id) => (
+                          {form.brand_ids.map((id) => (
                             <button
                               type="button"
                               key={id}
                               className={`chip ${missing.includes(id) ? 'bad' : 'info'}`}
                               onClick={() => toggle(id)}
-                              aria-label={`Прибрати категорію ${categoryLabel(id, categories)}`}
+                              aria-label={`Прибрати бренд ${brandLabel(id, brands)}`}
                             >
-                              {categoryLabel(id, categories)}{' '}
+                              {brandLabel(id, brands)}{' '}
                               <span aria-hidden="true">×</span>
                             </button>
                           ))}
@@ -479,7 +478,7 @@ function PromoForm({
                       )}
                       {!!missing.length && (
                         <p className="promo-validation" role="alert">
-                          Приберіть видалені категорії або змініть область дії.
+                          Приберіть видалені бренди або змініть область дії.
                         </p>
                       )}
                     </>
@@ -570,7 +569,7 @@ function PromoForm({
                 <strong>
                   {scope === 'all'
                     ? 'Усі товари магазину'
-                    : `Обрано категорій: ${selected.size}`}
+                    : `Обрано брендів: ${selected.size}`}
                 </strong>
               </p>
               <p>
@@ -601,8 +600,8 @@ function PromoForm({
               {form.is_active ? 'Увімкнений' : 'Вимкнений'}
             </StateBadge>
             <p className="promo-preview-hint">
-              {scope === 'categories'
-                ? 'Знижка розраховується лише від вартості товарів обраних категорій. Мінімальна сума перевіряється за всім кошиком.'
+              {scope === 'brands'
+                ? 'Знижка розраховується лише від вартості товарів обраних брендів. Мінімальна сума перевіряється за всім кошиком.'
                 : 'Знижка розраховується від вартості всіх товарів кошика.'}{' '}
               Фіксована знижка не перевищить вартість відповідних товарів.
             </p>
@@ -616,8 +615,8 @@ function PromoForm({
 export default function Promos() {
   const notify = useToast()
   const [promos, setPromos] = useState(null)
-  const [categories, setCategories] = useState(null)
-  const [categoryError, setCategoryError] = useState('')
+  const [brands, setBrands] = useState(null)
+  const [brandError, setBrandError] = useState('')
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(null)
   const [query, setQuery] = useState('')
@@ -632,20 +631,20 @@ export default function Promos() {
       setError(err.message)
     }
   }, [])
-  const loadCategories = useCallback(async () => {
-    setCategoryError('')
+  const loadBrands = useCallback(async () => {
+    setBrandError('')
     try {
-      setCategories(await api.categories.list())
+      setBrands(await api.brands.list())
     } catch (err) {
-      setCategoryError(err.message)
+      setBrandError(err.message)
     }
   }, [])
   useEffect(() => {
     load()
-    loadCategories()
+    loadBrands()
     const tick = setInterval(() => setNow(Date.now()), 30000)
     return () => clearInterval(tick)
-  }, [load, loadCategories])
+  }, [load, loadBrands])
   const counts = useMemo(
     () =>
       (promos || []).reduce(
@@ -661,7 +660,7 @@ export default function Promos() {
   const visible = (promos || []).filter(
     (p) =>
       (filter === 'all' || statusOf(p) === filter) &&
-      `${p.code} ${(p.category_ids || []).map((id) => categoryLabel(id, categories || [])).join(' ')}`
+      `${p.code} ${(p.brand_ids || []).map((id) => brandLabel(id, brands || [])).join(' ')}`
         .toLocaleLowerCase('uk')
         .includes(query.trim().toLocaleLowerCase('uk')),
   )
@@ -715,7 +714,7 @@ export default function Promos() {
       <PageHeader
         help="promos"
         title="Промокоди"
-        description="Керуйте знижками, категоріями та умовами використання"
+        description="Керуйте знижками, брендами та умовами використання"
         actions={<>
           <button className="btn" onClick={() => setEditing({})}>
             <PromoIcon kind="plus" /> Створити промокод
@@ -753,7 +752,7 @@ export default function Promos() {
           className="input"
           type="search"
           aria-label="Пошук промокодів"
-          placeholder="Знайти код або категорію…"
+          placeholder="Знайти код або бренд…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -776,7 +775,7 @@ export default function Promos() {
         !error && <Loading />
       ) : !promos.length ? (
         <Empty title="Створіть першу пропозицію">
-          Додайте вітальну знижку або промокод на окремі категорії.
+          Додайте вітальну знижку або промокод на окремі бренди.
         </Empty>
       ) : !visible.length ? (
         <Empty title="Промокодів за цими умовами немає">
@@ -794,7 +793,7 @@ export default function Promos() {
         <div className="promo-cards">
           {visible.map((p) => {
             const [label, tone] = STATUS[statusOf(p)]
-            const ids = p.category_ids || []
+            const ids = p.brand_ids || []
             return (
               <article key={p.id} className="promo-card">
                 <div className="promo-card-top">
@@ -821,7 +820,7 @@ export default function Promos() {
                       <>
                         {ids.slice(0, 3).map((id) => (
                           <span key={id} className="chip">
-                            {categoryLabel(id, categories || [])}
+                            {brandLabel(id, brands || [])}
                           </span>
                         ))}
                         {ids.length > 3 && (
@@ -829,7 +828,7 @@ export default function Promos() {
                             className="chip"
                             title={ids
                               .slice(3)
-                              .map((id) => categoryLabel(id, categories || []))
+                              .map((id) => brandLabel(id, brands || []))
                               .join(', ')}
                           >
                             Ще {ids.length - 3}
@@ -936,9 +935,9 @@ export default function Promos() {
       {editing && (
         <PromoForm
           promo={editing}
-          categories={categories}
-          categoryError={categoryError}
-          reloadCategories={loadCategories}
+          brands={brands}
+          brandError={brandError}
+          reloadBrands={loadBrands}
           onClose={() => setEditing(null)}
           onSaved={load}
         />

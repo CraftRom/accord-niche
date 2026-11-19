@@ -4,7 +4,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, isAdmin } from '../api'
 import { useProductImage } from '../components/catalog/useProductImage'
 import { ErrorBar, Field, Info, Loading, money, useToast } from '../components/ui'
-import { DescriptionField, DisplayFields, PriceFields, ProductImageField, TaxonomyFields, PerfumeFields, perfumePayload, changeField, groupPayload, pricePayload } from '../components/catalog/ProductFields'
+import { BrandFields, DescriptionField, DisplayFields, PriceFields, ProductImageField, PerfumeFields, perfumePayload, changeField, brandPayload, pricePayload } from '../components/catalog/ProductFields'
 import { PageHeader } from '../components/page'
 import { StateBadge } from '../components/StateBadge'
 
@@ -20,9 +20,7 @@ function EditBlock({ title, product, fields, payload, onSaved, children }) {
       const changes = payload(form)
       const updated = await api.products.patch(product.id, changes)
       const keys = new Set(Object.keys(changes))
-      if (keys.has('category_id') || keys.has('subcategory_id')) {
-        keys.add('category_name'); keys.add('subcategory_name')
-      }
+      if (keys.has('brand_id')) keys.add('brand')
       if (keys.has('photo_url')) keys.add('has_photo')
       // A slower response from another block must not restore its older snapshot.
       onSaved((current) => current?.id === updated.id ? { ...current, ...Object.fromEntries([...keys].map((key) => [key, updated[key]])) } : current)
@@ -38,11 +36,11 @@ function CurrentImage({ product }) {
 
 export default function CatalogProduct() {
   const { id } = useParams(), location = useLocation()
-  const [product, setProduct] = useState(null), [categories, setCategories] = useState([]), [subcategories, setSubcategories] = useState([])
+  const [product, setProduct] = useState(null), [brands, setBrands] = useState([])
   const [error, setError] = useState(''), [retry, setRetry] = useState(0)
   useEffect(() => {
     let alive = true; setError(''); setProduct(null)
-    Promise.all([api.products.get(id), api.categories.list(), api.subcategories.list()]).then(([p, c, s]) => { if (alive) { setProduct(p); setCategories(c); setSubcategories(s) } }).catch((err) => alive && setError(err.message))
+    Promise.all([api.products.get(id), api.brands.list()]).then(([p, b]) => { if (alive) { setProduct(p); setBrands(b) } }).catch((err) => alive && setError(err.message))
     return () => { alive = false }
   }, [id, retry])
   const back = location.state?.catalogBack || '/catalog'
@@ -50,7 +48,6 @@ export default function CatalogProduct() {
   if (!product) return <Loading />
   const props = { product, onSaved: setProduct }
   const publication=publicationState(product)
-  const sub = subcategories.find((s) => s.id === product.subcategory_id)
   return <div className="catalog-product-page">
     <Link className="btn ghost catalog-back-link" to={back}>← До каталогу</Link>
     <PageHeader title={product.name} description="Єдині дані для сайту, Mini App і бота." actions={<StateBadge tone={publication.buyable?'success':'neutral'}>{publication.label}</StateBadge>}/>
@@ -58,8 +55,8 @@ export default function CatalogProduct() {
     <div className="catalog-sku-panel"><Info label="Артикул (SKU)" copy={product.sku}><strong className="mono">{product.sku}</strong></Info><span className="muted">Автоматично створений · незмінний</span></div>
     <div className="catalog-detail-grid">
       <EditBlock {...props} title="Основне та відображення" payload={(f) => ({ name: f.name.trim(), stock: Number(f.stock), sort_order: Number(f.sort_order), is_active: f.is_active, is_new: f.is_new })} fields={(f, set) => <><Field label="Назва товару"><input className="input" aria-label="Назва товару" required maxLength={255} value={f.name} onChange={changeField(set, 'name')} /></Field><DisplayFields form={f} setForm={set} /></>}><p>{product.is_new ? 'Новинка · показується в розділі «Новинки»' : 'Звичайний товар'}</p><p>Залишок: <strong>{product.stock} шт.</strong> · Порядок: {product.sort_order}</p></EditBlock>
-      <EditBlock {...props} title="Категорія та субкатегорія" payload={groupPayload} fields={(f, set) => <TaxonomyFields form={f} setForm={set} categories={categories} subcategories={subcategories} />}><p>Категорія: <strong>{product.category_name || 'Не призначена'}</strong></p><p>Субкатегорія: <strong>{product.subcategory_name || 'Не призначена'}</strong></p>{!product.category_id && sub?.category_name && <p className="muted">Батьківська категорія субкатегорії: {sub.category_name}</p>}</EditBlock>
-      <EditBlock {...props} title="Парфумерія" payload={perfumePayload} fields={(f, set) => <PerfumeFields form={f} setForm={set} />}><p><strong>{product.brand || "Бренд не задано"}</strong> · {product.volume_ml ? `${product.volume_ml} мл` : "Обʼєм не задано"} · {{male:"чоловічий",female:"жіночий",unisex:"унісекс"}[product.gender] || "унісекс"}{product.is_featured ? " · рекомендація магазину" : ""}</p></EditBlock>
+      <EditBlock {...props} title="Бренд" payload={brandPayload} fields={(f, set) => <BrandFields form={f} setForm={set} brands={brands} />}><p><strong>{product.brand || 'Бренд не обрано'}</strong></p>{!product.brand_id && <p className="muted">Без бренду аромат не з’явиться у фільтрі брендів на сайті й у боті.</p>}{product.brand_id && brands.find((b) => b.id === product.brand_id)?.is_active === false && <p className="muted">Бренд приховано — товар не видно на вітрині.</p>}</EditBlock>
+      <EditBlock {...props} title="Парфумерія" payload={perfumePayload} fields={(f, set) => <PerfumeFields form={f} setForm={set} />}><p>{product.volume_ml ? `${product.volume_ml} мл` : "Обʼєм не задано"} · {{male:"чоловічий",female:"жіночий",unisex:"унісекс"}[product.gender] || "унісекс"}{product.is_featured ? " · рекомендація магазину" : ""}</p></EditBlock>
       <EditBlock {...props} title="Ціни та акція" payload={pricePayload} fields={(f, set) => <PriceFields form={f} setForm={set} />}><p className="catalog-detail-price">{money(product.price)} {product.is_sale && <s>{money(product.old_price)}</s>}</p><p>{product.is_sale ? 'Акція · знижка відображається в каталозі' : 'Акція вимкнена'}</p></EditBlock>
       <EditBlock {...props} title="Зображення" payload={(f) => ({ photo_url: f.photo_url || null })} fields={(f, set) => <><ProductImageField form={f} setForm={set} />{product.has_photo && !f.photo_url && <p className="muted">Збереження порожнього зображення прибере поточне фото.</p>}</>}><CurrentImage product={product} /></EditBlock>
       <div className="catalog-description-block"><EditBlock {...props} title="Опис" payload={(f) => ({ description: f.description || null })} fields={(f, set) => <DescriptionField form={f} setForm={set} />}><p className="catalog-detail-description">{product.description || 'Опис не додано'}</p></EditBlock></div>

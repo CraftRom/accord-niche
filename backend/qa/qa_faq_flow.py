@@ -28,8 +28,8 @@ class State:
 
 async def run(repo, label):
     print(f"\n=== {label} ===")
-    cat=await repo.create_category({"name":"К","sort_order":0,"is_active":True})
-    p=await repo.create_product({"category_id":cat.id,"name":"Т","price":Decimal(100),"stock":9,"is_active":True})
+    cat=await repo.create_brand({"name":"К","sort_order":0,"is_active":True})
+    p=await repo.create_product({"brand_id":cat.id,"name":"Т","price":Decimal(100),"stock":9,"is_active":True})
     u=await repo.create_user(tg_id=1,username="a",first_name="A",referrer_id=None)
 
     # 1. Новачок без замовлень питає «як замовити»

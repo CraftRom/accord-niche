@@ -31,7 +31,7 @@ def check(ok: bool, label: str) -> None:
 
 class FakeRepo:
     def __init__(self, stock=3, fail_create=False, existing=None):
-        self.product = Product(id=7, category_id=1, name="Тест", price=Decimal("100"), stock=stock)
+        self.product = Product(id=7, name="Тест", price=Decimal("100"), stock=stock)
         self.cart = [CartLine(product_id=7, qty=1, product=self.product)]
         self.orders: dict[str, Order] = {}
         self.created = 0

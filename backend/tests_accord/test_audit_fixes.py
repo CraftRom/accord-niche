@@ -87,7 +87,7 @@ async def test_manager_reads_catalog_but_cannot_change_catalog_or_marketing(db, 
         assert (await http.get('/api/catalog/products', headers=manager)).status_code == 200
         assert (await http.get('/api/catalog/products/1', headers=manager)).status_code == 200
         denied = [
-            ('POST', '/api/catalog/categories', {'name': 'Manager-created'}),
+            ('POST', '/api/catalog/brands', {'name': 'Manager-created'}),
             ('PATCH', '/api/catalog/products/1', {'price': '1'}),
             ('PATCH', '/api/catalog/products/1/stock-delta', {'delta': 5}),
             ('DELETE', '/api/catalog/products/1/purge', None),
@@ -98,7 +98,7 @@ async def test_manager_reads_catalog_but_cannot_change_catalog_or_marketing(db, 
         for method, path, body in denied:
             response = await http.request(method, path, json=body, headers=manager)
             assert response.status_code == 403, (method, path, response.text)
-        assert (await http.post('/api/catalog/categories', json={'name': 'Admin-created'}, headers=admin)).status_code == 201
+        assert (await http.post('/api/catalog/brands', json={'name': 'Admin-created'}, headers=admin)).status_code == 201
         assert (await http.post('/api/promos', json={'code': 'ADMIN10', 'value': '10'}, headers=admin)).status_code == 201
     assert (await repo.get_product(1)).stock == 10
     assert 'catalog.manage' not in permissions_for(Role.MANAGER)
@@ -106,19 +106,20 @@ async def test_manager_reads_catalog_but_cannot_change_catalog_or_marketing(db, 
     assert {'catalog.manage', 'marketing.manage'} <= set(permissions_for(Role.ADMIN))
 
 
-# ------------------------------------------------------- A08 parent visibility
+# ---------------------------------------------------------- A08 brand visibility
 
 @pytest.mark.asyncio
 async def test_inactive_parent_hides_product_everywhere_without_rewriting_its_flag(db):
+    """A hidden brand hides its products (the brand replaced categories)."""
     session, _ = db
     repo = SqlRepository(session)
-    session.add(m.Category(id=1, name='Hidden', is_active=False))
-    session.add(m.Category(id=2, name='Visible', is_active=True))
-    session.add(m.Subcategory(id=1, category_id=2, name='Hidden sub', is_active=False))
-    session.add(m.Product(id=1, category_id=1, name='Hidden parent', sku='AUD-001', price=100, stock=10, is_active=True))
-    session.add(m.Product(id=2, subcategory_id=1, name='Hidden sub product', sku='AUD-002', price=100, stock=10, is_active=True))
-    session.add(m.Product(id=3, category_id=2, name='Visible', sku='AUD-003', price=100, stock=10, is_active=True))
-    session.add(m.Product(id=4, category_id=2, name='Individually hidden', sku='AUD-004', price=100, stock=10, is_active=False))
+    session.add(m.Brand(id=1, name='Hidden', name_key='hidden', is_active=False))
+    session.add(m.Brand(id=2, name='Visible', name_key='visible', is_active=True))
+    session.add(m.Brand(id=3, name='Hidden too', name_key='hidden too', is_active=False))
+    session.add(m.Product(id=1, brand_id=1, brand='Hidden', name='Hidden parent', sku='AUD-001', price=100, stock=10, is_active=True))
+    session.add(m.Product(id=2, brand_id=3, brand='Hidden too', name='Hidden brand product', sku='AUD-002', price=100, stock=10, is_active=True))
+    session.add(m.Product(id=3, brand_id=2, brand='Visible', name='Visible', sku='AUD-003', price=100, stock=10, is_active=True))
+    session.add(m.Product(id=4, brand_id=2, brand='Visible', name='Individually hidden', sku='AUD-004', price=100, stock=10, is_active=False))
     await session.commit()
     now = datetime.now(timezone.utc)
     products, _ = await repo.storefront_data(now - timedelta(days=30), now)
@@ -135,9 +136,9 @@ async def test_inactive_parent_hides_product_everywhere_without_rewriting_its_fl
     await session.commit()
     with pytest.raises(CheckoutQuoteError, match='недоступний'):
         await checkout_quote(repo, await repo.get_user(1))
-    # Re-enabling the group publishes only individually active products.
-    await repo.update_category(1, {'name': 'Hidden', 'is_active': True})
-    session.add(m.Product(id=5, category_id=1, name='Own flag off', sku='AUD-005', price=100, stock=1, is_active=False))
+    # Re-enabling the brand publishes only individually active products.
+    await repo.update_brand(1, {'is_active': True})
+    session.add(m.Product(id=5, brand_id=1, brand='Hidden', name='Own flag off', sku='AUD-005', price=100, stock=1, is_active=False))
     await session.commit()
     products, _ = await repo.storefront_data(now - timedelta(days=30), now)
     assert sorted(p.id for p in products) == [1, 3]

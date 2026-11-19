@@ -92,13 +92,12 @@ async def check_promo(
         return PromoResult(False, error="Ви вже використали цей промокод")
 
     base = subtotal
-    if promo.category_ids:
+    if promo.brand_ids:
         if lines is None:
             lines = await repo.get_cart(user_id)
-        parents = {s.id: s.category_id for s in await repo.list_subcategories()}
-        base = eligible_subtotal(lines, promo.category_ids, parents)
+        base = eligible_subtotal(lines, promo.brand_ids)
         if base <= 0:
-            return PromoResult(False, error="У кошику немає товарів з категорій цього промокоду")
+            return PromoResult(False, error="У кошику немає товарів брендів цього промокоду")
 
     return PromoResult(True, discount=promo_discount(promo, base), promo=promo)
 

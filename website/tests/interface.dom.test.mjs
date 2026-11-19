@@ -14,7 +14,7 @@ function mount(){
   if(url.pathname==='/api/web/session')return response({account:{has_session:false,signed_in:false},csrf:'a'.repeat(48)})
   if(url.pathname==='/api/public/site-config')return response({})
   if(url.pathname==='/api/public/storefront')return response({hits:[],recommended:[],new_arrivals:[],selection:[],total:0,available:0})
-  if(url.pathname==='/api/public/aromas')return response({items:[],total:0,brands:[],categories:[],volumes:[]})
+  if(url.pathname==='/api/public/aromas')return response({items:[],total:0,brands:[],volumes:[]})
   return response({})
  }
  window.eval(bundle)

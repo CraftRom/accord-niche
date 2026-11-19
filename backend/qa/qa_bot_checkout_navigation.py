@@ -29,8 +29,8 @@ async def main():
                        salesdrive_enabled=False)
     prime_cache(settings)
     async with open_repo() as repo:
-        category = await repo.create_category({"name": "QA"})
-        product = await repo.create_product({"category_id": category.id, "name": "QA",
+        category = await repo.create_brand({"name": "QA"})
+        product = await repo.create_product({"brand_id": category.id, "name": "QA",
                                              "price": Decimal("100"), "stock": 30})
         user = await repo.create_user(500001, "buyer", "QA", None)
         await repo.confirm_age(user)

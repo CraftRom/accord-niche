@@ -25,7 +25,7 @@ const order = (id) => ({
   delivery_address: 'Відділення 12', created_at: '2026-11-14T08:00:00Z', can_chat: true, user: { id: 5, tg_id: 123 },
   attribution: { source: 'accord_website' }, business_state: 'pending',
 })
-const product = (id) => ({ id, sku: `SKU-${id}`, name: `Товар ${id}`, brand: 'Бренд', price: '450', stock: id % 3, is_active: true, has_photo: id % 2 === 0, category_id: 1, variants: [] })
+const product = (id) => ({ id, sku: `SKU-${id}`, name: `Товар ${id}`, brand: 'Creed', brand_id: 1, price: '450', stock: id % 3, is_active: true, has_photo: id % 2 === 0, variants: [] })
 
 function data(path) {
   if (path.endsWith('/auth/session')) return { role: 'admin', name: 'QA', csrf_token: 'qa', operator_id: 1, editable_settings: Object.keys(settings) }
@@ -43,8 +43,7 @@ function data(path) {
   if (path.includes('salesdrive-statuses')) return { statuses: [{ id: 1, name: 'Новий' }, { id: 2, name: 'Відправлено' }] }
   if (path.includes('/messages')) return []
   if (path.endsWith('/catalog/products')) return { items: [product(1), product(2), product(3)], total: 3, limit: 20, offset: 0 }
-  if (path.endsWith('/catalog/categories')) return [{ id: 1, name: 'Парфуми', is_active: true, products_count: 3 }]
-  if (path.endsWith('/catalog/subcategories')) return []
+  if (path.endsWith('/catalog/brands')) return [{ id: 1, name: 'Creed', is_active: true, products_count: 3 }]
   if (path === '/api/customers') return { items: [{ id: 5, first_name: 'Олена', username: 'olena', tg_id: 123, phone: '+380671234567', referral_code: 'OLENA1', orders_count: 3, total_spent: '3200', bonus_balance: '45', created_at: '2026-01-02T00:00:00Z', is_blocked: false }], total: 1 }
   if (path === '/api/operators') return [{ id: 1, login: 'qa', name: 'QA', role: 'admin', created_at: '2026-01-01T00:00:00Z' }, { id: 2, login: 'manager', name: 'Менеджер', role: 'operator', created_at: '2026-01-01T00:00:00Z' }]
   if (path === '/api/backups') return { items: [], total: 0, totalBytes: 0, freeBytes: 10 ** 9, retentionDays: 14, restoreMode: 'server' }

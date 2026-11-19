@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Respons
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from api.schemas import CategoryOut, SubcategoryOut, ProductOut
+from api.schemas import BrandOut, ProductOut
 from shop.links import app_link
 from api.webapp_auth import InitDataError, parse_init_data, require_webapp_user
 from shop.entities import OrderStatus, User
@@ -398,8 +398,7 @@ class BootstrapOut(BaseModel):
     config: ShopConfigOut
     cart: CartOut | None = None
     profile: ProfileOut | None = None
-    categories: list[CategoryOut] = []
-    subcategories: list[SubcategoryOut] = []
+    brands: list[BrandOut] = []
     products: list[ProductOut] = []
     orders: list[dict] = []
     wishlists: list[WishlistOut] = []
@@ -423,14 +422,13 @@ async def bootstrap(
     # тому, що це один HTTP-раунд замість шести, а не в паралелізмі всередині.
     cart = await _cart_payload(repo, user.id)
     profile_data = await _profile_payload(repo, shop, user)
-    categories = await repo.list_categories(only_active=True)
-    subcategories = await repo.list_subcategories(only_active=True)
+    brands = [brand for brand in await repo.list_brands(only_active=True) if brand.products_count]
     products = await repo.list_products(only_active=True)
     orders = await _orders_payload(repo, user.id)
     lists = await wl.hydrate(repo, await wl.ensure_lists(repo, user.id))
     return BootstrapOut(
         config=config, cart=cart, profile=profile_data,
-        categories=categories, subcategories=subcategories, products=products, orders=orders,
+        brands=brands, products=products, orders=orders,
         wishlists=[_wl_out(x) for x in lists],
     )
 
@@ -445,27 +443,23 @@ async def age_confirm(
     return _config(shop, user)
 
 
-@router.get("/categories", response_model=list[CategoryOut])
-async def categories(
+@router.get("/brands", response_model=list[BrandOut])
+async def brands(
     user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)
 ):
-    return await repo.list_categories(only_active=True)
-
-
-@router.get("/subcategories", response_model=list[SubcategoryOut])
-async def subcategories(category_id: int | None = None, user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    return await repo.list_subcategories(category_id=category_id, only_active=True)
+    """Бренди з товарами — навігація вітрини замість категорій."""
+    return [brand for brand in await repo.list_brands(only_active=True) if brand.products_count]
 
 
 @router.get("/products", response_model=list[ProductOut])
-async def products(category_id: int | None = None, subcategory_id: int | None = None,
+async def products(brand_id: int | None = Query(None, gt=0),
                    search: str | None = None, is_new: bool | None = None,
-                   is_sale: bool | None = None, uncategorized: bool = False,
+                   is_sale: bool | None = None,
                    limit: int = Query(500, ge=1, le=500), offset: int = Query(0, ge=0),
                    user: User = Depends(require_webapp_user), repo: Repository = Depends(get_repo)):
-    return await repo.list_products(category_id=category_id, subcategory_id=subcategory_id,
+    return await repo.list_products(brand_id=brand_id,
                                     search=search, only_active=True, is_new=is_new,
-                                    is_sale=is_sale, uncategorized=uncategorized,
+                                    is_sale=is_sale,
                                     limit=limit, offset=offset)
 
 

@@ -31,9 +31,9 @@ MANAGER = create_token("manager", OperatorRole.MANAGER, 7, "Менеджер")
 async def make_order(repo, tg_id: int):
     """Клієнт із одним замовленням — мінімум, потрібний для перевірки."""
     user = await repo.create_user(tg_id, f"u{tg_id}", "U", None)
-    category = await repo.create_category({"name": f"Кат{tg_id}"})
+    category = await repo.create_brand({"name": f"Кат{tg_id}"})
     product = await repo.create_product({
-        "name": f"Товар{tg_id}", "category_id": category.id,
+        "name": f"Товар{tg_id}", "brand_id": category.id,
         "price": Decimal(100), "stock": 10, "is_active": True,
     })
     order = await repo.create_order(
