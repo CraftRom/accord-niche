@@ -219,6 +219,11 @@ export const api = {
     moderate: (id,body) => request('/blog/comments/' + id + '/moderate', {method:'POST',body}),
     reply: (id,body) => request('/blog/posts/' + id + '/reply', {method:'POST',body}),
   },
+  legal: {
+    list: () => request('/legal'),
+    save: (key, body) => request('/legal/' + key, { method: 'PUT', body: { body } }),
+    preview: (key, body) => request('/legal/' + key + '/preview', { method: 'POST', body: { body } }),
+  },
   health: () => request('/health'),
 
 

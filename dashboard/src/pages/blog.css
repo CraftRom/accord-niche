@@ -18,3 +18,10 @@
 /* Structural hooks: the editor column and the inline image picker. */
 .blog-admin-editor{min-width:0}
 .blog-inline-image{display:grid;gap:8px;margin:8px 0}
+
+/* Документи (оферта, політика конфіденційності): той самий редактор, що й у блогу. */
+.legal-editor { display: grid; gap: var(--space-3, 12px); }
+.legal-notice { line-height: 1.6; }
+.legal-notice p + p { margin-top: 8px; }
+.legal-notice, .legal-editor { overflow-wrap: anywhere; min-width: 0; }
+.legal-editor .blog-format-tools, .legal-editor .row { flex-wrap: wrap; }

@@ -923,6 +923,8 @@ input, textarea, select {
 .legal .banner { margin: var(--s3) 0; }
 
 .legal-h { margin: var(--s5) 0 6px; font-size: 16px; font-weight: 600; }
+.legal-ul { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.55; }
+.legal-ul li + li { margin-top: 4px; }
 
 /* Переноси зберігаємо: у документах є переліки з маркерами й реквізити
    стовпчиком, які без цього злиплися б в один абзац */

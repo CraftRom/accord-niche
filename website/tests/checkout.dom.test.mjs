@@ -239,16 +239,17 @@ test('the consent shows the delivery and return terms in place; legal links only
     await waitFor(()=>app.document.querySelector('.consent-docs'))
     const docs=app.document.querySelector('.consent-docs')
     assert.deepEqual([...docs.querySelectorAll('summary')].map(s=>s.textContent),['Доставка й оплата','Повернення та скасування'])
-    assert.equal(docs.querySelector('.consent-links'),null,'no invented legal documents when none are configured')
+    const links=[...docs.querySelectorAll('.consent-links a')]
+    assert.deepEqual(links.map(a=>a.getAttribute('href')),['/terms','/privacy'],'the consent links the shop\'s own documents')
   }finally{app.close()}
 })
 
-test('configured terms and privacy open in a new tab so the form is kept (W-10)',async()=>{
-  const app=mount({site:{terms_url:'https://accordniche.pp.ua/docs/terms.pdf',privacy_url:'https://accordniche.pp.ua/docs/privacy.pdf'}})
+test('terms and privacy open in a new tab so the filled form is kept (W-10)',async()=>{
+  const app=mount()
   try{
     await waitFor(()=>app.document.querySelector('.consent-links'))
     const links=[...app.document.querySelectorAll('.consent-links a')]
-    assert.deepEqual(links.map(a=>[a.textContent,a.getAttribute('href'),a.target]),[['Умови покупки','https://accordniche.pp.ua/docs/terms.pdf','_blank'],['Політика конфіденційності','https://accordniche.pp.ua/docs/privacy.pdf','_blank']])
+    assert.deepEqual(links.map(a=>[a.textContent,a.getAttribute('href'),a.target]),[['Публічна оферта','/terms','_blank'],['Політика конфіденційності','/privacy','_blank']])
     assert.ok(links.every(a=>a.rel.includes('noopener')))
   }finally{app.close()}
 })

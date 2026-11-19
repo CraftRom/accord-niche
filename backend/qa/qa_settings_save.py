@@ -133,8 +133,6 @@ def sample(name: str, field):
         "twilio_verify_service_sid": "VA" + "0" * 32,
         "instagram_url": "https://instagram.com/probe",
         "tiktok_url": "https://www.tiktok.com/@probe",
-        "terms_url": "https://example-shop.test/terms",
-        "privacy_url": "https://example-shop.test/privacy",
         "miniapp_url": "https://t.me/probe_bot/app",
     }
     if name in site:

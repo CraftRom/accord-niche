@@ -190,7 +190,8 @@ export function CheckoutPage({site={},shop,cart,products,go,complete,cartRequest
         {/* W-10: what the consent refers to, readable without leaving the form. */}
         <div className="consent-docs">
           {['delivery','returns'].map(key=><details key={key}><summary>{BUYER_INFO[key][0]}</summary><p>{BUYER_INFO[key][1]}</p></details>)}
-          {(site.terms_url || site.privacy_url) && <p className="consent-links">{site.terms_url && <a href={site.terms_url} target="_blank" rel="noopener noreferrer">Умови покупки</a>}{site.privacy_url && <a href={site.privacy_url} target="_blank" rel="noopener noreferrer">Політика конфіденційності</a>}</p>}
+          {/* The documents open in a new tab so the filled form is kept. */}
+          <p className="consent-links"><a href="/terms" target="_blank" rel="noopener">Публічна оферта</a><a href="/privacy" target="_blank" rel="noopener">Політика конфіденційності</a></p>
         </div>{errors.terms_accepted && <p className="field-error" id="checkout-terms-error">{errors.terms_accepted}</p>}
       </section></fieldset>
       {error && <div className="shop-error" role="alert" tabIndex={-1} ref={alert}>{error}</div>}
