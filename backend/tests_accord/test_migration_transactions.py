@@ -254,7 +254,7 @@ def test_promo_pages_are_dropped_with_their_cloudflare_credentials(postgres):
         INSERT INTO promo_landing_pages VALUES (1,'promo.example');
         INSERT INTO promo_landing_daily_stats VALUES (1,1);
     """)
-    postgres(upgrade_sql('a3d9b6e14f02:head'))
+    postgres(upgrade_sql('a3d9b6e14f02:c8f1e5a3d702'))
     result=postgres("SELECT to_regclass('public.promo_landing_pages') IS NULL AS pages_gone, "
                     "to_regclass('public.promo_landing_daily_stats') IS NULL AS stats_gone; "
                     "SELECT key FROM settings ORDER BY key; SELECT version_num FROM alembic_version;")
@@ -290,3 +290,38 @@ def test_commerce_channel_and_queue_expressions_on_real_postgres(postgres):
         sql=str(statement.compile(dialect=postgresql.dialect(),compile_kwargs={'literal_binds':True}))
         expected=2 if key=='website' else 1
         assert f'matched = "{expected}"' in postgres(sql).stdout
+
+
+def test_brands_migration_moves_products_and_category_promos_on_real_postgres(postgres):
+    # Minimal schema of the tables the revision reads; offline SQL must carry
+    # the whole data migration because `--sql` has no rows to read.
+    postgres("""
+        CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY);
+        INSERT INTO alembic_version VALUES ('c8f1e5a3d702');
+        CREATE TABLE categories (id INTEGER PRIMARY KEY, is_active BOOLEAN NOT NULL);
+        CREATE TABLE subcategories (id INTEGER PRIMARY KEY, category_id INTEGER, is_active BOOLEAN NOT NULL);
+        CREATE TABLE products (id INTEGER PRIMARY KEY, brand VARCHAR(100), is_active BOOLEAN NOT NULL,
+            category_id INTEGER, subcategory_id INTEGER);
+        CREATE TABLE promo_codes (id INTEGER PRIMARY KEY, is_active BOOLEAN NOT NULL, category_ids JSONB);
+        INSERT INTO categories VALUES (1, true), (2, false), (3, true);
+        INSERT INTO subcategories VALUES (10, 1, true), (11, 1, false);
+        INSERT INTO products VALUES (1, '  Creed  ', true, 1, NULL), (2, 'creed', true, NULL, 10),
+            (3, 'Tom   Ford', true, 2, NULL), (4, 'Kilian', true, NULL, 11), (5, '', true, NULL, NULL);
+        INSERT INTO promo_codes VALUES (1, true, '[1]'), (2, true, '[3]'), (3, true, '[]'), (4, true, NULL);
+    """)
+    postgres(upgrade_sql('c8f1e5a3d702:e2b7c4a91d05'))
+    result = postgres("""
+        SELECT string_agg(name || '=' || name_key, ',' ORDER BY id) AS brands FROM brands;
+        SELECT string_agg(id || ':' || coalesce(b, '-') || ':' || is_active, ',' ORDER BY id) AS products
+          FROM (SELECT p.id, b.name AS b, p.is_active, p.brand FROM products p LEFT JOIN brands b ON b.id = p.brand_id) x;
+        SELECT string_agg(pc.id || ':' || pc.brand_ids::text || ':' || pc.is_active, ',' ORDER BY pc.id) AS promos FROM promo_codes pc;
+        SELECT version_num FROM alembic_version;
+    """)
+    out = result.stdout
+    assert 'brands = "Creed=creed,Kilian=kilian,Tom Ford=tom ford"' in out, out
+    # Creed spelled once; Tom Ford hidden by inactive category 2, Kilian by subcategory 11.
+    assert 'products = "1:Creed:true,2:Creed:true,3:Tom Ford:false,4:Kilian:false,5:-:true"' in out, out
+    # Category 1 holds Creed (products 1, 2) and Kilian (via subcategory 11);
+    # category 3 has no products -> switched off; empty/NULL lists untouched.
+    assert 'promos = "1:[1, 2]:true,2:[]:false,3:[]:true,4:[]:true"' in out, out
+    assert 'e2b7c4a91d05' in out
