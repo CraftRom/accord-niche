@@ -20,14 +20,17 @@ const orders = [
 const post = { id: 5, slug: 'note', title: 'Стаття', excerpt: 'Опис', author_name: 'Редакція', cover_url: '', published_at: '2026-11-01T10:00:00Z', updated_at: '2026-11-01T10:00:00Z', reading_minutes: 3, comment_count: 1, comments_enabled: true,
   body: '## Розділ\n\nДовгий текст статті без пробілів: ' + 'https://example.com/' + 'дуже-довга-адреса-'.repeat(12) + '\n\n> Цитата редакції\n\n- перший\n- другий' }
 
-function routes(page, { signedIn = false, offline = false } = {}) {
+function routes(page, { signedIn: startSignedIn = false, offline = false } = {}) {
+  let signedIn = startSignedIn
   return page.route('**/api/**', (route) => {
     const url = new URL(route.request().url()), path = url.pathname
     if (offline && path === '/api/public/storefront') return route.abort('internetdisconnected')
     const json = (data) => route.fulfill({ json: data })
+    if (path === '/api/web/auth/logout') { signedIn = false; return json({}) }
     if (path === '/api/web/session') return json({ account: signedIn ? { signed_in: true, has_session: true, account_key: 'k1', name: 'Олена', email: 'o@example.com', phone_verified: false, telegram_linked: false } : { signed_in: false, has_session: true, account_key: 'guest' }, csrf: 'a'.repeat(48), google_client_id: '', phone_verification_enabled: true })
     if (path === '/api/public/site-config') return json({ phone: '+380501234567', email: 'shop@example.com', seller_name: 'ФОП Продавець', terms_url: 'https://accordniche.pp.ua/terms', instagram_url: 'https://instagram.com/accord' })
     if (path === '/api/public/storefront') return json({ hits: [aroma], recommended: [other], new_arrivals: [aroma], selection: [aroma, other], total: 2, available: 2, window_days: 90 })
+    if (path === '/api/public/aromas') return json({ items: [aroma, other], total: 2, limit: 24, offset: 0, brands: ['BRAND'], categories: [] })
     if (path === '/api/web/profile') return json({ orders_count: 3, bonus_balance: 0 })
     if (path === '/api/web/orders') return json({ items: orders, has_more: false })
     if (path === '/api/public/blog/note') return json(post)
@@ -70,6 +73,18 @@ try {
     check(badges.length === 1 && badges[0] >= 24, `W-35: badges share one height (${badges.join(', ')} px)`)
     check(await page.evaluate(() => getComputedStyle(document.createElement('img')) && [...document.querySelectorAll('.photo-tile > img')].every((img) => getComputedStyle(img).objectFit === 'contain')), 'W-38: product photos are never cropped')
     check(!/(?<![\p{L}])(твій|твоє|твоїм|Знайди|Обери|Увійди|Спробуй)(?![\p{L}])/u.test(await page.locator('body').textContent()), 'W-37: the site speaks to the buyer formally, like the Mini App and the bot')
+    // Menu: larger text, and the open section is marked for eyes and screen readers.
+    const navSize = await page.locator('#store-navigation a').first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+    check(navSize >= 14, `menu text is at least 14 px (${navSize})`)
+    check(await page.locator('#store-navigation [aria-current="page"]').count() === 0, 'menu: home page marks no section')
+    await page.locator('#store-navigation a', { hasText: 'Хіти' }).click()
+    await page.waitForURL('**/catalog?kind=hits')
+    const current = page.locator('#store-navigation [aria-current="page"]')
+    check(await current.count() === 1 && await current.textContent() === 'Хіти', 'menu: the open section is marked (Хіти, not Каталог)')
+    const mark = await current.evaluate((el) => ({ weight: getComputedStyle(el).fontWeight, bar: getComputedStyle(el, '::after').transform }))
+    check(Number(mark.weight) >= 600 && mark.bar !== 'none' && !mark.bar.startsWith('matrix(0'), 'menu: the open section is bold and underlined')
+    await page.goto(BASE + '/')
+    await page.locator('.product-card').first().waitFor()
     const footer = page.locator('.footer')
     check(await footer.locator('h2').allTextContents().then((t) => t.join('|')) === 'Покупцям|Про магазин|Підтримка|Документи', 'W-26: footer has four groups')
     check(await footer.getByRole('link', { name: 'Умови покупки' }).count() === 1 && await footer.getByRole('link', { name: 'Політика конфіденційності' }).count() === 0, 'W-26: only configured documents are linked')
@@ -106,6 +121,16 @@ try {
     await page.locator('.order-record').first().waitFor()
     if (width === 1280) {
       const cards = await page.locator('.profile-card .profile-card-head').allTextContents()
+      // Header: signed-in mark and sign-out next to the cart; profile page layout.
+      const actions = await page.locator('.header-actions > button').evaluateAll((nodes) => nodes.filter((n) => getComputedStyle(n).display !== 'none').map((n) => n.getAttribute('aria-label')))
+      check(actions.indexOf('Вийти з профілю') === actions.findIndex((label) => label.startsWith('Кошик')) + 1, `header: sign-out sits right after the cart (${actions.join(' | ')})`)
+      const exit = page.locator('.logout-btn'), cart = page.locator('.cart-button')
+      const [eb, cb] = [await exit.boundingBox(), await cart.boundingBox()]
+      check(eb.width === cb.width && eb.height === cb.height && Math.abs(eb.y - cb.y) < 1, 'header: sign-out has the same size and line as the cart button')
+      check(await page.locator('.icon-btn.signed-in').count() === 1, 'header: profile icon shows that you are signed in')
+      const main = await page.locator('.profile-main').boundingBox(), aside = await page.locator('.profile-cards').boundingBox()
+      check(main.x < aside.x && Math.abs(main.y - aside.y) < 2, 'profile: orders and settings sit side by side on desktop')
+      check((await page.locator('.profile-greeting').textContent()).startsWith('Вітаємо, Олена!') && await page.locator('.profile-hero dl.profile-facts dd').count() === 2, 'profile: greeting and key numbers on top')
       check(cards.length === 3 && cards[0].startsWith('Мій обліковий запис') && cards[1].includes('Потрібне підтвердження') && cards[2].includes('Не підключено'), 'W-22: three cards, each with its state in words')
       check((await page.locator('.profile-card').nth(2).textContent()).includes('Вхід через Google і зв’язування — різні речі'), 'W-22: sign-in and linking are explained as different things')
       const shipped = page.locator('.order-record').nth(0)
@@ -123,6 +148,11 @@ try {
     await auditPage(page, cdp, `${width}px signed-in profile`, check, { errors })
     await auditText(page, `${width}px signed-in profile`, check)
     await page.screenshot({ path: `${output}/website-stage5-profile-${width}.png`, fullPage: true })
+    if (width === 1280) {
+      await page.locator('.logout-btn').click()
+      await page.locator('.profile-page.is-guest').waitFor()
+      check(await page.locator('.logout-btn').count() === 0 && (await page.locator('.notice').textContent()).includes('Ви вийшли з профілю'), 'header: sign-out works and says so; the button disappears')
+    }
     await context.close()
   }
   // ------------------------------------------------------------- article

@@ -6,6 +6,7 @@ export function Icon({name, size = 20}) {
   if (name === 'user') return <svg {...props}><circle cx="12" cy="8" r="4"/><path d="M4.5 21c0-4 3.2-6 7.5-6s7.5 2 7.5 6"/></svg>
   if (name === 'bag') return <svg {...props}><path d="M4 8h16l-1.2 13H5.2L4 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>
   if (name === 'close') return <svg {...props}><path d="m5 5 14 14M19 5 5 19"/></svg>
+  if (name === 'logout') return <svg {...props}><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg>
   if (name === 'menu') return <svg {...props}><path d="M3 7h18M3 12h18M3 17h18"/></svg>
   return <svg {...props}><path d="M4 12h16m-7-7 7 7-7 7"/></svg>
 }
