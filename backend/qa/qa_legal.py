@@ -33,13 +33,14 @@ O = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"olena
 r.check(c.put("/api/settings", json={"seller_name":"Хтось інший"}, headers=O).status_code == 403,
         "реквізити продавця — лише адміністратор")
 
-print("\n--- вік у документах ---")
-c.put("/api/settings", json={"min_age":21}, headers=A)
+print("\n--- вікового обмеження немає ---")
 cfg = c.get("/api/shop/config", headers=H).json()
-r.check(cfg["min_age"] == 21, "вік для оферти береться з налаштувань", cfg["min_age"])
+r.check("min_age" not in cfg and cfg.get("age_confirmed") is True,
+        "парфумерія без вікового бар'єра: вітрина не питає вік", cfg.get("age_confirmed"))
+r.check(c.put("/api/settings", json={"min_age": 21}, headers=A).status_code == 422,
+        "поле віку більше не приймається")
 # --- списки бажаного доступні одразу після відкриття вітрини ---
 print("\n--- збережене ---")
-c.post("/api/shop/age-confirm", headers=H)   # каталог і списки за бар'єром 18+
 wl = c.get("/api/shop/wishlists", headers=H)
 r.check(wl.status_code == 200, "списки віддаються", f"{wl.status_code} {wl.text[:120]}")
 r.check(isinstance(wl.json(), list) and len(wl.json()) >= 1, "список за замовчуванням є", wl.json())

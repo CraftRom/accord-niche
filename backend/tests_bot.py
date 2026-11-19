@@ -245,29 +245,19 @@ async def run(backend: str) -> None:
         session.clear()
         await dp.feed_update(bot, update)
 
-    # ---------------------------------------------------------- 1. Age gate
-    print("\n1. Підтвердження віку")
+    # ------------------------------------------------- 1. Без вікового бар'єра
+    print("\n1. Старт без підтвердження віку")
 
     await feed(message_update(bot, "/start"))
-    check("на /start показано age gate", "18" in session.last_text(),
-          session.last_text()[:60])
-    check("є кнопки підтвердження",
-          any("age:yes" in str(k) for k in session.keyboards()))
+    check("на /start одразу привітання, без питання про вік",
+          "Ласкаво просимо" in session.all_text() and "age:yes" not in str(session.keyboards()),
+          session.all_text()[:80])
+    check("привітання про парфумерію, не про нікотин",
+          "парфум" in session.all_text() and "нікотин" not in session.all_text().lower())
 
-    await feed(message_update(bot, "🛍 Каталог"))
-    check("каталог до підтвердження віку недоступний",
-          "18" in session.last_text(), session.last_text()[:60])
-
-    await feed(callback_update(bot, "cat:1"))
-    check("інлайн-кнопки заблоковані до підтвердження",
-          any("вік" in a.lower() for a in session.alerts()), str(session.alerts()))
-
-    await feed(callback_update(bot, "age:no"))
-    check("відмова закриває доступ", "18" in session.last_text(),
-          session.last_text()[:60])
-
+    # Кнопки підтвердження віку зі старих повідомлень не ламаються.
     await feed(callback_update(bot, "age:yes"))
-    check("після підтвердження — привітання",
+    check("стара кнопка «мені є 18» відкриває меню",
           "Ласкаво просимо" in session.all_text(), session.all_text()[:80])
 
     # ---------------------------------------------------------- 2. Каталог
@@ -409,10 +399,9 @@ async def run(backend: str) -> None:
         code = buyer.referral_code
 
     await feed(message_update(bot, f"/start {code}", tg_id=500002, username="friend"))
-    check("друг за реферальним посиланням бачить age gate",
-          "18" in session.last_text())
+    check("друг за реферальним посиланням одразу бачить привітання",
+          "Ласкаво просимо" in session.all_text())
 
-    await feed(callback_update(bot, "age:yes", tg_id=500002))
     async with open_repo() as repo:
         friend = await repo.get_user_by_tg(500002)
         check("реферера прив'язано", friend.referrer_id == buyer_id,

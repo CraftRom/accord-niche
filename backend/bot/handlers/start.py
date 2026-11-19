@@ -48,11 +48,6 @@ async def cmd_start(
         if referrer and referrer.id != user.id:
             await repo.set_user_referrer(user, referrer.id)
 
-    if not user.age_confirmed:
-        shop = await get_shop_settings(repo)
-        await message.answer(texts.age_gate(shop.min_age), reply_markup=kb.age_gate())
-        return
-
     shop = await get_shop_settings(repo)
     await message.answer(
         texts.WELCOME.format(shop=escape(shop.shop_name)), reply_markup=kb.main_menu()
@@ -60,25 +55,15 @@ async def cmd_start(
     await _offer_shop(message)
 
 
-@router.callback_query(F.data == "age:yes")
-async def age_yes(callback: CallbackQuery, repo: Repository, user: User) -> None:
-    await repo.confirm_age(user)
+@router.callback_query(F.data.in_({"age:yes", "age:no"}))
+async def legacy_age_button(callback: CallbackQuery, repo: Repository) -> None:
+    """Кнопки підтвердження віку зі старих повідомлень. Віку більше не
+    перевіряємо (парфумерія), тож просто відкриваємо меню."""
     shop = await get_shop_settings(repo)
-    await callback.message.edit_text(
-        f"Дякуємо. Пам'ятайте: нікотин викликає залежність.\n"
-        f"Продаж — від {shop.min_age} років."
-    )
     await callback.message.answer(
         texts.WELCOME.format(shop=escape(shop.shop_name)), reply_markup=kb.main_menu()
     )
     await _offer_shop(callback.message)
-    await callback.answer()
-
-
-@router.callback_query(F.data == "age:no")
-async def age_no(callback: CallbackQuery, repo: Repository) -> None:
-    shop = await get_shop_settings(repo)
-    await callback.message.edit_text(texts.age_denied(shop.min_age))
     await callback.answer()
 
 
@@ -92,9 +77,6 @@ async def cmd_shop(message: Message, repo: Repository, user: User) -> None:
     видно в меню поруч із полем вводу.
     """
     shop = await get_shop_settings(repo)
-    if not user.age_confirmed:
-        await message.answer(texts.age_gate(shop.min_age), reply_markup=kb.age_gate())
-        return
     await message.answer(
         texts.WELCOME.format(shop=escape(shop.shop_name)), reply_markup=kb.main_menu()
     )

@@ -7,47 +7,7 @@ import { StoreIcon } from '../StoreIcon'
 import { DEFAULT_SORT, SORT_OPTIONS, catalogPrice, discountPercent, hasFreshStatus, hasSaleStatus, sortProducts, normalizeCatalogState, resolveCatalogState, loadCatalogProducts } from '../catalogModel'
 import { SortSheet } from './SortSheet'
 import { CategoryNavigator } from './CategoryNavigator'
-import { close, haptic } from '../telegram'
-
-/** Той самий 18+ бар'єр, що й у боті. Каталог до підтвердження недоступний. */
-export function AgeGate({ config, onConfirmed }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const age = config?.min_age ?? 18
-
-  const confirm = async () => {
-    setBusy(true)
-    try {
-      const updated = await api.confirmAge()
-      onConfirmed(updated)
-    } catch (err) {
-      setError(err.message)
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="gate">
-      <div className="gate-mark">{age}+</div>
-      <h1>Підтвердження віку</h1>
-      <p>
-        Товари містять нікотин і продаються лише особам, яким виповнилося {age} років.
-      </p>
-      <p>
-        Нікотин викликає залежність. Продукція не є засобом для відмови від куріння.
-      </p>
-      {error && <div className="banner warn">{error}</div>}
-      <div className="actions">
-        <button className="primary" onClick={confirm} disabled={busy}>
-          {busy ? 'Підтверджуємо…' : `Мені є ${age}`}
-        </button>
-        <button className="secondary" onClick={close}>
-          Мені менше — вийти
-        </button>
-      </div>
-    </div>
-  )
-}
+import { haptic } from '../telegram'
 
 function plural(count) {
   const tail = count % 100

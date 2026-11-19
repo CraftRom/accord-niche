@@ -42,7 +42,7 @@ async def main():
                        # перевіряємо суть: терміни й вартість
                        ("@elfar1_bot яка доставка", "пошт"),
                        ("@elfar1_bot скільки коштує", "Ціни"),
-                       ("@elfar1_bot з якого віку", "нікотин")]:
+                       ("@elfar1_bot це оригінал?", "розпив")]:
         replies,_ = await send(text)
         check(replies and must.lower() in replies[0].lower(), f"«{text}» → відповідь", replies)
         check(replies and "особистому чаті" in replies[0], "з відсиланням в особистий чат")

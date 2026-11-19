@@ -148,13 +148,7 @@ async def main() -> None:
         check("бонуси повернуто", referrer.bonus_balance == Decimal("47.25"))
 
         print("\nСегментація")
-        all_users = await segment_service.count(s, {"type": "all"})
-        check("age_confirmed фільтрує всіх", all_users == 0, f"отримано {all_users}")
-
-        buyer.age_confirmed = True
-        referrer.age_confirmed = True
-        await s.commit()
-
+        # Без вікового бар'єра: сегмент «усі» — це всі незаблоковані клієнти.
         check("усі клієнти = 2", await segment_service.count(s, {"type": "all"}) == 2)
         check("з покупками = 1", await segment_service.count(s, {"type": "with_orders"}) == 1)
         check("без покупок = 1", await segment_service.count(s, {"type": "no_orders"}) == 1)

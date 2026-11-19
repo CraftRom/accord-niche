@@ -49,7 +49,7 @@ def build_dispatcher() -> Dispatcher:
         admin, cart, catalog, chat, checkout, group, profile, start,
     )
     from bot.middlewares import (
-        AgeGateMiddleware, BlockedUserMiddleware, PrivateOnlyMiddleware,
+        BlockedUserMiddleware, PrivateOnlyMiddleware,
         RepositoryMiddleware,
     )
 
@@ -70,7 +70,6 @@ def build_dispatcher() -> Dispatcher:
         observer.outer_middleware(RepositoryMiddleware())
         # Ці перевірки потрібні лише для подій, які реально підуть у handler.
         observer.middleware(BlockedUserMiddleware())
-        observer.middleware(AgeGateMiddleware())
 
     dp.include_router(group.router)      # групи й канали — окремо від магазину
     dp.include_router(admin.router)      # адмінський роутер — першим

@@ -86,8 +86,9 @@ print("\n=== БОТ ===")
 factory = read("backend/bot/factory.py")
 for h in ["group","admin","start","catalog","cart","checkout","profile","chat"]:
     check(f"{h}.router" in factory, f"хендлер зареєстровано: {h}")
-for m in ["PrivateOnlyMiddleware","RepositoryMiddleware","BlockedUserMiddleware","AgeGateMiddleware"]:
+for m in ["PrivateOnlyMiddleware","RepositoryMiddleware","BlockedUserMiddleware"]:
     check(m in factory, f"мідлвар: {m}")
+check("AgeGateMiddleware" not in factory, "вікового бар'єра в боті немає (парфумерія)")
 check("bot_id()" in factory, "адреса вебхука містить ідентифікатор бота")
 
 print("\n=== РОЗГОРТАННЯ НА ВЛАСНОМУ СЕРВЕРІ ===")
@@ -736,7 +737,10 @@ for location in ["/api/", "/app"]:
 
 print("\n=== ФРОНТ: ПІДКЛЮЧЕННЯ ЕКРАНІВ ===")
 app = read("miniapp/src/App.jsx")
-for screen in ["Catalog","Checkout","Profile","ChatList","ChatRoom","ProductPage","Wishlists","SavePicker","AgeGate","Legal","Footer"]:
+for screen in ["Catalog","Checkout","Profile","ChatList","ChatRoom","ProductPage","Wishlists","SavePicker","Legal","Footer"]:
+    check(screen in app, f"вітрина використовує {screen}")
+check("AgeGate" not in app, "вікового бар'єра у вітрині немає")
+for screen in []:
     check(screen in app, f"вітрина використовує {screen}")
 dash = read("dashboard/src/App.jsx")
 for page in ["Orders","OrderPage","Catalog","Customers","Promos","Broadcasts","Operators","Settings","Overview"]:
