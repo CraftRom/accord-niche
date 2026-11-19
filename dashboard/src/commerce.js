@@ -20,6 +20,15 @@ export function recipientName(order) {
   if(patronymic && !name.endsWith(' '+patronymic) && name!==patronymic)name=words(name+' '+patronymic)
   return name || 'Ім’я не вказано'
 }
+/** Name to show: Telegram name, else the name from the Google sign-in. */
+export function customerName(user={}) {
+  return (user?.first_name || '').trim() || (user?.display_name || '').trim() || (Number(user?.tg_id)<0 ? 'Покупець сайту' : 'Без імені')
+}
+/** Second line: email from Google, @username or Telegram id, phone. */
+export function customerSubtitle(user={}) {
+  const contact=user?.email || (Number(user?.tg_id)>0 ? (user.username ? '@'+user.username : `Telegram ${user.tg_id}`) : `Вебпокупець #${user?.id}`)
+  return [contact, user?.phone].filter(Boolean).join(' · ')
+}
 export function customerContact(user={}) {
   if(Number(user?.tg_id)<=0 || !user?.tg_id)return 'Покупець сайту'
   return user.username?'@'+user.username:'Telegram підключено'

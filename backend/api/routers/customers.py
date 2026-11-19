@@ -23,12 +23,32 @@ async def list_customers(
     paginated: bool = False,
     repo: Repository = Depends(get_repo),
 ):
-    items = await repo.list_users(search=search, blocked=blocked, limit=limit, offset=offset)
+    from shop.services.customer_profile import enrich
+    items = await enrich(repo, await repo.list_users(search=search, blocked=blocked, limit=limit, offset=offset))
     if not paginated:
         return items
     total = await repo.count_filtered_users(search=search, blocked=blocked)
     return dict(items=items, total=total, limit=limit, offset=offset,
                 has_more=offset + len(items) < total)
+
+
+@router.get("/{customer_id}", response_model=CustomerOut)
+async def get_customer(customer_id: int, repo: Repository = Depends(get_repo)):
+    from shop.services.customer_profile import enrich
+    user = await repo.get_user(customer_id)
+    if not user:
+        raise HTTPException(404, "Клієнта не знайдено")
+    return (await enrich(repo, [user]))[0]
+
+
+@router.get("/{customer_id}/summary")
+async def customer_summary(customer_id: int, repo: Repository = Depends(get_repo)):
+    """Картка клієнта: ім'я з Google, статистика покупок, бренди, чати."""
+    from shop.services.customer_profile import summary
+    user = await repo.get_user(customer_id)
+    if not user:
+        raise HTTPException(404, "Клієнта не знайдено")
+    return await summary(repo, user)
 
 
 @router.patch("/{customer_id}", response_model=CustomerOut)
@@ -44,7 +64,8 @@ async def patch_customer(
     if data.bonus_delta:
         await repo.add_bonus(customer_id, data.bonus_delta, data.bonus_reason)
 
-    return await repo.get_user(customer_id)
+    from shop.services.customer_profile import enrich
+    return (await enrich(repo, [await repo.get_user(customer_id)]))[0]
 
 
 @router.get("/{customer_id}/wishlists")
