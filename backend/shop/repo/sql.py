@@ -616,7 +616,15 @@ class SqlRepository(Repository):
     @staticmethod
     def _user_filters(query, search=None, blocked=None):
         if search:
-            query = query.where(m.User.search_key.contains(search.lower(), autoescape=True))
+            needle = search.lower()
+            # Website buyers are found by the name and email of their Google sign-in too.
+            by_account = select(m.WebsiteAccount.id).where(
+                or_(m.WebsiteAccount.user_id == m.User.id, m.WebsiteAccount.linked_telegram_user_id == m.User.id),
+                or_(func.lower(func.coalesce(m.WebsiteAccount.display_name, "")).contains(needle, autoescape=True),
+                    # Also as typed: SQLite lower() leaves Cyrillic unchanged.
+                    func.coalesce(m.WebsiteAccount.display_name, "").contains(search, autoescape=True),
+                    func.lower(func.coalesce(m.WebsiteAccount.email, "")).contains(needle, autoescape=True))).exists()
+            query = query.where(or_(m.User.search_key.contains(needle, autoescape=True), by_account))
         if blocked is not None:
             query = query.where(m.User.is_blocked.is_(blocked))
         return query
