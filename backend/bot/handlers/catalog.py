@@ -18,9 +18,9 @@ PAGE_SIZE = 8
 
 
 async def _send_categories(target: Message | CallbackQuery, repo: Repository) -> None:
-    items = await repo.list_categories(only_active=True)
-    subs = await repo.list_subcategories(only_active=True)
-    text, markup = "<b>Каталог</b>\n\nОберіть розділ:", kb.categories(items, [s for s in subs if s.category_id is None])
+    """Каталог парфумерії: добірки й бренди (бренд замінив категорії)."""
+    items = [brand for brand in await repo.list_brands(only_active=True) if brand.products_count]
+    text, markup = "<b>Каталог</b>\n\nОберіть бренд або добірку:", kb.categories(items)
 
     if isinstance(target, CallbackQuery):
         try:
@@ -45,21 +45,20 @@ async def catalog_callback(callback: CallbackQuery, repo: Repository) -> None:
 async def _render_products(callback, repo, cat_id=None, page=0, scope=None):
     scope = scope or f"cat:{cat_id}"
     kind, value = scope.split(":")
-    filters = {}; children = []; category = None
-    if kind in {"cat", "sub", "root"}:
-        if kind == "root":
-            category = await repo.get_category(int(value))
-            filters['category_id'] = int(value)
-            children = await repo.list_subcategories(category_id=int(value), only_active=True)
-        else:
-            # Old cat buttons refer to categories migrated into subcategories.
-            category = await repo.get_subcategory(int(value))
-            filters['subcategory_id'] = int(value)
-        if not category or not category.is_active:
-            await callback.answer("Розділ недоступний", show_alert=True)
+    filters = {}; children = []
+    if kind == "brand":
+        brand = await repo.get_brand(int(value))
+        if not brand or not brand.is_active:
+            await callback.answer("Бренд недоступний", show_alert=True)
             return
-        header = f"<b>{escape(category.name)}</b>"
-        if category.description: header += f"\n{escape(category.description)}"
+        filters['brand_id'] = brand.id
+        header = f"<b>{escape(brand.name)}</b>"
+        if brand.description: header += f"\n{escape(brand.description)}"
+    elif kind in {"cat", "sub", "root"}:
+        # Buttons of the old category catalogue in earlier messages.
+        await callback.answer("Каталог оновлено: оберіть бренд", show_alert=True)
+        await _send_categories(callback, repo)
+        return
     else:
         header = {'all':'<b>Усі товари</b>','new':'<b>Новинки</b>','sale':'<b>Акції</b>'}.get(value, '<b>Каталог</b>')
         if value == 'new': filters['is_new'] = True
@@ -80,7 +79,7 @@ async def _render_products(callback, repo, cat_id=None, page=0, scope=None):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("cat:") | F.data.startswith("root:") | F.data.startswith("sub:") | F.data.startswith("shelf:"))
+@router.callback_query(F.data.startswith("brand:") | F.data.startswith("cat:") | F.data.startswith("root:") | F.data.startswith("sub:") | F.data.startswith("shelf:"))
 async def open_category(callback: CallbackQuery, repo: Repository):
     await _render_products(callback, repo, scope=callback.data)
 

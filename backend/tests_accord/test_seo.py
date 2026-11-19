@@ -26,13 +26,13 @@ async def repo(tmp_path):
     now = datetime.now(timezone.utc)
     async with engine.begin() as c:
         await c.run_sync(m.Base.metadata.create_all)
-        await c.execute(insert(m.Category), [dict(id=1, name='Hidden', is_active=False)])
-        base = dict(volume_ml=None, description=None, photo_url=None, category_id=None, name_lower='')
+        await c.execute(insert(m.Brand), [dict(id=1, name='Hidden', name_key='hidden', is_active=False)])
+        base = dict(volume_ml=None, description=None, photo_url=None, brand_id=None, name_lower='')
         for row in (dict(id=7, name='Aventus </script>', brand='Creed', sku='CRD-0007', price=Decimal('450'), stock=0,
                          is_active=True, volume_ml=5, description='**Ананас** і [берёза](https://x) & "лапки"',
                          photo_url='javascript:alert(1)'),
                     dict(id=8, name='In hidden group', brand='X', sku='HID-0008', price=Decimal('10'), stock=1,
-                         is_active=True, category_id=1),
+                         is_active=True, brand_id=1),
                     dict(id=9, name='Unpriced', brand='X', sku='UNP-0009', price=Decimal('0'), stock=1, is_active=True)):
             await c.execute(insert(m.Product).values(**{**base, **row}))
         post = dict(excerpt='', search_text='', cover_url='', created_by='a', updated_by='a', author_name='Редакція ACCORD NICHE',

@@ -10,7 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from shop.links import app_link, share_link
 from shop.entities import OrderStatus
 from shop.services.shop_service import route_for
-from shop.models import CartItem, Category, Product
+from shop.models import Brand, CartItem, Product
 
 # ------------------------------------------------------------------ головне меню
 
@@ -91,15 +91,14 @@ PHONE_REQUEST = ReplyKeyboardMarkup(
 )
 
 
-def categories(items: list[Category], subcategories=()) -> InlineKeyboardMarkup:
+def categories(brands: list[Brand]) -> InlineKeyboardMarkup:
+    """Добірки й бренди. Назва лишилась від категорій: так кличуть меню."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="Усі товари", callback_data="shelf:all")
+    kb.button(text="Усі аромати", callback_data="shelf:all")
     kb.button(text="Новинки", callback_data="shelf:new")
     kb.button(text="Акції", callback_data="shelf:sale")
-    for c in items:
-        kb.button(text=c.name, callback_data=f"root:{c.id}")
-    for c in subcategories:
-        kb.button(text=c.name, callback_data=f"sub:{c.id}")
+    for brand in brands:
+        kb.button(text=brand.name, callback_data=f"brand:{brand.id}")
     kb.adjust(2)
     return kb.as_markup()
 
@@ -141,7 +140,7 @@ def product_card(product: Product, in_cart: int = 0, *, details: bool = False) -
             kb.row(InlineKeyboardButton(text="🛒 Перейти в кошик", callback_data="cart"))
         else:
             kb.row(InlineKeyboardButton(text="🛒 Додати в кошик", callback_data=f"add:{product.id}"))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=(f"sub:{product.subcategory_id}" if product.subcategory_id else f"root:{product.category_id}" if product.category_id else "shelf:all")))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=(f"brand:{product.brand_id}" if product.brand_id else "shelf:all")))
     return kb.as_markup()
 
 

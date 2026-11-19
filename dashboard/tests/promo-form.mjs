@@ -15,10 +15,10 @@ assert.deepEqual(validatePromoForm({ ...form, value: '100' }), {})
 assert.equal(promoPayload({ ...form, expires_at: '2026-07-10' }).expires_on, '2026-07-10')
 assert.equal(promoDateInput('2026-07-10T21:30:00Z'), '2026-07-11')
 assert.equal(promoDateInput('2026-07-10T21:30:00'), '2026-07-11')
-const original = { expires_at: '2026-07-10T21:30:00Z', category_ids: [2] }
+const original = { expires_at: '2026-07-10T21:30:00Z', brand_ids: [2] }
 assert.equal(promoPayload({ ...form, expires_at: '2026-07-11' }, original).expires_at, original.expires_at)
 assert.equal(promoPayload({ ...form, expires_at: '2026-07-12' }, original).expires_on, '2026-07-12')
-assert.deepEqual(promoPayload({ ...form, category_ids: [2] }, original).category_ids, [2])
+assert.deepEqual(promoPayload({ ...form, brand_ids: [2] }, original).brand_ids, [2])
 const naive = { ...original, expires_at: '2026-07-10T21:30:00' }
 assert.equal(promoPayload({ ...form, expires_at: '2026-07-11' }, naive).expires_at, '2026-07-10T21:30:00Z')
 console.log('PASS promo form validation, dates, exact decimals and payloads')

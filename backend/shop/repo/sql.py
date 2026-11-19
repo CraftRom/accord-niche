@@ -19,7 +19,7 @@ from sqlalchemy.orm import aliased, lazyload, selectinload
 from shop import models as m
 from shop.entities import (
     Operator, OperatorRole, OrderMessage, SupportMessage, SupportThread, Wishlist,
-    Broadcast, BroadcastStatus, CartLine, Category, Subcategory, Order,
+    Brand, Broadcast, BroadcastStatus, CartLine, Order,
     OrderLine, OrderStatus, Product, Promo, Stats, User,
 )
 from shop.repo.base import PromoCodeConflict, Repository
@@ -283,24 +283,23 @@ def _user(row: m.User | None) -> User | None:
     )
 
 
-def _category(row, products_count: int = 0) -> Category:
-    return Category(
+def _brand(row, products_count: int = 0) -> Brand:
+    return Brand(
         id=row.id, name=row.name, description=row.description,
         sort_order=row.sort_order, is_active=row.is_active,
         products_count=products_count,
     )
 
 
+def _brand_key(name) -> str:
+    return " ".join(str(name or "").split())[:100]
+
+
 def _parents_active():
-    """SQL: всі батьківські групи товару активні (correlated to m.Product)."""
-    category, sub, sub_category = aliased(m.Category), aliased(m.Subcategory), aliased(m.Category)
-    category_ok = or_(m.Product.category_id.is_(None), exists().where(
-        category.id == m.Product.category_id, category.is_active.is_(True)))
-    sub_ok = or_(m.Product.subcategory_id.is_(None), exists().where(
-        sub.id == m.Product.subcategory_id, sub.is_active.is_(True),
-        or_(sub.category_id.is_(None), exists().where(
-            sub_category.id == sub.category_id, sub_category.is_active.is_(True)))))
-    return and_(category_ok, sub_ok)
+    """SQL: бренд товару активний (correlated to m.Product). Без бренду — так."""
+    brand = aliased(m.Brand)
+    return or_(m.Product.brand_id.is_(None), exists().where(
+        brand.id == m.Product.brand_id, brand.is_active.is_(True)))
 
 
 def _published():
@@ -308,19 +307,17 @@ def _published():
     return and_(m.Product.is_active.is_(True), _parents_active())
 
 
-def _product(row, category_name: str | None = None, subcategory_name: str | None = None,
-             parent_active: bool = True) -> Product | None:
+def _product(row, parent_active: bool = True) -> Product | None:
     if row is None:
         return None
-    return Product(parent_active=bool(parent_active), 
-        id=row.id, category_id=row.category_id, name=row.name, sku=row.sku,
-        subcategory_id=row.subcategory_id, subcategory_name=subcategory_name,
+    return Product(parent_active=bool(parent_active),
+        id=row.id, name=row.name, sku=row.sku, brand_id=row.brand_id,
         external_sku=row.external_sku, is_new=row.is_new, is_sale=row.is_sale,
         price=_dec(row.price), description=row.description,
         old_price=_dec(row.old_price) if row.old_price is not None else None,
         stock=row.stock, photo_file_id=row.photo_file_id, photo_url=row.photo_url,
         sort_order=row.sort_order, is_active=row.is_active,
-        category_name=category_name, name_lower=row.name_lower or row.name.lower(),
+        name_lower=row.name_lower or row.name.lower(),
         brand=row.brand or "", gender=row.gender or "unisex", volume_ml=row.volume_ml,
         is_featured=bool(row.is_featured),
     )
@@ -372,7 +369,7 @@ def _promo(row) -> Promo | None:
         min_order=_dec(row.min_order), max_uses=row.max_uses,
         per_user_limit=row.per_user_limit, used_count=row.used_count,
         expires_at=row.expires_at, is_active=row.is_active, created_at=row.created_at,
-        category_ids=list(row.category_ids or []),
+        brand_ids=list(row.brand_ids or []),
     )
 
 
@@ -631,13 +628,8 @@ class SqlRepository(Repository):
     # ---------------------------------------------------------- catalog
 
     @staticmethod
-    def _category_scope(category_id):
-        children = select(m.Subcategory.id).where(m.Subcategory.category_id == category_id).correlate(m.Category)
-        return or_(m.Product.category_id == category_id, m.Product.subcategory_id.in_(children))
-
-    @staticmethod
-    def _filters(query, category_id=None, subcategory_id=None, search=None,
-                 only_active=False, is_new=None, is_sale=None, uncategorized=False, perfume_only=False,inventory=None):
+    def _filters(query, brand_id=None, search=None,
+                 only_active=False, is_new=None, is_sale=None, without_brand=False, perfume_only=False, inventory=None):
         if inventory:
             sellable=and_(_published(),m.Product.price>0,func.trim(m.Product.name)!='')
             conditions={
@@ -645,18 +637,17 @@ class SqlRepository(Repository):
                 'low':and_(sellable,m.Product.stock>0,m.Product.stock<=3),
                 'out':and_(sellable,m.Product.stock<=0),
                 'unpriced':and_(_published(),m.Product.price<=0),
-                # Hidden on the storefront: individually or through a hidden group.
+                # Hidden on the storefront: individually or through a hidden brand.
                 'hidden':not_(_published()),
                 'missing_photos':and_(sellable,func.trim(func.coalesce(m.Product.photo_url,''))=='',func.trim(func.coalesce(m.Product.photo_file_id,''))=='')}
             query=query.where(conditions[inventory])
-        if category_id is not None:
-            query = query.where(SqlRepository._category_scope(category_id))
-        if subcategory_id is not None:
-            query = query.where(m.Product.subcategory_id == subcategory_id)
-        if uncategorized:
-            query = query.where(m.Product.category_id.is_(None), m.Product.subcategory_id.is_(None))
+        if brand_id is not None:
+            query = query.where(m.Product.brand_id == brand_id)
+        if without_brand:
+            query = query.where(m.Product.brand_id.is_(None))
         if search:
             query = query.where(or_(m.Product.name_lower.contains(search.lower(), autoescape=True),
+                                   m.Product.brand.icontains(search, autoescape=True),
                                    m.Product.sku.icontains(search, autoescape=True),
                                    m.Product.external_sku.icontains(search, autoescape=True)))
         if only_active:
@@ -669,114 +660,97 @@ class SqlRepository(Repository):
             query = query.where(m.Product.is_sale.is_(is_sale))
         return query
 
-    async def list_categories(self, only_active=False) -> list[Category]:
-        count = select(func.count(m.Product.id)).where(self._category_scope(m.Category.id))
+    # ------------------------------------------------------------ brands
+
+    async def list_brands(self, only_active=False) -> list[Brand]:
+        count = select(func.count(m.Product.id)).where(m.Product.brand_id == m.Brand.id).correlate(m.Brand).scalar_subquery()
+        query = select(m.Brand, count).order_by(m.Brand.sort_order, m.Brand.name_key)
         if only_active:
-            count = count.where(m.Product.is_active.is_(True))
-        query = select(m.Category, count.correlate(m.Category).scalar_subquery()).order_by(m.Category.sort_order, m.Category.name)
-        if only_active:
-            query = query.where(m.Category.is_active.is_(True))
-        return [_category(row, cnt) for row, cnt in await self.s.execute(query)]
+            query = query.where(m.Brand.is_active.is_(True))
+        return [_brand(row, cnt) for row, cnt in await self.s.execute(query)]
 
-    async def get_category(self, category_id):
-        row = await self.s.get(m.Category, category_id)
-        return _category(row) if row else None
-
-    async def create_category(self, data):
-        row = m.Category(**data)
-        self.s.add(row)
-        await self.s.commit()
-        await self.s.refresh(row)
-        return _category(row)
-
-    async def update_category(self, category_id, data):
-        row = await self.s.get(m.Category, category_id)
+    async def get_brand(self, brand_id):
+        row = await self.s.get(m.Brand, brand_id)
         if not row:
             return None
-        for key, value in data.items():
-            setattr(row, key, value)
-        await self.s.commit()
-        return _category(row)
+        count = await self.s.scalar(select(func.count(m.Product.id)).where(m.Product.brand_id == brand_id))
+        return _brand(row, int(count or 0))
 
-    async def delete_category(self, category_id):
-        result = await self.s.execute(update(m.Product).where(self._category_scope(category_id), m.Product.is_active.is_(True)).values(is_active=False))
-        await self.s.execute(update(m.Category).where(m.Category.id == category_id).values(is_active=False))
-        await self.s.execute(update(m.Subcategory).where(m.Subcategory.category_id == category_id).values(is_active=False))
-        await self._commit()
-        return int(result.rowcount or 0)
+    async def _brand_by_key(self, name):
+        return await self.s.scalar(select(m.Brand).where(m.Brand.name_key == _brand_key(name).lower()))
 
-    async def list_subcategories(self, category_id=None, only_active=False):
-        counts = select(m.Product.subcategory_id, func.count(m.Product.id).label("cnt"))
-        if only_active:
-            counts = counts.where(m.Product.is_active.is_(True))
-        counts = counts.group_by(m.Product.subcategory_id).subquery()
-        query = (select(m.Subcategory, m.Category.name, func.coalesce(counts.c.cnt, 0))
-                 .outerjoin(m.Category, m.Category.id == m.Subcategory.category_id)
-                 .outerjoin(counts, counts.c.subcategory_id == m.Subcategory.id)
-                 .order_by(m.Subcategory.sort_order, m.Subcategory.name))
-        if category_id is not None:
-            query = query.where(m.Subcategory.category_id == category_id)
-        if only_active:
-            query = query.where(m.Subcategory.is_active.is_(True), or_(m.Subcategory.category_id.is_(None), m.Category.is_active.is_(True)))
-        return [Subcategory(**vars(_category(row, cnt)), category_id=row.category_id, category_name=name)
-                for row, name, cnt in await self.s.execute(query)]
-
-    async def get_subcategory(self, subcategory_id):
-        result = await self.s.execute(select(m.Subcategory, m.Category.name).outerjoin(m.Category, m.Category.id == m.Subcategory.category_id).where(m.Subcategory.id == subcategory_id))
-        pair = result.first()
-        if not pair:
-            return None
-        row, name = pair
-        return Subcategory(**vars(_category(row)), category_id=row.category_id, category_name=name)
-
-    async def create_subcategory(self, data):
-        await self._validate_group(data)
-        row = m.Subcategory(**data)
+    async def create_brand(self, data):
+        name = _brand_key(data.get("name"))
+        if not name:
+            raise ValueError("Назва бренду не може бути порожньою")
+        if await self._brand_by_key(name):
+            raise ValueError(f"Бренд «{name}» уже є")
+        row = m.Brand(name=name, name_key=name.lower(), description=data.get("description"),
+                      sort_order=int(data.get("sort_order") or 0), is_active=bool(data.get("is_active", True)))
         self.s.add(row)
-        await self.s.commit()
-        return await self.get_subcategory(row.id)
+        try:
+            await self.s.commit()
+        except IntegrityError:
+            await self.s.rollback()
+            raise ValueError(f"Бренд «{name}» уже є") from None
+        return await self.get_brand(row.id)
 
-    async def update_subcategory(self, subcategory_id, data):
-        row = await self.s.get(m.Subcategory, subcategory_id)
+    async def update_brand(self, brand_id, data):
+        row = await self.s.get(m.Brand, brand_id)
         if not row:
             return None
-        await self._validate_group(data)
-        parent = data.get("category_id", row.category_id)
-        # Moving a group must move explicit parent assignments with it.
-        if parent != row.category_id:
-            await self.s.execute(update(m.Product).where(m.Product.subcategory_id == subcategory_id, m.Product.category_id.is_not(None)).values(category_id=parent))
-        for key, value in data.items():
-            setattr(row, key, value)
+        if "name" in data:
+            name = _brand_key(data["name"])
+            if not name:
+                raise ValueError("Назва бренду не може бути порожньою")
+            other = await self._brand_by_key(name)
+            if other is not None and other.id != brand_id:
+                raise ValueError(f"Бренд «{name}» уже є")
+            row.name, row.name_key = name, name.lower()
+            # The products keep a copy of the name for the site, search and SEO.
+            await self.s.execute(update(m.Product).where(m.Product.brand_id == brand_id).values(brand=name))
+        for key in ("description", "sort_order", "is_active"):
+            if key in data:
+                setattr(row, key, data[key])
         await self.s.commit()
-        return await self.get_subcategory(row.id)
+        return await self.get_brand(brand_id)
 
-    async def delete_subcategory(self, subcategory_id):
-        result = await self.s.execute(update(m.Product).where(m.Product.subcategory_id == subcategory_id, m.Product.is_active.is_(True)).values(is_active=False))
-        await self.s.execute(update(m.Subcategory).where(m.Subcategory.id == subcategory_id).values(is_active=False))
-        await self._commit()
-        return int(result.rowcount or 0)
+    async def delete_brand(self, brand_id):
+        row = await self.s.get(m.Brand, brand_id)
+        if not row:
+            return False
+        if await self.s.scalar(select(func.count(m.Product.id)).where(m.Product.brand_id == brand_id)):
+            raise ValueError("У бренду є товари: перенесіть їх до іншого бренду або приховайте бренд")
+        await self.s.delete(row)
+        await self.s.commit()
+        return True
 
-    async def purge_subcategory(self, subcategory_id):
-        ids = list(await self.s.scalars(select(m.Product.id).where(m.Product.subcategory_id == subcategory_id)))
-        for product_id in ids:
-            await self.purge_product(product_id)
-        await self.s.execute(delete(m.Subcategory).where(m.Subcategory.id == subcategory_id))
-        await self._commit()
-        return len(ids)
+    async def ensure_brand(self, name):
+        name = _brand_key(name)
+        if not name:
+            return None
+        row = await self._brand_by_key(name)
+        if row is None:
+            row = m.Brand(name=name, name_key=name.lower(), sort_order=0, is_active=True)
+            self.s.add(row)
+            try:
+                await self.s.flush()
+            except IntegrityError:
+                await self.s.rollback()
+                row = await self._brand_by_key(name)
+        return _brand(row) if row else None
 
-    async def list_products(self, category_id=None, search=None, only_active=False, limit=500, offset=0,
-                            subcategory_id=None, is_new=None, is_sale=None, uncategorized=False, perfume_only=False,
+    async def list_products(self, brand_id=None, search=None, only_active=False, limit=500, offset=0,
+                            is_new=None, is_sale=None, without_brand=False, perfume_only=False,
                             inventory=None,sort=None):
-        query = (select(m.Product, m.Category.name, m.Subcategory.name, _parents_active())
-                 .outerjoin(m.Category, m.Category.id == m.Product.category_id)
-                 .outerjoin(m.Subcategory, m.Subcategory.id == m.Product.subcategory_id))
-        query = self._filters(query, category_id, subcategory_id, search, only_active, is_new, is_sale, uncategorized, perfume_only,inventory)
+        query = select(m.Product, _parents_active())
+        query = self._filters(query, brand_id, search, only_active, is_new, is_sale, without_brand, perfume_only,inventory)
         ordering={'name-asc':m.Product.name.asc(),'name-desc':m.Product.name.desc(),
             'price-asc':m.Product.price.asc(),'price-desc':m.Product.price.desc(),
             'stock-asc':m.Product.stock.asc(),'stock-desc':m.Product.stock.desc()}
         columns=[ordering[sort],m.Product.id] if sort else [m.Product.sort_order,m.Product.name,m.Product.id]
         query=query.order_by(*columns).limit(limit).offset(offset)
-        return [_product(row, name, subname, active) for row, name, subname, active in await self.s.execute(query.execution_options(populate_existing=True))]
+        return [_product(row, active) for row, active in await self.s.execute(query.execution_options(populate_existing=True))]
 
     async def storefront_data(self, since, until):
         # Count commercial sales, never unpaid reservations, refusals or clicks.
@@ -789,44 +763,45 @@ class SqlRepository(Repository):
                    m.OrderItem.qty > 0)
             .group_by(m.OrderItem.product_id)
         )
-        query = (select(m.Product, m.Category.name, m.Subcategory.name, _parents_active())
-                 .outerjoin(m.Category, m.Category.id == m.Product.category_id)
-                 .outerjoin(m.Subcategory, m.Subcategory.id == m.Product.subcategory_id)
+        query = (select(m.Product, _parents_active())
                  .where(_published(), m.Product.price > 0)
                  .order_by(m.Product.sort_order, m.Product.name, m.Product.id))
-        products = [_product(row, name, subname, active) for row, name, subname, active in await self.s.execute(query)]
+        products = [_product(row, active) for row, active in await self.s.execute(query)]
         return products, {int(pid): int(qty) for pid, qty in sales}
 
     async def products_by_ids(self, ids):
         if not ids:
             return []
-        query = (select(m.Product, m.Category.name, m.Subcategory.name, _parents_active())
-                 .outerjoin(m.Category, m.Category.id == m.Product.category_id)
-                 .outerjoin(m.Subcategory, m.Subcategory.id == m.Product.subcategory_id)
-                 .where(m.Product.id.in_(list(ids))))
-        return [_product(row, name, subname, active) for row, name, subname, active in await self.s.execute(query.execution_options(populate_existing=True))]
+        query = select(m.Product, _parents_active()).where(m.Product.id.in_(list(ids)))
+        return [_product(row, active) for row, active in await self.s.execute(query.execution_options(populate_existing=True))]
 
-    async def count_products(self, category_id=None, only_active=True, **filters):
-        query = self._filters(select(func.count(m.Product.id)), category_id=category_id, only_active=only_active, **filters)
+    async def count_products(self, brand_id=None, only_active=True, **filters):
+        query = self._filters(select(func.count(m.Product.id)), brand_id=brand_id, only_active=only_active, **filters)
         return await self.s.scalar(query) or 0
 
     async def get_product(self, product_id):
         rows = await self.products_by_ids([product_id])
         return rows[0] if rows else None
 
-    async def _validate_group(self, data):
-        cid, sid = data.get("category_id"), data.get("subcategory_id")
-        if cid is not None and not await self.s.get(m.Category, cid):
-            raise ValueError("Такої категорії немає")
-        if sid is not None:
-            sub = await self.s.get(m.Subcategory, sid)
-            if not sub:
-                raise ValueError("Такої субкатегорії немає")
-            if cid is not None and sub.category_id is not None and sub.category_id != cid:
-                raise ValueError("Субкатегорія належить іншій категорії")
+    async def _resolve_brand(self, data):
+        """brand_id is the link; brand (name) is its copy for the site.
+
+        A product saved with a brand id gets that brand's name; one saved with
+        only a name (XLSX import, old clients) gets the brand of that name,
+        created when it does not exist yet. An empty name clears the brand.
+        """
+        if data.get("brand_id") is not None:
+            row = await self.s.get(m.Brand, data["brand_id"])
+            if not row:
+                raise ValueError("Такого бренду немає")
+            data["brand"] = row.name
+        elif "brand" in data:
+            brand = await self.ensure_brand(data.get("brand"))
+            data["brand_id"] = brand.id if brand else None
+            data["brand"] = brand.name if brand else ""
+        return data
 
     async def _validate_product(self, data):
-        await self._validate_group(data)
         if data.get("is_sale") and (data.get("old_price") is None or Decimal(str(data["old_price"])) <= Decimal(str(data["price"]))):
             raise ValueError("Для акції стара ціна має бути більшою за поточну")
         for key in ("price", "old_price", "stock"):
@@ -841,10 +816,10 @@ class SqlRepository(Repository):
             data["external_sku"] = str(supplied)[:255]
         data.setdefault("is_sale", bool(data.get("old_price") is not None and data["old_price"] > data["price"]))
         await self._validate_product(data)
-        group = await self.get_subcategory(data["subcategory_id"]) if data.get("subcategory_id") else await self.get_category(data["category_id"]) if data.get("category_id") else None
+        await self._resolve_brand(data)
         data["name_lower"] = data["name"].lower()
         for attempt in range(5):
-            data["sku"] = await generate_sku(self, group.name if group else "GEN")
+            data["sku"] = await generate_sku(self, data.get("brand") or "GEN")
             row = m.Product(**data)
             self.s.add(row)
             try:
@@ -872,9 +847,11 @@ class SqlRepository(Repository):
             return None
         data = dict(data)
         data.pop("sku", None)  # The system article is immutable.
-        merged = {key: getattr(row, key) for key in ("category_id", "subcategory_id", "price", "old_price", "stock", "is_sale")}
+        merged = {key: getattr(row, key) for key in ("price", "old_price", "stock", "is_sale")}
         merged.update(data)
         await self._validate_product(merged)
+        if "brand_id" in data or "brand" in data:
+            await self._resolve_brand(data)
         for key, value in data.items():
             setattr(row, key, value)
         if "name" in data:
@@ -1231,17 +1208,8 @@ class SqlRepository(Repository):
 
             if promo_id:
                 # Recheck scope against the current, locked products as well as
-                # the locked promo. A category change must not reuse an old quote.
-                sub_ids = {line.product.subcategory_id for line in locked_lines
-                           if line.product.subcategory_id is not None}
-                parents = {}
-                if promo.category_ids and sub_ids:
-                    parents = {s.id: s.category_id for s in await self.s.scalars(
-                        select(m.Subcategory).where(m.Subcategory.id.in_(sub_ids))
-                        .order_by(m.Subcategory.id).with_for_update()
-                        .execution_options(populate_existing=True)
-                    )}
-                base = eligible_subtotal(locked_lines, promo.category_ids, parents)
+                # the locked promo. A brand change must not reuse an old quote.
+                base = eligible_subtotal(locked_lines, promo.brand_ids)
                 if base <= 0 or promo_discount(promo, base) != Decimal(str(order.discount or 0)):
                     await self.s.rollback()
                     return None, "promo"
@@ -2737,23 +2705,6 @@ class SqlRepository(Repository):
         await self.s.delete(row)
         await self._commit()
         return True
-
-    async def purge_category(self, category_id) -> int:
-        if not await self.s.get(m.Category, category_id):
-            return 0
-        ids = list(
-            await self.s.scalars(
-                select(m.Product.id).where(self._category_scope(category_id))
-            )
-        )
-        for product_id in ids:
-            await self.purge_product(product_id)
-        await self.s.execute(update(m.Subcategory).where(m.Subcategory.category_id == category_id).values(category_id=None))
-        row = await self.s.get(m.Category, category_id)
-        if row:
-            await self.s.delete(row)
-            await self.s.commit()
-        return len(ids)
 
     async def purge_promo(self, promo_id) -> bool:
         row = await self.s.get(m.PromoCode, promo_id)

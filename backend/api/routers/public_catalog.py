@@ -176,7 +176,6 @@ class PublicAroma(BaseModel):
     gender: str
     description: str
     variants: list[PublicProduct]
-    categories: list[dict]
     stock: int
     min_price: Decimal
     price_per_ml: Decimal | None
@@ -194,7 +193,6 @@ class AromaPage(BaseModel):
     limit: int
     offset: int
     brands: list[str]
-    categories: list[dict]
     volumes: list[int]
     updated_at: str
 
@@ -228,7 +226,7 @@ async def storefront(response: Response, repo: Repository = Depends(get_repo)):
 @router.get('/aromas', response_model=AromaPage)
 async def aromas(
     response: Response, q: str = Query('', max_length=120), brand: str = Query('', max_length=100),
-    gender: Literal['', 'male', 'female', 'unisex'] = '', category: int | None = Query(None, gt=0),
+    gender: Literal['', 'male', 'female', 'unisex'] = '',
     available: bool = False, volume: int | None = Query(None, gt=0, le=10000),
     kind: Literal['all', 'sets', 'new', 'hits', 'recommended'] = 'all',
     sort: Literal['recommended', 'popular', 'new', 'price_asc', 'price_desc', 'name'] = 'recommended',
@@ -242,7 +240,6 @@ async def aromas(
     groups = [g for g in all_groups if
         (not needle or needle in (g['brand'] + ' ' + g['name']).casefold()) and
         (not brand or g['brand'] == brand) and (not gender or g['gender'] == gender) and
-        (not category or any(c['id'] == category for c in g['categories'])) and
         (not available or g['stock'] > 0) and
         (not volume or any(p.volume_ml == volume and (not available or p.stock > 0) for p in g['variants'])) and
         (kind != 'sets' or g['is_set']) and (kind != 'new' or g['is_new']) and
@@ -263,11 +260,9 @@ async def aromas(
                 'image':next((p.photo_url or p.photo_endpoint for p in priced if p.photo_url or p.photo_endpoint),group['image'])})
         groups=selected
     groups = sorted_groups(groups, 'popular' if kind == 'hits' else sort)
-    categories = {c['id']: c for g in all_groups for c in g['categories']}
     response.headers['Cache-Control'] = 'no-store'
     return AromaPage(items=groups[offset:offset+limit], total=len(groups), limit=limit, offset=offset,
         brands=sorted({g['brand'] for g in all_groups if g['brand']}, key=str.casefold),
-        categories=sorted(categories.values(), key=lambda c: c['name'].casefold()),
         volumes=sorted({v for g in all_groups for v in g['volumes']}), updated_at=data['updated_at'])
 
 

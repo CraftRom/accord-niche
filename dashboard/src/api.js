@@ -252,20 +252,12 @@ export const api = {
     insights: (period = 'month') => request('/stats/insights', { params: { period } }),
   },
 
-  categories: {
-    list: () => request('/catalog/categories'),
-    create: (data) => request('/catalog/categories', { method: 'POST', body: data }),
-    update: (id, data) => request(`/catalog/categories/${id}`, { method: 'PUT', body: data }),
-    remove: (id) => request(`/catalog/categories/${id}`, { method: 'DELETE' }),
-    purge: (id) => request(`/catalog/categories/${id}/purge`, { method: 'DELETE' }),
-  },
-
-  subcategories: {
-    list: () => request('/catalog/subcategories'),
-    create: (data) => request('/catalog/subcategories', { method: 'POST', body: data }),
-    update: (id, data) => request(`/catalog/subcategories/${id}`, { method: 'PUT', body: data }),
-    remove: (id) => request(`/catalog/subcategories/${id}`, { method: 'DELETE' }),
-    purge: (id) => request(`/catalog/subcategories/${id}/purge`, { method: 'DELETE' }),
+  // Бренди замість категорій: кожен товар обирає бренд зі списку.
+  brands: {
+    list: () => request('/catalog/brands'),
+    create: (data) => request('/catalog/brands', { method: 'POST', body: data }),
+    update: (id, data) => request(`/catalog/brands/${id}`, { method: 'PATCH', body: data }),
+    remove: (id) => request(`/catalog/brands/${id}`, { method: 'DELETE' }),
   },
 
   products: {

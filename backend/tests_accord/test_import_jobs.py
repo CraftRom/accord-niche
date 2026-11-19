@@ -36,8 +36,8 @@ async def env(tmp_path):
 
 
 def rows():
-    return [{'row': n + 1, 'name': f'Aroma {n}', 'sku': None, 'external_sku': None, 'category': '', 'subcategory': '',
-             'hierarchy': False, 'subcategory_parent': '', 'description': None, 'photo_url': None,
+    return [{'row': n + 1, 'name': f'Aroma {n}', 'sku': None, 'external_sku': None, 'brand': None,
+             'hierarchy': False, 'description': None, 'photo_url': None,
              'current_price': Decimal('99.90'), 'old_price': None, 'regular_price': Decimal('99.90'),
              'discount_price': None, 'stock': 10 * n, 'is_active': None, 'is_new': None, 'is_sale': None}
             for n in range(1, 6)]

@@ -47,7 +47,7 @@ export function promoPayload(form, original) {
     value: form.value, min_order: form.min_order,
     max_uses: form.max_uses === '' ? null : Number(form.max_uses),
     per_user_limit: Number(form.per_user_limit), is_active: form.is_active,
-    category_ids: form.category_ids ?? [],
+    brand_ids: form.brand_ids ?? [],
   }
   // Preserve an existing timestamp when only another field is edited.
   if (form.expires_at && form.expires_at === promoDateInput(original?.expires_at)) {

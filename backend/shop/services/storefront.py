@@ -38,19 +38,14 @@ def group_catalog(products, sales, serialize):
         # A missing identity must not merge unrelated unnamed records.
         group = groups.setdefault(key, dict(key=key, id=product.id, name=name, brand=brand,
             gender=product.gender or 'unisex', description=product.description or '', variants=[],
-            categories=[], is_new=False, is_featured=False, is_set=False, _units=0, _order=product.sort_order))
+            is_new=False, is_featured=False, is_set=False, _units=0, _order=product.sort_order))
         group['id'] = min(group['id'], product.id)
         group['variants'].append(serialize(product))
         group['is_new'] |= bool(product.is_new)
         group['is_featured'] |= bool(product.is_featured)
         group['_units'] += max(0, sales.get(product.id, 0))
         group['_order'] = min(group['_order'], product.sort_order)
-        if product.category_id and product.category_name:
-            category = {'id': product.category_id, 'name': product.category_name}
-            if category not in group['categories']:
-                group['categories'].append(category)
-        group['is_set'] |= bool(re.search(r'\b(?:набір|набори|набор|сет|set|discovery)\b',
-            ' '.join([name, product.category_name or '', product.subcategory_name or '']), re.I))
+        group['is_set'] |= bool(re.search(r'\b(?:набір|набори|набор|сет|set|discovery)\b', name, re.I))
     result = list(groups.values())
     for group in result:
         group['variants'].sort(key=lambda p: (p.stock <= 0, p.volume_ml or 100000, p.price, p.id))

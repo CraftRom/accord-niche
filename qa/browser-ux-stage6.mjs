@@ -79,19 +79,19 @@ try {
   await store.route('**/api/**',async r=>{
     const u=new URL(r.request().url()),path=u.pathname;let data=[]
     if(path.endsWith('/config'))data={age_confirmed:true,currency:'грн',bonus_enabled:false,referral_enabled:false}
-    else if(path.endsWith('/categories'))data=[{id:1,name:'Товари',products_count:1},{id:2,name:'Скоро',products_count:0}]
-    else if(path.endsWith('/products'))data=u.searchParams.get('category_id')==='2'?[]:[{id:1,name:'Тестовий товар',price:'10',stock:1}]
+    else if(path.endsWith('/brands'))data=[{id:1,name:'Товари',products_count:1},{id:2,name:'Скоро',products_count:0}]
+    else if(path.endsWith('/products'))data=u.searchParams.get('brand_id')==='2'?[]:[{id:1,name:'Тестовий товар',price:'10',stock:1}]
     else if(path.endsWith('/cart'))data={lines:[],subtotal:'0'}
     else if(path.endsWith('/profile'))data={first_name:'QA',orders_count:0,bonus_balance:0}
     await r.fulfill({json:data})
   })
   await store.goto('http://127.0.0.1:5174/app/');await store.locator('.store-card').first().waitFor()
   const tile=store.getByRole('button',{name:'Товари',exact:true})
-  if(width<600)check(await tile.evaluate(e=>e.getBoundingClientRect().height<=80),`${width}: compact category height`)
+  if(width<600)check(await tile.evaluate(e=>e.getBoundingClientRect().height<=80),`${width}: compact brand card height`)
   check(await store.locator('.availability-options button').evaluateAll(es=>es.every(e=>e.getBoundingClientRect().height>=44&&e.getBoundingClientRect().width>=44)),`${width}: touch controls stay at least 44px`)
   check(await store.locator('.availability-options button').evaluateAll(es=>es.every(e=>e.scrollWidth<=e.clientWidth)),`${width}: availability labels stay inside buttons`)
-  check((await store.getByRole('button',{name:'Скоро',exact:true}).innerText()).includes('Незабаром'),`${width}: empty category explicitly upcoming`)
-  check(await tile.locator('.taxonomy-count').getAttribute('title')==='Усього активних товарів у розділі, до пошуку та фільтра наявності',`${width}: category count distinguishes total from filtered result`)
+  check((await store.getByRole('button',{name:'Скоро',exact:true}).innerText()).includes('Незабаром'),`${width}: empty brand explicitly upcoming`)
+  check(await tile.locator('.taxonomy-count').getAttribute('title')==='Усього товарів бренду, до пошуку та фільтра наявності',`${width}: brand count distinguishes total from filtered result`)
   check(await store.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${width}: compact catalog fits viewport`)
   await store.screenshot({path:`${output}/catalog-stage6-${width}.png`});await store.close()
  }

@@ -16,7 +16,7 @@ r.check(login.status_code == 200, "вхід у панель", login.status_code)
 A = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 for name, path in [("замовлення","/api/orders"), ("каталог","/api/catalog/products"),
-                   ("категорії","/api/catalog/categories"), ("клієнти","/api/customers"),
+                   ("категорії","/api/catalog/brands"), ("клієнти","/api/customers"),
                    ("промокоди","/api/promos"), ("розсилки","/api/broadcasts"),
                    ("менеджери","/api/operators"), ("налаштування","/api/settings"),
                    ("статистика","/api/stats/summary"), ("менеджери-статистика","/api/stats/by-operator"),

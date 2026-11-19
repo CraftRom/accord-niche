@@ -23,7 +23,7 @@ function mount({page='workspace',path='/',role='admin',fail=false,catalogRespons
   if(url.pathname==='/api/orders')return response({items:[order],total:1})
   if(url.pathname==='/api/orders/salesdrive-statuses')return response({statuses:[]})
   if(url.pathname==='/api/orders/unread/counts')return response({})
-  if(url.pathname==='/api/catalog/categories'||url.pathname==='/api/catalog/subcategories')return response([])
+  if(url.pathname==='/api/catalog/brands')return response([])
   if(url.pathname==='/api/catalog/products'){
    if(catalogResponse)return catalogResponse(url)
    if(failure)return response({detail:'Каталог тимчасово недоступний'},503)

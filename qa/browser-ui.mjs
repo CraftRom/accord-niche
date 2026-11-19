@@ -93,8 +93,8 @@ try {
       if(path.endsWith('/config'))data={age_confirmed:true,min_age:18,shop_name:'QA',currency:'грн',bonus_enabled:false,referral_enabled:false}
       else if(path.endsWith('/cart'))data={lines:[],subtotal:'0'}
       else if(path.endsWith('/profile'))data={first_name:'QA',bonus_balance:'0',orders_count:0}
-      else if(path.endsWith('/categories'))data=Array.from({length:18},(_,i)=>({id:i+1,name:`Категорія ${i+1}`}))
-      else if(path.endsWith('/products'))data=Array.from({length:12},(_,i)=>({id:i+1,name:`Товар ${i+1}`,stock:5,price:'100',category_id:1}))
+      else if(path.endsWith('/brands'))data=Array.from({length:18},(_,i)=>({id:i+1,name:`Бренд ${i+1}`,products_count:1}))
+      else if(path.endsWith('/products'))data=Array.from({length:12},(_,i)=>({id:i+1,name:`Товар ${i+1}`,stock:5,price:'100',brand_id:1}))
       else if(path.endsWith('/wishlists'))data=Array.from({length:25},(_,i)=>({id:i+1,name:`Список ${i+1}`,product_ids:[],size:0}))
       await route.fulfill({json:pageFixture(route, data)})
     })
@@ -107,7 +107,7 @@ try {
       await p.mouse.wheel(0,300)
       try { await p.waitForFunction(()=>document.querySelector('.rail').scrollLeft>0, null, {timeout:1500}); break } catch (error) { if (attempt === 2) throw error }
     }
-    check(await rails.first().evaluate(e=>e.scrollLeft>0),`${viewport.width}px catalog categories scroll by wheel`)
+    check(await rails.first().evaluate(e=>e.scrollLeft>0),`${viewport.width}px catalog brands scroll by wheel`)
     const availability=p.getByRole('group',{name:'Наявність товарів'})
     await availability.getByRole('button',{name:'В наявності',exact:true}).click()
     check(await availability.getByRole('button',{name:'В наявності',exact:true}).getAttribute('aria-pressed')==='true',`${viewport.width}px availability filter is selected`)
@@ -129,7 +129,7 @@ try {
     check(await sheet.count()===0,`${viewport.width}px Escape closes the sheet`)
     check(await p.evaluate(()=>document.body.style.overflow!=='hidden'),`${viewport.width}px closing restores document scroll`)
     failProducts=true
-    await p.getByRole('button',{name:'Категорія 1',exact:true}).click()
+    await p.getByRole('button',{name:'Бренд 1',exact:true}).click()
     await p.getByRole('heading',{name:'Не вдалося завантажити каталог'}).waitFor()
     check(await p.locator('.skeleton').count()===0,`${viewport.width}px failed catalog request ends loading`)
     failProducts=false
