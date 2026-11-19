@@ -91,19 +91,6 @@ PHONE_REQUEST = ReplyKeyboardMarkup(
 )
 
 
-def age_gate() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="Так, мені є 18", callback_data="age:yes"),
-                InlineKeyboardButton(text="Ні", callback_data="age:no"),
-            ]
-        ]
-    )
-
-
-# ---------------------------------------------------------------------- каталог
-
 def categories(items: list[Category], subcategories=()) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="Усі товари", callback_data="shelf:all")

@@ -23,8 +23,7 @@ check(
   'каталог починається з корисного пошуку без зайвої hero-заставки',
 )
 check(catalog.includes('<SortSheet') && catalog.includes('aria-haspopup="dialog"'), 'сортування повернуто в каталог')
-const gate = catalog.slice(catalog.indexOf('export function AgeGate'), catalog.indexOf('function plural'))
-check(!gate.includes("sort ===") && !gate.includes('setInStock'), 'AgeGate більше не звертається до стану каталогу')
+check(!catalog.includes('AgeGate') && !app.includes('store-age'), 'вікового бар\'єра й позначки 18+ немає')
 check(app.includes('className="store-head"'), 'основний екран має компактну шапку Mini App')
 check(css.includes('DESIGN 2.12.0'), 'актуальний єдиний дизайн-шар присутній')
 check(css.includes('@media (prefers-reduced-motion: reduce)'), 'анімації поважають reduced motion')

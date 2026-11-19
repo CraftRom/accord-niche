@@ -185,12 +185,8 @@ async def scenario(repo) -> None:
     check("пошук клієнта за іменем", len(await repo.list_users(search="Оля")) == 1)
 
     # --- сегменти
-    check("усі клієнти = 0 без підтвердження віку",
-          await repo.count_segment({"type": "all"}) == 0)
-
-    for user in (buyer, referrer):
-        entity = await repo.get_user(user.id)
-        await repo.confirm_age(entity)
+    # Вікового бар'єра немає (парфумерія): розсилка бачить усіх незаблокованих
+    # клієнтів, підтверджували вони колись вік чи ні.
 
     check("усі клієнти = 2", await repo.count_segment({"type": "all"}) == 2,
           f"{await repo.count_segment({'type': 'all'})}")

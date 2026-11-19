@@ -2047,9 +2047,7 @@ class SqlRepository(Repository):
 
     def _segment_query(self, segment: dict):
         stype = (segment or {}).get("type", "all")
-        base = select(m.User).where(
-            m.User.is_blocked.is_(False), m.User.age_confirmed.is_(True)
-        )
+        base = select(m.User).where(m.User.is_blocked.is_(False))
         if stype == "with_orders":
             return base.where(m.User.orders_count > 0)
         if stype == "no_orders":
