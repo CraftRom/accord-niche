@@ -28,7 +28,8 @@ compare(ShopSettingsIn, ShopSettings, "ShopSettingsIn")
 compare(OrderOut, Order, "OrderOut", ignore={"status_label"})
 compare(OperatorOut, Operator, "OperatorOut")
 compare(OrderMessageOut, OrderMessage, "OrderMessageOut")
-compare(CustomerOut, User, "CustomerOut")
+# display_name/email/google_connected come from the linked WebsiteAccount (customer_profile.enrich).
+compare(CustomerOut, User, "CustomerOut", ignore=("display_name", "email", "google_connected"))
 
 # конфіг мусить мати дефолт для кожного поля налаштувань
 from shop.config import settings
