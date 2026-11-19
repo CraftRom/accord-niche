@@ -257,7 +257,8 @@ test('terms and privacy open in a new tab so the filled form is kept (W-10)',asy
 test('the order summary folds into one line with a labelled toggle (W-08)',async()=>{
   const app=mount()
   try{
-    await waitFor(()=>app.document.querySelector('.summary-toggle'))
+    // The toggle renders before the cart products load; wait for the real summary.
+    await waitFor(()=>/1 шт\. · 100 грн/.test(app.document.querySelector('.summary-toggle')?.textContent || ''))
     const toggle=app.document.querySelector('.summary-toggle')
     assert.equal(toggle.getAttribute('aria-expanded'),'false')
     assert.equal(toggle.getAttribute('aria-controls'),'checkout-summary-lines')
