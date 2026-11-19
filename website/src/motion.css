@@ -1,27 +1,40 @@
-/* Quiet, short motion. Content is visible without animations or JavaScript. */
+/*
+ * Storefront motion. Rules:
+ *  - only transform and opacity move, so layout never shifts (no CLS);
+ *  - content is fully visible without JavaScript or animation;
+ *  - with «reduce motion» in the system everything below is switched off.
+ */
 :root {
-  --motion-ease: cubic-bezier(.22, .61, .36, 1);
-  --motion-fast: 180ms;
-  --motion-soft: 320ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);      /* quick start, soft landing */
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);  /* symmetric, for exits */
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1); /* small overshoot, badges */
+  --motion-ease: var(--ease-out);               /* kept for older rules */
+  --motion-fast: 160ms;
+  --motion-soft: 280ms;
+  --motion-slow: 520ms;
+  --motion-reveal: 700ms;
 }
 
+/* ---------------------------------------------------------------- controls */
 .btn, .icon-btn, .variant-buttons button, .qty-control button,
 .catalog-filters input, .catalog-filters select, .shop-field input,
-.shop-field textarea, .blog-search input, .comment-form textarea {
+.shop-field textarea, .blog-search input, .comment-form textarea,
+.catalog-chip, .catalog-filters-toggle, .summary-toggle {
   transition: background-color var(--motion-fast) ease,
     color var(--motion-fast) ease, border-color var(--motion-fast) ease,
-    box-shadow var(--motion-fast) ease, opacity var(--motion-fast) ease;
+    box-shadow var(--motion-fast) ease, opacity var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out);
 }
 .product-card, .blog-card {
   transition: border-color var(--motion-soft) ease,
-    box-shadow var(--motion-soft) ease, transform var(--motion-soft) var(--motion-ease);
+    box-shadow var(--motion-soft) var(--ease-out), transform var(--motion-soft) var(--ease-out);
 }
-.product-card .photo-tile > img {
-  transition: transform 420ms var(--motion-ease);
-}
+.product-card .photo-tile > img { transition: transform var(--motion-slow) var(--ease-out); }
 /* Touch devices keep a stable card after tapping; lift is for precise pointers. */
 .product-card.available:hover { transform: none; box-shadow: none; }
 .product-card:hover .photo-tile > img { transform: none; }
+
+/* Navigation underline grows from the left. */
 .header-nav :is(button,a) { position: relative; }
 .header-nav :is(button,a)::after {
   content: '';
@@ -30,51 +43,103 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: #a79375;
+  background: currentColor;
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform var(--motion-fast) var(--motion-ease);
+  transition: transform var(--motion-soft) var(--ease-out);
 }
 .header-nav :is(button,a):focus-visible::after { transform: scaleX(1); }
-.footer-links button, .footer-links a {
-  transition: color var(--motion-fast) ease;
-  text-underline-offset: 4px;
-}
+.footer-links button, .footer-links a { transition: color var(--motion-fast) ease; text-underline-offset: 4px; }
+
+/* Arrows in text links slide a little on hover. */
+.section-link span, .back-link, .catalog-chip > span:last-child { display: inline-block; transition: transform var(--motion-soft) var(--ease-out); }
 
 @media (hover: hover) and (pointer: fine) {
   .product-card.available:hover, .blog-card:hover {
     border-color: #d7cebf;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 22px #1b181408;
+    transform: translateY(-4px);
+    box-shadow: 0 18px 40px -18px #1b18142e;
   }
-  .product-card:hover .photo-tile > img { transform: scale(1.025); }
+  .product-card:hover .photo-tile > img { transform: scale(1.04); }
   .header-nav :is(button,a):hover::after { transform: scaleX(1); }
+  .section-link:hover span { transform: translateX(4px); }
+  .back-link:hover { transform: translateX(-3px); }
+  .catalog-chip:hover > span:last-child { transform: rotate(90deg); }
+  .btn.primary:hover:not(:disabled) { box-shadow: 0 10px 24px -12px #111a; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  #root > main { animation: accord-page-in 320ms ease-out; }
-  .hero-content { animation: accord-rise-in 440ms var(--motion-ease); }
-  .hero-product, .hero-lettering { animation: accord-rise-in 560ms var(--motion-ease); }
-  .product-card, .blog-card { animation: accord-page-in 360ms ease-out; }
-  .search-strip, .header-nav.open { animation: accord-rise-in 200ms var(--motion-ease); }
-  .drawer-backdrop, .modal-mask { animation: accord-shade-in 180ms ease-out; }
-  .basket { animation: accord-drawer-in 320ms var(--motion-ease); }
-  .info-modal { animation: accord-rise-in 240ms var(--motion-ease); }
+  /* Press feedback on every button-like control. */
+  .btn:active:not(:disabled), .icon-btn:active, .variant-buttons button:active,
+  .qty-control button:active:not(:disabled), .catalog-chip:active { transform: scale(.97); }
+
+  /* ------------------------------------------------------ page transitions */
+  /* Browsers with View Transitions cross-fade pages (motion.js); the header
+     keeps its own name and stays still. Others get a short fade-in. */
+  .header { view-transition-name: site-header; }
+  ::view-transition-group(site-header) { animation: none; }
+  ::view-transition-old(root) { animation: accord-page-out 200ms var(--ease-in-out) both; }
+  ::view-transition-new(root) { animation: accord-page-in 420ms var(--ease-out) both; }
+  @supports not (view-transition-name: none) {
+    #root > main { animation: accord-page-in 420ms var(--ease-out) both; }
+  }
+
+  /* ------------------------------------------------------------------ hero */
+  .hero-content > * { animation: accord-rise 760ms var(--ease-out) both; }
+  .hero-content > :nth-child(1) { animation-delay: 60ms; }
+  .hero-content > :nth-child(2) { animation-delay: 140ms; }
+  .hero-content > :nth-child(3) { animation-delay: 240ms; }
+  .hero-content > :nth-child(n+4) { animation-delay: 330ms; }
+  .hero-product, .hero-lettering { animation: accord-unveil 1100ms var(--ease-out) 120ms both; }
+  .hero-lettering > span { animation: accord-letter 1400ms var(--ease-out) 260ms both; }
+
+  /* -------------------------------------------------------- scroll reveal */
+  /* motion.js marks blocks below the fold; they rise in as they arrive. */
+  .reveal-pending { opacity: 0; transform: translateY(22px); }
+  .reveal-pending.revealed {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--motion-reveal) var(--ease-out) var(--reveal-delay, 0ms),
+      transform var(--motion-reveal) var(--ease-out) var(--reveal-delay, 0ms);
+  }
+
+  /* ---------------------------------------------------- header & overlays */
+  .search-strip, .header-nav.open { animation: accord-drop 320ms var(--ease-out) both; }
+  .cart-count { animation: accord-pop 420ms var(--ease-spring) both; }
+  .drawer-backdrop, .modal-mask { animation: accord-shade 260ms var(--ease-out) both; backdrop-filter: blur(3px); }
+  .basket { animation: accord-drawer 480ms var(--ease-out) both; }
+  .basket .basket-line { animation: accord-rise-small 420ms var(--ease-out) both; }
+  .basket .basket-line:nth-child(2) { animation-delay: 50ms; }
+  .basket .basket-line:nth-child(3) { animation-delay: 100ms; }
+  .basket .basket-line:nth-child(n+4) { animation-delay: 140ms; }
+  .info-modal { animation: accord-dialog 360ms var(--ease-out) both; }
+  .notice, .shop-error, .basket-line-note { animation: accord-rise-small 320ms var(--ease-out) both; }
+
+  /* ---------------------------------------------------- catalog & details */
+  .catalog-filter-panel.is-open { animation: accord-drop 320ms var(--ease-out) both; }
+  .catalog-chip { animation: accord-chip 300ms var(--ease-spring) both; }
+  .suggestions { animation: accord-drop 220ms var(--ease-out) both; }
+  .summary-lines.is-open { animation: accord-drop 300ms var(--ease-out) both; }
+  .consent-docs details[open] > p, .detail-description { animation: accord-rise-small 360ms var(--ease-out) both; }
+  .variant-buttons button.selected { animation: accord-pop 360ms var(--ease-spring); }
+
+  /* Loading: a soft breathing dot instead of a hard blink. */
+  .loading-dot { animation: accord-breathe 1.2s var(--ease-in-out) infinite; }
 }
 
-@keyframes accord-page-in { from { opacity: .65; } to { opacity: 1; } }
-@keyframes accord-rise-in {
-  from { opacity: .65; transform: translateY(7px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes accord-drawer-in {
-  from { opacity: .85; transform: translateX(20px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes accord-shade-in {
-  from { background-color: #0000; }
-  to { background-color: #0000006b; }
-}
+@keyframes accord-page-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes accord-page-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes accord-rise { from { opacity: 0; transform: translateY(18px); } }
+@keyframes accord-rise-small { from { opacity: 0; transform: translateY(6px); } }
+@keyframes accord-unveil { from { opacity: 0; transform: scale(.97); } }
+@keyframes accord-letter { from { opacity: 0; transform: translateY(14px) scale(.94); } }
+@keyframes accord-drop { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes accord-drawer { from { opacity: .4; transform: translateX(100%); } }
+@keyframes accord-dialog { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+@keyframes accord-shade { from { background-color: #0000; backdrop-filter: blur(0); } }
+@keyframes accord-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes accord-chip { from { opacity: 0; transform: scale(.92); } }
+@keyframes accord-breathe { 0%, 100% { opacity: .3; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -86,4 +151,6 @@
   .product-card:hover .photo-tile > img, .btn:active:not(:disabled) {
     transform: none;
   }
+  .reveal-pending { opacity: 1 !important; transform: none !important; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
 }
