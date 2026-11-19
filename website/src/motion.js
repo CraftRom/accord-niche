@@ -26,7 +26,7 @@ export function withViewTransition(update) {
 // they appear are left alone, so nothing above the fold blinks.
 const TARGETS = [
   '.section-row', '.product-card', '.how-section .steps > article', '.blog-card',
-  '.detail-grid > *', '.commerce-panel', '.order-summary', '.featured .product-grid',
+  '.detail-grid > *', '.commerce-panel', '.order-summary', '.featured .product-grid', '.facts-grid > article',
 ].join(',')
 const STAGGER_MS = 70
 const STAGGER_MAX = 5

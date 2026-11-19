@@ -53,6 +53,7 @@ elif [[ "${QA_BROWSER_SUITE:-all}" == "a11y" ]]; then
   node qa/browser-miniapp-a11y.mjs
   node qa/browser-website-a11y.mjs
   node qa/browser-website-motion.mjs
+  node qa/browser-website-stage5.mjs
 else
   node qa/browser-promo-codes.mjs
   node qa/browser-support-history.mjs
@@ -78,4 +79,5 @@ else
   node qa/browser-miniapp-a11y.mjs
   node qa/browser-website-a11y.mjs
   node qa/browser-website-motion.mjs
+  node qa/browser-website-stage5.mjs
 fi

@@ -1,16 +1,22 @@
 import {useEffect,useState} from 'react'
 import {useStoreRequest} from './useStoreRequest'
 import BlogContent from './BlogContent'
+import {StateBlock,errorTitle} from './states'
 
 const date=value=>value?new Intl.DateTimeFormat('uk-UA',{dateStyle:'medium'}).format(new Date(value)):''
 const key=()=>crypto.randomUUID()
 const signedIn=account=>Boolean(account?.signed_in || account?.phone_verified || account?.telegram_linked)
 
 function State({request,children}) {
-  if(!request.data && request.loading)return <p className="blog-state" role="status">Завантажуємо блог…</p>
-  if(request.error)return <div className="blog-state" role="alert"><p>{request.error.replace('Товар більше недоступний.','Публікацію не знайдено або її ще не опубліковано.')}</p><button className="btn outline" onClick={request.retry}>Спробувати ще раз</button></div>
+  if(!request.data && request.loading)return <StateBlock kind="loading" className="blog-state">Завантажуємо блог…</StateBlock>
+  if(request.error)return <StateBlock kind="error" className="blog-state" title={errorTitle(request,'Публікацію не знайдено')}
+    action={<button className="btn outline" onClick={request.retry}>Спробувати ще раз</button>}><p>{request.error.replace('Товар більше недоступний.','Публікацію не знайдено або її ще не опубліковано.')}</p></StateBlock>
   return children
 }
+
+// W-25: a comment's state in words and colour, so nobody wonders whether it is
+// already public or only sent.
+const COMMENT_STATUS={pending:['warn','На модерації · бачите лише ви'],approved:['ok','Опубліковано'],rejected:['off','Не схвалено редакцією']}
 
 export function BlogList({route,go}) {
   const query=new URLSearchParams(route.split('?')[1] || '')
@@ -69,7 +75,7 @@ function Comments({post,shop,go,onChanged}) {
       if(editing)await shop.request('/blog/comments/'+editing.id,'PUT',{body,version:editing.version})
       else await shop.request('/blog/posts/'+post.id+'/comments','POST',{body,parent_id:replyTo?.id || null,client_key:clientKey})
       setBody('');setEditing(null);setReplyTo(null);setClientKey(key())
-      setMessage('Коментар надіслано на модерацію. Після схвалення його побачать усі.')
+      setMessage(editing?'Зміни надіслано на модерацію. До схвалення коментар має статус «На модерації» у блоці «Ваші коментарі».':'Коментар надіслано на модерацію. Його видно у блоці «Ваші коментарі» зі статусом «На модерації»; після схвалення його побачать усі.')
       mine.retry();visible.retry();onChanged()
     } catch(error){setError(error.message)}
     finally{setBusy(false)}
@@ -86,9 +92,9 @@ function Comments({post,shop,go,onChanged}) {
   return <section className="blog-comments" aria-labelledby="comments-title"><div className="section-row"><h2 id="comments-title">Обговорення</h2><span>Коментарів: {post.comment_count}</span></div>
     <State request={visible}>{visible.data?.items.length===0 && <p className="blog-state">Схвалених коментарів поки немає.</p>}{visible.data?.items.map(comment=><Thread key={comment.id+':'+comment.reply_count} comment={comment} slug={post.slug} canReply={authenticated && post.comments_enabled} onReply={reply}/>)}</State>
     {visible.data?.total>10 && <nav className="comment-actions" aria-label="Сторінки коментарів"><button disabled={page===1} onClick={()=>setPage(value=>value-1)}>← Назад</button><span>{page}</span><button disabled={page*10>=visible.data.total} onClick={()=>setPage(value=>value+1)}>Далі →</button></nav>}
-    {authenticated && <section className="own-comments"><h3>Ваші коментарі</h3><State request={mine}>{mine.data?.length===0 && <p>Ви ще не коментували цю статтю.</p>}{mine.data?.map(comment=><div className="own-comment" key={comment.id}><span className="blog-meta">{{pending:'На модерації',approved:'Опубліковано',rejected:'Не схвалено'}[comment.status]}</span><p>{comment.body}</p><div className="comment-actions">{post.comments_enabled && <button disabled={busy} onClick={()=>{setEditing(comment);setReplyTo(null);setBody(comment.body);document.getElementById('blog-comment-body')?.focus()}}>Редагувати</button>}<button disabled={busy} onClick={()=>remove(comment)}>Видалити</button></div></div>)}</State></section>}
+    {authenticated && <section className="own-comments"><h3>Ваші коментарі</h3><State request={mine}>{mine.data?.length===0 && <p>Ви ще не коментували цю статтю.</p>}{mine.data?.map(comment=><div className="own-comment" key={comment.id}><span className={'status-chip '+(COMMENT_STATUS[comment.status]?.[0]||'')}>{COMMENT_STATUS[comment.status]?.[1]||comment.status}</span><p>{comment.body}</p><div className="comment-actions">{post.comments_enabled && <button disabled={busy} onClick={()=>{setEditing(comment);setReplyTo(null);setBody(comment.body);document.getElementById('blog-comment-body')?.focus()}}>Редагувати</button>}<button disabled={busy} onClick={()=>remove(comment)}>Видалити</button></div></div>)}</State></section>}
     {error && <p className="shop-error" role="alert">{error}</p>}{message && <p className="shop-success" role="status">{message}</p>}
-    {!post.comments_enabled?<p className="blog-state">Нові коментарі до цієї публікації закрито.</p>:authenticated?<form className="comment-form" onSubmit={submit}><h3>{editing?'Редагувати свій коментар':replyTo?'Відповідь для '+replyTo.author_name:'Залишити коментар'}</h3><label htmlFor="blog-comment-body">Ваш коментар</label><textarea id="blog-comment-body" value={body} minLength={2} maxLength={2000} required disabled={busy} onChange={event=>{setBody(event.target.value);if(!editing)setClientKey(key())}} rows={5}/><p className="blog-meta">{body.length} / 2000 · Коментарі перевіряє редакція. Після редагування потрібне повторне схвалення.</p><div className="comment-actions"><button className="btn primary" type="submit" disabled={busy || body.trim().length<2}>{busy?'Надсилаємо…':'Надіслати на модерацію'}</button>{(editing || replyTo) && <button type="button" disabled={busy} onClick={cancel}>Скасувати</button>}</div></form>:<div className="blog-state"><p>Щоб залишити коментар, увійди в особистий кабінет.</p><button className="btn primary" onClick={()=>go('/profile?returnTo='+encodeURIComponent('/blog/'+post.slug))}>Увійти та коментувати</button></div>}
+    {!post.comments_enabled?<p className="blog-state">Нові коментарі до цієї публікації закрито.</p>:authenticated?<form className="comment-form" onSubmit={submit}><h3>{editing?'Редагувати свій коментар':'Залишити коментар'}</h3>{replyTo && !editing && <p className="reply-target" role="status">Відповідаєте: <strong>{replyTo.author_name}</strong> <button type="button" className="text-muted-button" disabled={busy} onClick={cancel}>Скасувати відповідь</button></p>}<label htmlFor="blog-comment-body">Ваш коментар</label><textarea id="blog-comment-body" value={body} minLength={2} maxLength={2000} required disabled={busy} onChange={event=>{setBody(event.target.value);if(!editing)setClientKey(key())}} rows={5}/><p className="blog-meta">{body.length} / 2000</p><p className="comment-rules">Коментарі публікуються після перевірки редакцією. Відредагований коментар перевіряється знову. Не залишайте в тексті телефон, адресу чи інші особисті дані.</p><div className="comment-actions"><button className="btn primary" type="submit" disabled={busy || body.trim().length<2}>{busy?'Надсилаємо…':'Надіслати на модерацію'}</button>{editing && <button type="button" disabled={busy} onClick={cancel}>Скасувати редагування</button>}</div></form>:<div className="blog-state"><p>Щоб залишити коментар, увійди в особистий кабінет.</p><button className="btn primary" onClick={()=>go('/profile?returnTo='+encodeURIComponent('/blog/'+post.slug))}>Увійти та коментувати</button></div>}
   </section>
 }
 

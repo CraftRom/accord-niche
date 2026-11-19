@@ -7,6 +7,7 @@ import {useDialog} from './useDialog'
 import { useCommerce, CheckoutPage, CheckoutSuccess, ProfilePage } from './commerce'
 import { BUYER_INFO } from './info'
 import { startReveal, withViewTransition } from './motion'
+import { StateBlock, errorTitle } from './states'
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
 const fmt = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 })
@@ -99,9 +100,10 @@ function ImageTile({item, className = '', priority = false}) {
 }
 
 function RequestStatus({request, empty, children}) {
-  if (!request.data && request.loading) return <div className="store-loading" role="status"><span className="loading-dot"/>Завантажуємо товари…</div>
-  if (!request.data && request.error) return <div className="store-state" role="alert"><h2>{[404,410].includes(request.errorStatus)?'Товар недоступний':'Не вдалося завантажити дані'}</h2><p>{request.error}</p><button className="btn outline" onClick={request.retry}>Спробувати ще раз</button></div>
-  return <>{request.error && <div className="notice" role="alert">Не вдалося оновити дані. Показуємо останню завантажену версію. <button onClick={request.retry}>Оновити</button></div>}{empty ? <div className="store-state"><h2>Поки немає товарів</h2><p>Перегляньте інші добірки або завітайте пізніше.</p></div> : children}</>
+  if (!request.data && request.loading) return <StateBlock kind="loading" className="store-loading">Завантажуємо товари…</StateBlock>
+  if (!request.data && request.error) return <StateBlock kind="error" className="store-state" title={errorTitle(request, 'Товар недоступний')}
+    action={<button className="btn outline" onClick={request.retry}>Спробувати ще раз</button>}><p>{request.error}</p></StateBlock>
+  return <>{request.error && <div className="notice" role="alert">Не вдалося оновити дані. Показуємо останню завантажену версію. <button onClick={request.retry}>Оновити</button></div>}{empty ? <StateBlock className="store-state" title="Поки немає товарів"><p>Перегляньте інші добірки або завітайте пізніше.</p></StateBlock> : children}</>
 }
 
 function ProductCard({item, go}) {
@@ -119,9 +121,32 @@ function ProductSection({title, description, items, go, to = '/catalog'}) {
   return <section className="featured shell"><div className="section-row"><div><h2 className="section-heading">{title}</h2>{description && <p className="section-description">{description}</p>}</div><SiteLink className="section-link" to={to} onNavigate={go}>ПЕРЕГЛЯНУТИ ВСІ →</SiteLink></div><div className="products-grid">{items.map(item => <ProductCard key={item.key} item={item} go={go}/>)}</div></section>
 }
 
-function Hero({go, item}) {
-  return <section className="hero shell" aria-labelledby="hero-title"><div className="hero-content"><p className="eyebrow">НІШЕВА ПАРФУМЕРІЯ У ТВОЄМУ ФОРМАТІ</p><h1 id="hero-title">Знайди аромат,<br/>який стане<br/>твоїм</h1><p className="hero-description">Обирай аромат і доступний об’єм. Знайомся з парфумерією у власному ритмі — перед рішенням про повний флакон.</p><div className="hero-cta"><button className="btn primary" onClick={() => go('/catalog')}>ОБРАТИ АРОМАТ</button><button className="btn outline" onClick={() => go('/catalog?kind=new')}>НОВИНКИ</button></div></div>
-    {item?.image ? <button className="hero-product" onClick={() => go('/aroma/' + (item.default_product_id || item.id))}><ImageTile item={item} className="hero-tile" priority/><span>{item.brand} · {item.name}</span></button> : <div className="hero-lettering" aria-hidden="true"><span>A</span><p>ACCORD NICHE</p><i>Твій аромат. Твій формат.</i></div>}</section>
+// W-16: one dominant action; the formats line appears only when the live
+// assortment confirms it, never as a hard-coded promise.
+function volumesOf(items = []) {
+  return [...new Set(items.flatMap(item => item.volumes || []).map(Number).filter(v => v > 0))].sort((a, b) => a - b)
+}
+
+function Hero({go, item, volumes = []}) {
+  const target = item ? '/aroma/' + (item.default_product_id || item.id) : ''
+  return <section className="hero shell" aria-labelledby="hero-title"><div className="hero-content"><p className="eyebrow">НІШЕВА ПАРФУМЕРІЯ У ТВОЄМУ ФОРМАТІ</p><h1 id="hero-title">Знайди аромат,<br/>який стане<br/>твоїм</h1><p className="hero-description">Обирай аромат і доступний об’єм. Знайомся з парфумерією у власному ритмі — перед рішенням про повний флакон.</p>
+    {volumes.length > 0 && <p className="hero-formats">Об’єми {volumes.join(' / ')} мл · ціна за мілілітр біля кожного аромату</p>}
+    <div className="hero-cta"><SiteLink className="btn primary" to="/catalog" onNavigate={go}>ОБРАТИ АРОМАТ</SiteLink><SiteLink className="hero-secondary" to="/catalog?kind=new" onNavigate={go}>Новинки <span aria-hidden="true">→</span></SiteLink></div></div>
+    {item?.image ? <SiteLink className="hero-product" to={target} onNavigate={go}><ImageTile item={item} className="hero-tile" priority/><span><b>{[item.brand, item.name].filter(Boolean).join(' · ')}</b>{item.min_price != null && <em>від {money(item.min_price)}</em>}</span></SiteLink> : <div className="hero-lettering" aria-hidden="true"><span>A</span><p>ACCORD NICHE</p><i>Твій аромат. Твій формат.</i></div>}</section>
+}
+
+// W-17: answers to «what is in the vial, what does it cost, when is it sent,
+// what if something is wrong» — only facts the shop actually provides.
+function BuyerFacts({volumes = [], go}) {
+  const facts = [
+    ['Формат', volumes.length ? `Розпив в об’ємах ${volumes.join(' / ')} мл: спробуйте аромат, перш ніж купувати флакон.` : 'Розпив у невеликих об’ємах: спробуйте аромат, перш ніж купувати флакон.'],
+    ['Чесна ціна', 'Біля кожного аромату — ціна за мілілітр, тож об’єми легко порівняти. Підсумок із доставкою видно до підтвердження.'],
+    ['Доставка', 'Новою поштою. Статус замовлення й номер ТТН — в історії покупок особистого кабінету.'],
+    ['Якщо щось не так', 'До відправлення замовлення можна скасувати в кабінеті. З питаннями щодо отриманого товару — контакти внизу сторінки.'],
+  ]
+  return <section className="buyer-facts shell" aria-labelledby="facts-title"><h2 id="facts-title" className="section-heading">Перед замовленням</h2>
+    <div className="facts-grid">{facts.map(([title, text]) => <article key={title}><h3>{title}</h3><p>{text}</p></article>)}</div>
+    <SiteLink className="section-link" to="/how" onNavigate={go}>ЯК ЦЕ ПРАЦЮЄ →</SiteLink></section>
 }
 
 function HowItWorks() {
@@ -131,9 +156,10 @@ function HowItWorks() {
 function Home({go}) {
   const request = useStoreRequest('/api/public/storefront')
   const data = request.data
-  return <main><Hero go={go} item={data?.selection?.[0]}/><div className="shell"><RequestStatus request={request} empty={data?.total === 0}/></div>
+  const volumes = volumesOf(data?.selection)
+  return <main><Hero go={go} item={data?.selection?.[0]} volumes={volumes}/><div className="shell"><RequestStatus request={request} empty={data?.total === 0}/></div>
     {data && <>{data.hits.length > 0 ? <ProductSection title="Хіти розливу" description={'Найпопулярніші за підтвердженими продажами за ' + data.window_days + ' днів.'} items={data.hits} go={go} to="/catalog?kind=hits"/> : <ProductSection title="Обери свій аромат" description="Товари з актуального каталогу магазину." items={data.selection} go={go}/>}
-      <ProductSection title="Новинки" items={data.new_arrivals} go={go} to="/catalog?kind=new"/><ProductSection title="Рекомендуємо" description="Добірка магазину для знайомства з ароматами." items={data.recommended} go={go} to="/catalog?kind=recommended"/></>}<HowItWorks/></main>
+      {data.total > 0 && <BuyerFacts volumes={volumes} go={go}/>}<ProductSection title="Новинки" items={data.new_arrivals} go={go} to="/catalog?kind=new"/><ProductSection title="Рекомендуємо" description="Добірка магазину для знайомства з ароматами." items={data.recommended} go={go} to="/catalog?kind=recommended"/></>}<HowItWorks/></main>
 }
 
 function PageTitle({label, title, detail}) {
@@ -248,8 +274,22 @@ function Basket({open, close, cart, products, change, go, site, request, lineNot
     {lines.length > 0 && <div className="basket-bottom"><div className="basket-total"><span>Сума за товари</span><strong>{money(total)}</strong></div><button className="btn primary checkout-link" disabled={blocked} onClick={() => {close(); go('/checkout')}}>ОФОРМИТИ ЗАМОВЛЕННЯ →</button>{!blocked && link && <a className="basket-telegram-link" href={link} target="_blank" rel="noopener noreferrer">Продовжити в Telegram Mini App</a>}<p>Доставка не входить у суму: її оплачують перевізнику за його тарифами. Знижки, бонуси й остаточну суму покаже оформлення. Кошик зберігається на цьому пристрої.</p></div>}</aside></div>
 }
 
+// W-26: four groups a buyer scans in seconds; delivery, returns and contacts
+// are at most two clicks away. Legal links come only from configuration.
 function Footer({go, setInfo, site}) {
-  return <footer className="footer"><div className="shell footer-inner"><div className="footer-brand"><Logo dark onClick={() => go('/')}/><span>accordniche.pp.ua</span>{site.seller_name && <span>{site.seller_name}</span>}</div><div className="footer-links"><div><button onClick={() => setInfo('delivery')}>Доставка й оплата</button><button onClick={() => setInfo('returns')}>Повернення</button><button onClick={() => go('/how')}>Як це працює</button><button onClick={() => go('/blog')}>Блог</button></div><div>{site.instagram_url && <a href={site.instagram_url} target="_blank" rel="noopener noreferrer">Instagram</a>}{site.tiktok_url && <a href={site.tiktok_url} target="_blank" rel="noopener noreferrer">TikTok</a>}{site.phone && <a href={'tel:' + site.phone.replace(/[^+\d]/g,'')}>{site.phone}</a>}{site.email && <a href={'mailto:' + site.email}>{site.email}</a>}</div></div></div></footer>
+  const phone = site.phone ? site.phone.replace(/[^+\d]/g, '') : ''
+  const support = [site.phone && <a key="phone" href={'tel:' + phone}>{site.phone}</a>, site.email && <a key="email" href={'mailto:' + site.email}>{site.email}</a>,
+    site.instagram_url && <a key="ig" href={site.instagram_url} target="_blank" rel="noopener noreferrer">Instagram</a>,
+    site.tiktok_url && <a key="tt" href={site.tiktok_url} target="_blank" rel="noopener noreferrer">TikTok</a>].filter(Boolean)
+  const docs = [site.terms_url && <a key="terms" href={site.terms_url} target="_blank" rel="noopener noreferrer">Умови покупки</a>,
+    site.privacy_url && <a key="privacy" href={site.privacy_url} target="_blank" rel="noopener noreferrer">Політика конфіденційності</a>].filter(Boolean)
+  return <footer className="footer"><div className="shell footer-inner"><div className="footer-brand"><Logo dark onClick={() => go('/')}/><span>accordniche.pp.ua</span>{site.seller_name && <span>{site.seller_name}</span>}</div>
+    <nav className="footer-links" aria-label="Інформація для покупців">
+      <div><h2>Покупцям</h2><SiteLink to="/catalog" onNavigate={go}>Каталог</SiteLink><button onClick={() => setInfo('delivery')}>Доставка й оплата</button><button onClick={() => setInfo('returns')}>Повернення та скасування</button><SiteLink to="/how" onNavigate={go}>Як це працює</SiteLink></div>
+      <div><h2>Про магазин</h2><SiteLink to="/brands" onNavigate={go}>Бренди</SiteLink><SiteLink to="/blog" onNavigate={go}>Блог</SiteLink><SiteLink to="/profile" onNavigate={go}>Особистий кабінет</SiteLink></div>
+      {support.length > 0 && <div><h2>Підтримка</h2>{support}</div>}
+      {docs.length > 0 && <div><h2>Документи</h2>{docs}</div>}
+    </nav></div></footer>
 }
 
 function InfoModal({name, close, site}) {
