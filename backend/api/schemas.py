@@ -723,7 +723,7 @@ class TopProduct(BaseModel):
 DERIVED_FIELDS = {
     "novaposhta_connected", "salesdrive_form_connected",
     "salesdrive_api_connected", "salesdrive_webhook_connected",
-    "twilio_auth_connected", "env_defaults",
+    "sms_gateway_connected", "env_defaults",
 }
 
 # Хости, на які сайт може посилатися з профілів соцмереж. Явний перелік:
@@ -885,24 +885,25 @@ class ShopSettingsIn(BaseModel):
         pattern=r"^$|^[0-9]{6,32}-[a-z0-9]{8,64}\.apps\.googleusercontent\.com$")
     google_site_verification: str | None = Field(
         None, max_length=100, pattern=r"^$|^[A-Za-z0-9_-]{20,100}$")
-    twilio_account_sid: str | None = Field(None, max_length=34, pattern=r"^$|^AC[0-9a-f]{32}$")
-    # Секрет: записується, але не читається назад (twilio_auth_connected).
-    twilio_auth_token: str | None = Field(None, max_length=32, pattern=r"^$|^[0-9a-f]{32}$")
-    twilio_verify_service_sid: str | None = Field(None, max_length=34, pattern=r"^$|^VA[0-9a-f]{32}$")
+    # SMS-шлюз (SMS Gateway for Android): https-адреса API, логін і пароль.
+    sms_gateway_url: str | None = Field(None, max_length=255)
+    sms_gateway_login: str | None = Field(None, max_length=64, pattern=r"^$|^[A-Za-z0-9_.@-]{1,64}$")
+    # Секрет: записується, але не читається назад (sms_gateway_connected).
+    sms_gateway_token: str | None = Field(None, max_length=128, pattern=r"^$|^[\x21-\x7e]{4,128}$")
     instagram_url: str | None = Field(None, max_length=255)
     tiktok_url: str | None = Field(None, max_length=255)
     miniapp_url: str | None = Field(None, max_length=255)
     dashboard_idle_minutes: int | None = Field(None, ge=5, le=1440)
 
-    @field_validator("google_client_id", "google_site_verification", "twilio_account_sid",
-                     "twilio_auth_token", "twilio_verify_service_sid", mode="before")
+    @field_validator("google_client_id", "google_site_verification", "sms_gateway_url",
+                     "sms_gateway_login", "sms_gateway_token", mode="before")
     @classmethod
     def _strip_pasted(cls, value):
         # Значення копіюють із консолей — пробіли по краях не мають ламати формат.
         return value.strip() if isinstance(value, str) else value
 
     @field_validator("instagram_url", "tiktok_url",
-                     "miniapp_url", mode="after")
+                     "miniapp_url", "sms_gateway_url", mode="after")
     @classmethod
     def _check_links(cls, value, info):
         return _https_link(value, info.field_name)
@@ -964,9 +965,9 @@ class ShopSettingsIn(BaseModel):
 class ShopSettingsOut(BaseModel):
     google_client_id: str = ""
     google_site_verification: str = ""
-    twilio_account_sid: str = ""
-    twilio_auth_connected: bool = False
-    twilio_verify_service_sid: str = ""
+    sms_gateway_url: str = ""
+    sms_gateway_login: str = ""
+    sms_gateway_connected: bool = False
     instagram_url: str = ""
     tiktok_url: str = ""
     miniapp_url: str = ""

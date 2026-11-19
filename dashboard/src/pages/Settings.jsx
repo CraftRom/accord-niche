@@ -191,20 +191,22 @@ const FIELDS = [
     ],
   },
   {
-    title: 'SMS-підтвердження (Twilio Verify)',
-    hint: 'Покупець підтверджує номер кодом з SMS і бачить історію замовлень із Telegram. '
+    title: 'SMS-шлюз (Android)',
+    hint: 'Необовʼязково. Номер на сайті безкоштовно підтверджується через Telegram-бота (потрібні лише BOT_TOKEN і BOT_USERNAME). '
+      + 'Щоб додатково надсилати коди в SMS, встановіть на Android-телефон магазину безкоштовний застосунок «SMS Gateway for Android» '
+      + '(sms-gate.app): SMS іде з SIM-картки телефона за вашим тарифом, без платних сервісів. '
       + 'Ліміт: одне SMS на хвилину, пʼять на годину на акаунт.',
     items: [
-      { key: 'twilio_account_sid', label: 'Account SID', env: true, placeholder: 'AC…',
-        hint: 'Twilio Console → Account Info. 34 символи, починається з AC' },
+      { key: 'sms_gateway_url', label: 'Адреса API', env: true, placeholder: 'https://api.sms-gate.app/3rdparty/v1/messages',
+        hint: 'Хмарний режим застосунку: https://api.sms-gate.app/3rdparty/v1/messages. Власний сервер — його https-адреса /messages' },
+      { key: 'sms_gateway_login', label: 'Логін', env: true,
+        hint: 'Застосунок → Home → Cloud server → Username' },
       {
-        key: 'twilio_auth_token', label: 'Auth Token', env: true,
-        secret: 'twilio_auth_connected',
+        key: 'sms_gateway_token', label: 'Пароль', env: true,
+        secret: 'sms_gateway_connected',
         secretHint: 'Без нього SMS не надсилаються.',
-        hint: 'Twilio Console → Account Info → Auth Token. Зберігається зашифрованим і назад не показується',
+        hint: 'Застосунок → Home → Cloud server → Password. Зберігається зашифрованим і назад не показується',
       },
-      { key: 'twilio_verify_service_sid', label: 'Verify Service SID', env: true, placeholder: 'VA…',
-        hint: 'Twilio Console → Verify → Services. 34 символи, починається з VA' },
     ],
   },
   {
@@ -593,13 +595,14 @@ function SalesDriveCheck() {
   )
 }
 
-function TwilioCheck() {
+function SmsTest() {
   const [state, setState] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [phone, setPhone] = useState('+380')
   const check = async () => {
     setBusy(true)
     try {
-      setState(await api.settings.twilioCheck())
+      setState(await api.settings.smsTest(phone))
     } catch (err) {
       setState({ ok: false, problem: err.message })
     } finally {
@@ -608,15 +611,17 @@ function TwilioCheck() {
   }
   return (
     <div className="row u-mt-3">
-      <button type="button" className="btn ghost small" onClick={check} disabled={busy}>
-        {busy ? 'Перевірка…' : 'Перевірити ключі Twilio'}
+      <input className="input settings-sms-phone" type="tel" aria-label="Номер для тестового SMS" value={phone}
+        onChange={(event) => setPhone(event.target.value)} />
+      <button type="button" className="btn ghost small" onClick={check} disabled={busy || phone.replace(/\D/g, '').length < 10}>
+        {busy ? 'Надсилаємо…' : 'Надіслати тестове SMS'}
       </button>
       {state && (
         <StateBadge tone={state.ok ? 'success' : 'danger'}>
-          {state.ok ? `Twilio відповідає${state.service ? ` · ${state.service}` : ''}` : state.problem}
+          {state.ok ? 'Шлюз прийняв SMS' : state.problem}
         </StateBadge>
       )}
-      <span className="faint">Перевіряє збережені значення, SMS не надсилає</span>
+      <span className="faint">Використовує збережені значення</span>
     </div>
   )
 }
@@ -914,7 +919,7 @@ export default function Settings() {
                 : `Показати додаткові параметри (${group.items.filter((item) => item.advanced).length})`}
             </button>
           )}
-          {isSysadmin() && group.title === 'SMS-підтвердження (Twilio Verify)' && <TwilioCheck />}
+          {isSysadmin() && group.title === 'SMS-шлюз (Android)' && <SmsTest />}
           {isSysadmin() && group.title === 'SalesDrive' && <>
             <div className="row u-mt-3">
               <button type="button" className="btn ghost small" onClick={loadSalesDriveDictionaries} disabled={sdDictBusy}>

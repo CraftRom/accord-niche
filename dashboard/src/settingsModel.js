@@ -11,7 +11,7 @@ export function categoryFor(title) {
   if (['Магазин', 'Доставка', 'Реквізити продавця', 'Оплата', 'Посилання на сайті'].includes(title)) return 'store'
   if (['Бонуси', 'Реферальна програма', 'Знижка за суму'].includes(title)) return 'loyalty'
   if (title === 'Автовідповіді') return 'automation'
-  if (['SalesDrive', 'Вхід через Google', 'SMS-підтвердження (Twilio Verify)'].includes(title)) return 'integrations'
+  if (['SalesDrive', 'Вхід через Google', 'SMS-шлюз (Android)'].includes(title)) return 'integrations'
   if (['Telegram-група', 'Бот і Mini App'].includes(title)) return 'access'
   return 'system'
 }

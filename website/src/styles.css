@@ -46,6 +46,7 @@
 .shop-empty{background:#f5f1eb;padding:30px;color:#61594e;font-size:14px;line-height:1.7}
 .profile-edit,.phone-inputs{display:flex;gap:15px;align-items:end;flex-wrap:wrap;margin:14px 0}.profile-edit .shop-field,.phone-inputs .shop-field{flex:1;min-width:200px;margin:0}
 .phone-inputs .btn,.profile-edit .btn{min-height:44px}
+.phone-telegram{margin:14px 0}.phone-telegram .btn{min-height:44px;max-width:100%;white-space:normal}.phone-telegram .shop-hint{margin:8px 0 0}.phone-or{margin-top:18px}
 
 .text-muted-button{border:0;background:none;color:#7a6b58;font-size:12px;text-align:left;padding:8px 0}
 .google-slot{min-height:46px;margin:20px 0}.checkout-form .commerce-panel{margin-bottom:18px}

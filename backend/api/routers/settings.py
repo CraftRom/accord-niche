@@ -33,7 +33,7 @@ def _out(shop) -> ShopSettingsOut:
     stored = {f.name: getattr(shop, f.name) for f in fields(shop)}
     for flag in ("novaposhta_connected", "salesdrive_form_connected",
                  "salesdrive_api_connected", "salesdrive_webhook_connected",
-                 "twilio_auth_connected", "env_defaults"):
+                 "sms_gateway_connected", "env_defaults"):
         stored[flag] = getattr(shop, flag)
     return ShopSettingsOut(**{
         key: value for key, value in stored.items()
