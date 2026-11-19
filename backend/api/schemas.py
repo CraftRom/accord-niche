@@ -779,7 +779,6 @@ class ShopSettingsIn(BaseModel):
 
     shop_name: str | None = Field(None, min_length=1, max_length=64)
     currency: str | None = Field(None, min_length=1, max_length=16)
-    min_age: int | None = Field(None, ge=18, le=99)
     referral_enabled: bool | None = None
     referral_percent: Decimal | None = Field(None, ge=0, le=100)
     bonus_enabled: bool | None = None
@@ -964,7 +963,6 @@ class ShopSettingsOut(BaseModel):
     env_defaults: list[str] = []
     shop_name: str
     currency: str
-    min_age: int
     referral_enabled: bool
     referral_percent: Decimal
     bonus_enabled: bool

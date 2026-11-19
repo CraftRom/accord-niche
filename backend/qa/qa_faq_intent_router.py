@@ -92,7 +92,7 @@ for text in (
     check(d.rule is None, f"problem → менеджер: {text!r}", d.reason)
 
 # Дефект товару — виняток: existing returns-відповідь якраз пояснює, що робити.
-for text in ("Не заряджається", "Протікає", "Прислали не те"):
+for text in ("Не пахне", "Протікає", "Прислали не те"):
     d = faq.decide(text, shop=shop)
     check(d.rule is not None and d.rule.key == "returns",
           f"товарна проблема має готовий returns flow: {text!r}", d.reason)

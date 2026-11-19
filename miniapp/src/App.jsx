@@ -7,7 +7,7 @@ import { api, AUTH_FAILURE_EVENT, consumeOrderEvents } from './api'
 import { clientLog } from './logger'
 import { trackVisit } from './attribution'
 import { horizontalWheel, trackViewport } from './scroll'
-import { AgeGate, Catalog } from './screens/Catalog'
+import { Catalog } from './screens/Catalog'
 import { Cart, Checkout } from './screens/Checkout'
 import { ChatList, ChatRoom } from './screens/Chat'
 import { SupportCenter } from './screens/Support'
@@ -244,15 +244,15 @@ export default function App() {
   ]), [readCart, readProfile, readHistory, readSaved, readActive])
 
   useEffect(() => {
-    if (config?.age_confirmed) void refresh()
-  }, [config?.age_confirmed, refresh])
+    if (Boolean(config)) void refresh()
+  }, [Boolean(config), refresh])
 
   // Тихий read-side refresh вітрини. Чат має свій швидший delta-poll,
   // а тут синхронізуємо статуси замовлень, профіль і кошик між вкладками/
   // пристроями без spinner-ів та перезавантаження екрана.
   const backgroundSyncRef = useRef(false)
   useEffect(() => {
-    if (!config?.age_confirmed) return undefined
+    if (!Boolean(config)) return undefined
     let stopped = false
     let cycle = 0
     let timer = null
@@ -300,14 +300,14 @@ export default function App() {
       window.removeEventListener('focus', wake)
       window.removeEventListener('online', wake)
     }
-  }, [config?.age_confirmed])
+  }, [Boolean(config)])
 
   // Primary realtime path for customer-visible order state. Redis/SSE only
   // invalidates the read-model; actual data is always re-read through the
   // signed Mini App API. The 20s DB-only background sync above remains recovery.
   const liveRefreshRef = useRef(false)
   useEffect(() => {
-    if (!config?.age_confirmed) return undefined
+    if (!Boolean(config)) return undefined
     let stopped = false
     let controller = null
     let retryTimer = null
@@ -382,7 +382,7 @@ export default function App() {
       window.removeEventListener('online', wake)
       window.removeEventListener('offline', wake)
     }
-  }, [config?.age_confirmed])
+  }, [Boolean(config)])
 
   // Open chat gets the same fresh object as the list/profile. Otherwise a
   // status changed by CRM would update the list but leave the open room with
@@ -397,7 +397,7 @@ export default function App() {
   // and validates availability. Ignore until age/Telegram authentication is complete.
   const importCartLinkUsed = useRef(false)
   useEffect(() => {
-    if (!config?.age_confirmed || importCartLinkUsed.current) return
+    if (!Boolean(config) || importCartLinkUsed.current) return
     const target = startTarget()
     if (target?.screen !== 'cart' || !target.items?.length) return
     importCartLinkUsed.current = true
@@ -405,7 +405,7 @@ export default function App() {
     api.importWebsiteCart(target.items)
       .then((value) => { setCart(value); setTab('cart') })
       .catch((error) => { setTab('cart'); setCartError(error.message || 'Не вдалося перенести кошик із сайту') })
-  }, [config?.age_confirmed, setCart])
+  }, [Boolean(config), setCart])
 
   // Кнопка «Відкрити чат» у боті веде одразу на потрібну розмову.
   //
@@ -747,17 +747,6 @@ initData: ${getInitData() ? `${getInitData().length} символів` : 'пор
     )
   }
 
-  if (!config.age_confirmed) {
-    // Футер тут обов'язковий за законом: перш ніж підтвердити вік, людина
-    // має мати доступ до умов, оферти й даних продавця. Сховати їх до
-    // моменту згоди означало б просити згоди наосліп.
-    return (
-      <div className="app">
-        <AgeGate config={config} onConfirmed={setConfig} />
-        <Footer onLegal={(key) => setLegal(key || true)} />
-      </div>
-    )
-  }
 
   const count = cart?.lines?.reduce((sum, l) => sum + l.qty, 0) || 0
   const subtotal = Number(cart?.subtotal || 0)
@@ -872,14 +861,11 @@ initData: ${getInitData() ? `${getInitData().length} символів` : 'пор
 
   return (
     <div className={`app storefront ${count > 0 && tab !== 'chat' ? 'has-cart-bar' : ''}`}>
-      {/* Шапка в один рядок: назва магазину й вікова позначка. Раніше тут
-          були два рядки й окремий блок-заставка в каталозі — разом вони
-          з'їдали пів екрана, і до першого товару доводилось гортати. */}
+      {/* Шапка в один рядок: назва магазину. Раніше тут були два рядки й
+          окремий блок-заставка в каталозі — разом вони з'їдали пів екрана,
+          і до першого товару доводилось гортати. */}
       <header className="store-head">
         <strong className="store-name">{config.shop_name || 'Магазин'}</strong>
-        <span className="store-age" title="Лише для повнолітніх">
-          {config.min_age ?? 18}+
-        </span>
       </header>
 
       {cartError && (
