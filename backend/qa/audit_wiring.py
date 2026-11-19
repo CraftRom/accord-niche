@@ -769,7 +769,7 @@ print("\n=== КЛІЄНТИ API ===")
 mapi = read("miniapp/src/api.js")
 # Фото товару вітрина тягне прямим fetch із заголовком підпису, а не через
 # клієнт api — інакше не додати X-Telegram-Init-Data до <img>
-for m in ["bootstrap","config","categories","products","cart","checkout","promo/check","profile","chat","wishlists"]:
+for m in ["bootstrap","config","brands","products","cart","checkout","promo/check","profile","chat","wishlists"]:
     check(m in mapi, f"вітрина вміє: {m}")
 dapi = read("dashboard/src/api.js")
 for m in ["operators","settings","messages","sendMessage","unread","byOperator","purge","fileUrl"]:

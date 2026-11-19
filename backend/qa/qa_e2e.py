@@ -12,8 +12,8 @@ A = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"admin
 
 print("\n[адмін] готує магазин")
 c.post("/api/operators", json={"login":"olena","name":"Олена","password":"kvitka-sadok-2026"}, headers=A)
-cat = c.post("/api/catalog/categories", json={"name":"Одноразки","sort_order":0,"is_active":True}, headers=A).json()
-pr = c.post("/api/catalog/products", json={"category_id":cat["id"],"name":"Elf Bar 5000",
+cat = c.post("/api/catalog/brands", json={"name":"Одноразки","sort_order":0,"is_active":True}, headers=A).json()
+pr = c.post("/api/catalog/products", json={"brand_id":cat["id"],"name":"Elf Bar 5000",
      "description":"Манго-лід, 5000 затяжок","price":"350","stock":10,"is_active":True}, headers=A).json()
 c.post("/api/promos", json={"code":"WELCOME","type":"percent","value":"10","is_active":True}, headers=A)
 O = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"olena","password":"kvitka-sadok-2026"}).json()["access_token"]}

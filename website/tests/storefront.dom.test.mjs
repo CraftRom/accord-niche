@@ -10,7 +10,7 @@ const products = [
   {id:42,name:'Actual Aroma 2 мл',brand:'DB BRAND',gender:'unisex',volume_ml:2,price:'40',stock:4,photo_url:null,photo_endpoint:null,is_new:true,is_featured:false},
   {id:43,name:'Actual Aroma 5 мл',brand:'DB BRAND',gender:'unisex',volume_ml:5,price:'75',stock:2,photo_url:null,photo_endpoint:null,is_new:true,is_featured:false},
 ]
-const aroma = {id:42,key:'db:actual',name:'Actual Aroma',brand:'DB BRAND',gender:'unisex',description:'Опис із каталогу',variants:products,categories:[],stock:6,min_price:'40',price_per_ml:'15',image:'',volumes:[2,5],is_new:true,is_featured:false,is_set:false,bestseller_rank:1}
+const aroma = {id:42,key:'db:actual',name:'Actual Aroma',brand:'DB BRAND',gender:'unisex',description:'Опис із каталогу',variants:products,stock:6,min_price:'40',price_per_ml:'15',image:'',volumes:[2,5],is_new:true,is_featured:false,is_set:false,bestseller_rank:1}
 const other = {...aroma,id:60,key:'other:real',name:'Other Real Aroma',brand:'OTHER',variants:[{...products[0],id:60,brand:'OTHER'}],bestseller_rank:null}
 const home = {hits:[aroma],recommended:[],new_arrivals:[],selection:[aroma],total:2,available:2,window_days:90}
 const response = (data,status=200) => new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json'}})
@@ -37,7 +37,7 @@ function mount({empty=false, saved={}, failCart=false, failHome=false, failDetai
     if(url.pathname==='/api/public/products') return failCart?response({},503):response(products.filter(p=>url.searchParams.get('ids').split(',').includes(String(p.id))))
     if(url.pathname==='/api/public/aromas') {
       const items=empty?[]:[aroma,other].filter(g=>!url.searchParams.get('brand')||g.brand===url.searchParams.get('brand'))
-      return response({items,total:items.length,limit:24,offset:0,brands:empty?[]:['DB BRAND','OTHER'],categories:[],updated_at:new Date().toISOString()})
+      return response({items,total:items.length,limit:24,offset:0,brands:empty?[]:['DB BRAND','OTHER'],updated_at:new Date().toISOString()})
     }
     return response({},404)
   }

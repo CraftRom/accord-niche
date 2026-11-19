@@ -73,7 +73,7 @@ class TextTests(unittest.TestCase):
   buttons=[b for row in kb.cart([item]*8,page=3,pages=5).inline_keyboard for b in row]
   self.assertLessEqual(len(buttons),50);self.assertTrue(any(b.callback_data=='cartqty:1:3:3' for b in buttons))
  def test_escaped_cart_render(self):
-  text=cart.render([CartLine(1,2,Product(1,1,'<X> & 😀',Decimal(10),stock=5))])
+  text=cart.render([CartLine(1,2,Product(1,'<X> & 😀',Decimal(10),stock=5))])
   self.assertIn('&lt;X&gt; &amp;',text);self.assertIn('20,00',text)
 class SQLTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
@@ -127,7 +127,7 @@ class SQLTests(unittest.IsolatedAsyncioTestCase):
   await checkout.receive_receipt(msg,state,self.repo,self.user);self.assertFalse(await self.repo.list_order_messages(self.order.id))
  async def test_long_product_photo_full_description_accessible(self):
   desc='<desc> & 😀 '+('A & B\n'*3000)+'THE_END'
-  product=Product(101,1,'<Model &>',Decimal(10),stock=5,sku='<SKU>',description=desc,photo_file_id='photo')
+  product=Product(101,'<Model &>',Decimal(10),stock=5,sku='<SKU>',description=desc,photo_file_id='photo')
   repo=NS(get_product=AsyncMock(return_value=product),get_cart=AsyncMock(return_value=[]))
   msg=NS(answer_photo=AsyncMock(),answer=AsyncMock(),edit_text=AsyncMock(),photo=None)
   cb=NS(data='prod:101',message=msg,answer=AsyncMock());await catalog.open_product(cb,repo,self.user)
@@ -154,7 +154,7 @@ class SQLTests(unittest.IsolatedAsyncioTestCase):
   await checkout.receive_receipt(msg,state,self.repo,self.user)
   self.assertFalse(await self.repo.list_order_messages(self.order.id));msg.bot.send_photo.assert_not_awaited()
  async def test_long_product_without_photo(self):
-  product=Product(500,1,'<Title>',Decimal(10),description='&😀'*12000,stock=2)
+  product=Product(500,'<Title>',Decimal(10),description='&😀'*12000,stock=2)
   repo=NS(get_product=AsyncMock(return_value=product),get_cart=AsyncMock(return_value=[]))
   msg=NS(edit_text=AsyncMock(),answer=AsyncMock(),photo=None);cb=NS(data='prod:500',message=msg,answer=AsyncMock())
   await catalog.open_product(cb,repo,self.user)
@@ -171,9 +171,9 @@ class SQLTests(unittest.IsolatedAsyncioTestCase):
   for c in calls:plain(c.args[0]);self.assertLessEqual(units(c.args[0]),3500)
   self.assertIn('<Item> & 299',''.join(plain(c.args[0]) for c in calls))
  async def test_real_dispatcher_large_cart_and_document_receipt(self):
-  await self.repo.confirm_age(self.user);cat=await self.repo.create_category({'name':'<Category> &','is_active':True});products=[]
+  await self.repo.confirm_age(self.user);cat=await self.repo.create_brand({'name':'<Category> &','is_active':True});products=[]
   for i in range(120):
-   product=await self.repo.create_product({'name':f'{i:03} <X> & '+('😀&'*40),'category_id':cat.id,'price':Decimal(10),'stock':5,'is_active':True,'sku':str(i)})
+   product=await self.repo.create_product({'name':f'{i:03} <X> & '+('😀&'*40),'brand_id':cat.id,'price':Decimal(10),'stock':5,'is_active':True,'sku':str(i)})
    await self.repo.set_cart_qty(self.user.id,product.id,2);products.append(product)
   session=StrictSession();bot=Bot('123456:TEST',session=session,default=DefaultBotProperties(parse_mode='HTML'));dp=build_dispatcher();uid=self.user.tg_id
   await dp.feed_update(bot,message_update(bot,'🛒 Кошик',tg_id=uid))

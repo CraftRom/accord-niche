@@ -80,7 +80,8 @@ class User:
 
 
 @dataclass
-class Category:
+class Brand:
+    """Бренд парфумерії: група товарів у каталозі, фільтрах і промокодах."""
     id: int
     name: str
     description: str | None = None
@@ -90,20 +91,12 @@ class Category:
 
 
 @dataclass
-class Subcategory(Category):
-    category_id: int | None = None
-    category_name: str | None = None
-
-
-@dataclass
 class Product:
     id: int
-    category_id: int | None
     name: str
     price: Decimal
     sku: str = ""
-    subcategory_id: int | None = None
-    subcategory_name: str | None = None
+    brand_id: int | None = None
     external_sku: str | None = None
     is_new: bool = False
     is_sale: bool = False
@@ -114,7 +107,6 @@ class Product:
     photo_url: str | None = None
     sort_order: int = 0
     is_active: bool = True
-    category_name: str | None = None
     # Нижній регістр назви — Firestore не вміє пошук без урахування регістру,
     # тому зберігаємо готове поле для префіксних запитів.
     name_lower: str = ""
@@ -122,10 +114,9 @@ class Product:
     gender: str = "unisex"
     volume_ml: int | None = None
     is_featured: bool = False
-    # Активність батьківських груп (категорія, субкатегорія та її категорія).
-    # is_active лишається індивідуальним прапорцем товару: приховування групи
-    # не переписує його, і повторне ввімкнення групи не публікує товари,
-    # приховані окремо (A08).
+    # Активність бренду. is_active лишається індивідуальним прапорцем товару:
+    # приховування бренду не переписує його, і повторне ввімкнення бренду не
+    # публікує товари, приховані окремо (A08).
     parent_active: bool = True
 
     def __post_init__(self) -> None:
@@ -249,7 +240,7 @@ class Promo:
     is_active: bool = True
     created_at: datetime | None = None
     # Empty means the whole catalog; retain deleted IDs to avoid widening scope.
-    category_ids: list[int] = field(default_factory=list)
+    brand_ids: list[int] = field(default_factory=list)
 
 
 @dataclass

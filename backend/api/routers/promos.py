@@ -10,11 +10,11 @@ from shop.repo.factory import get_repo
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 
-async def validate_categories(data: PromoIn, repo: Repository):
-    if data.category_ids:
-        existing = {category.id for category in await repo.list_categories()}
-        if set(data.category_ids) - existing:
-            raise HTTPException(422, "Деякі категорії вже видалені. Оновіть вибір категорій")
+async def validate_brands(data: PromoIn, repo: Repository):
+    if data.brand_ids:
+        existing = {brand.id for brand in await repo.list_brands()}
+        if set(data.brand_ids) - existing:
+            raise HTTPException(422, "Деякі бренди вже видалені. Оновіть вибір брендів")
 
 
 @router.get("", response_model=list[PromoOut])
@@ -24,7 +24,7 @@ async def list_promos(repo: Repository = Depends(get_repo)):
 
 @router.post("", response_model=PromoOut, status_code=201)
 async def create_promo(data: PromoIn, repo: Repository = Depends(get_repo)):
-    await validate_categories(data, repo)
+    await validate_brands(data, repo)
     if await repo.get_promo_by_code(data.code):
         raise HTTPException(409, "Промокод із таким кодом уже існує")
     try:
@@ -45,7 +45,7 @@ async def get_promo(promo_id: int, repo: Repository = Depends(get_repo)):
 async def update_promo(promo_id: int, data: PromoIn, repo: Repository = Depends(get_repo)):
     if not await repo.get_promo(promo_id):
         raise HTTPException(404, "Промокод не знайдено")
-    await validate_categories(data, repo)
+    await validate_brands(data, repo)
     existing = await repo.get_promo_by_code(data.code)
     if existing and existing.id != promo_id:
         raise HTTPException(409, "Промокод із таким кодом уже існує")

@@ -35,7 +35,7 @@ r.check(c.get('/api/catalog/products').status_code==200,'cookie authenticates re
 profile=c.get('/api/auth/session').json()
 r.check(profile['csrf_token']==x.json()['csrf_token'],'reload restores profile and CSRF')
 r.check('no-store' in x.headers.get('cache-control','') and x.headers.get('x-content-type-options')=='nosniff','private response headers')
-url='/api/catalog/categories';body={'name':'Security QA'}
+url='/api/catalog/brands';body={'name':'Security QA'}
 r.check(c.post(url,json=body,headers=browser).status_code==403,'write without CSRF rejected')
 r.check(c.post(url,json=body,headers={**browser,'X-CSRF-Token':'bad'}).status_code==403,'wrong CSRF rejected')
 protected={**browser,'X-CSRF-Token':profile['csrf_token']}

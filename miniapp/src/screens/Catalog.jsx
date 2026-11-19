@@ -6,7 +6,7 @@ import { Photo } from '../photo'
 import { StoreIcon } from '../StoreIcon'
 import { DEFAULT_SORT, SORT_OPTIONS, catalogPrice, discountPercent, hasFreshStatus, hasSaleStatus, sortProducts, normalizeCatalogState, resolveCatalogState, loadCatalogProducts } from '../catalogModel'
 import { SortSheet } from './SortSheet'
-import { CategoryNavigator } from './CategoryNavigator'
+import { BrandNavigator } from './BrandNavigator'
 import { haptic } from '../telegram'
 
 function plural(count) {
@@ -62,7 +62,7 @@ export function ProductCard({ product, qty = 0, currency, onChange, onOpen, save
 
 export function Catalog({ config, cart, onCartChange, onOpenProduct, wishlists, onSave, searchRequest = 0, initialState = {}, onStateChange, onSearchRequestHandled }) {
   const [selection, setSelection] = useState(() => normalizeCatalogState(initialState))
-  const { active, subcategory, ungrouped, search, sort, inStock } = selection
+  const { brand, search, sort, inStock } = selection
   const [taxonomy, setTaxonomy] = useState(null)
   const [taxonomyError, setTaxonomyError] = useState('')
   const [taxonomyRetry, setTaxonomyRetry] = useState(0)
@@ -88,42 +88,39 @@ export function Catalog({ config, cart, onCartChange, onOpenProduct, wishlists, 
   useEffect(() => {
     let cancelled = false
     setTaxonomyError('')
-    Promise.all([api.categories(), api.subcategories()]).then(([cats, subs]) => {
+    api.brands().then((rows) => {
       if (cancelled) return
-      const categories = cats.map((item) => ({ ...item, id: Number(item.id) }))
-      const subcategories = subs.map((item) => ({ ...item, id: Number(item.id), category_id: item.category_id == null ? null : Number(item.category_id) }))
-      setSelection((state) => resolveCatalogState(state, categories, subcategories))
-      setTaxonomy({ categories, subcategories })
+      const brands = rows.map((item) => ({ ...item, id: Number(item.id) }))
+      setSelection((state) => resolveCatalogState(state, brands))
+      setTaxonomy({ brands })
     }).catch((err) => { if (!cancelled) setTaxonomyError(err.message) })
     return () => { cancelled = true }
   }, [taxonomyRetry])
   useEffect(() => {
-    // Resolve restored group IDs before the first products request.
+    // Resolve a restored brand ID before the first products request.
     if (!taxonomy) return
     let cancelled = false
     setProducts(null)
     setError('')
     setLoadFailed(false)
     const timer = setTimeout(() => {
-      loadCatalogProducts(api.products, { categoryId: active, subcategoryId: subcategory, uncategorized: ungrouped, search: search.trim() || undefined }, () => cancelled)
+      loadCatalogProducts(api.products, { brandId: brand, search: search.trim() || undefined }, () => cancelled)
         .then((rows) => { if (!cancelled) setProducts(rows) })
         .catch((err) => {
           if (!cancelled) { setProducts([]); setError(err.message); setLoadFailed(true) }
         })
     }, search.trim() ? 300 : 0)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [active, subcategory, ungrouped, search, retry, taxonomy])
+  }, [brand, search, retry, taxonomy])
 
   const change = async (product, delta) => {
     haptic('light')
     try { await onCartChange(product.id, delta) } catch (err) { setError(err.message) }
   }
   const view = useMemo(() => products === null ? null : sortProducts(products, sort, inStock), [products, sort, inStock])
-  const narrowed = inStock || ungrouped || active !== null || subcategory !== null || Boolean(search.trim())
+  const narrowed = inStock || brand !== null || Boolean(search.trim())
   const filtered = narrowed || sort !== DEFAULT_SORT
-  const chooseCategory = (id) => update({ active: id, subcategory: null, ungrouped: false })
-  const chooseSubcategory = (sub) => update({ active: sub.category_id, subcategory: sub.id, ungrouped: false })
-  const chooseUngrouped = (value) => update({ ungrouped: value, active: null, subcategory: null })
+  const chooseBrand = (id) => update({ brand: id })
   const reset = () => setSelection(normalizeCatalogState())
   const clearRefinements = () => update({ search: '', inStock: false })
   const qtyOf = (id) => cart?.lines?.find((line) => line.product_id === id)?.qty || 0
@@ -140,9 +137,9 @@ export function Catalog({ config, cart, onCartChange, onOpenProduct, wishlists, 
         <Field value={search} onChange={(event) => update({ search: event.target.value })} placeholder="Назва або артикул (SKU)" aria-label="Пошук товарів" inputMode="search" />
         {search && <button className="search-clear" onClick={() => update({ search: '' })} aria-label="Очистити">✕</button>}
       </div>
-      {taxonomyError ? <div className="catalog-taxonomy-error banner warn" role="alert"><p>Не вдалося завантажити категорії: {taxonomyError}</p><button className="secondary" onClick={() => setTaxonomyRetry((value) => value + 1)}>Повторити завантаження категорій</button></div>
-        : taxonomy ? <CategoryNavigator {...taxonomy} active={active} subcategory={subcategory} ungrouped={ungrouped} onCategory={chooseCategory} onSubcategory={chooseSubcategory} onUngrouped={chooseUngrouped} />
-        : <p className="store-found" role="status">Завантажуємо категорії…</p>}
+      {taxonomyError ? <div className="catalog-taxonomy-error banner warn" role="alert"><p>Не вдалося завантажити бренди: {taxonomyError}</p><button className="secondary" onClick={() => setTaxonomyRetry((value) => value + 1)}>Повторити завантаження брендів</button></div>
+        : taxonomy ? <BrandNavigator brands={taxonomy.brands} active={brand} onBrand={chooseBrand} />
+        : <p className="store-found" role="status">Завантажуємо бренди…</p>}
       <div className="store-catalog-tools">
         <div className="catalog-availability" role="group" aria-label="Наявність товарів"><span className="catalog-tool-label">Наявність</span><div className="availability-options">
           <button aria-pressed={!inStock} onClick={() => update({ inStock: false })}>Усі</button>
@@ -158,7 +155,7 @@ export function Catalog({ config, cart, onCartChange, onOpenProduct, wishlists, 
       {error && <div className="banner warn" role="alert">{error}</div>}
       {taxonomyError && !taxonomy ? null : products === null ? <div className="product-grid" aria-label="Завантаження товарів" aria-busy="true">{[0, 1, 2, 3].map((id) => <div key={id} className="skeleton store-card-loading" />)}</div>
         : loadFailed ? <div className="empty"><h2>Не вдалося завантажити каталог</h2><p>Перевірте зʼєднання та повторіть спробу.</p><button className="secondary" onClick={() => setRetry((value) => value + 1)}>Повторити</button></div>
-        : view.length === 0 ? <div className="empty"><StoreIcon name="search" /><h2>Нічого не знайшли</h2><p>{inStock && products.length > 0 ? 'Усе з цього переліку зараз закінчилось.' : refinementActive ? 'У вибраному розділі немає товарів за цими умовами. Змініть пошук або фільтри.' : narrowed ? 'У цьому розділі поки немає товарів. Перегляньте іншу категорію.' : 'Асортимент скоро зʼявиться.'}</p><div className="actions">{refinementActive && <button className="secondary" onClick={clearRefinements}>Показати всі товари розділу</button>}{filtered && <button className="secondary" onClick={reset}>Скинути пошук і фільтри</button>}</div></div>
+        : view.length === 0 ? <div className="empty"><StoreIcon name="search" /><h2>Нічого не знайшли</h2><p>{inStock && products.length > 0 ? 'Усе з цього переліку зараз закінчилось.' : refinementActive ? 'У вибраному розділі немає товарів за цими умовами. Змініть пошук або фільтри.' : narrowed ? 'У цього бренду поки немає товарів. Перегляньте інший бренд.' : 'Асортимент скоро зʼявиться.'}</p><div className="actions">{refinementActive && <button className="secondary" onClick={clearRefinements}>Показати всі товари розділу</button>}{filtered && <button className="secondary" onClick={reset}>Скинути пошук і фільтри</button>}</div></div>
         : <><div className="catalog-results-heading"><p className="store-found" aria-live="polite">{view.length} {plural(view.length)}{narrowed ? ' за вашим відбором' : ' у каталозі'}</p>{(sort === 'fresh' || sort === 'sale') && <p className="catalog-order-note">{sort === 'fresh' ? 'Новинки першими, далі весь асортимент' : 'Акції першими, далі весь асортимент'}</p>}</div><div className="product-grid">{view.map((product) => <ProductCard key={product.id} product={product} qty={qtyOf(product.id)} currency={config.currency} onChange={change} onOpen={onOpenProduct} saved={savedIds.has(product.id)} onSave={onSave} />)}</div></>}
       {sorting && <SortSheet value={sort} onSelect={(value) => update({ sort: value })} onClose={closeSort} />}
     </section>

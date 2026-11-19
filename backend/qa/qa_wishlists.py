@@ -59,12 +59,12 @@ async def scenario():
     await init_db()
 
     async with open_repo() as repo:
-        category = await repo.create_category({"name": "Поди"})
+        category = await repo.create_brand({"name": "Поди"})
         first = await repo.create_product({
-            "name": "Товар А", "category_id": category.id,
+            "name": "Товар А", "brand_id": category.id,
             "price": Decimal(100), "stock": 5, "is_active": True})
         second = await repo.create_product({
-            "name": "Товар Б", "category_id": category.id,
+            "name": "Товар Б", "brand_id": category.id,
             "price": Decimal(200), "stock": 5, "is_active": True})
 
     transport = httpx.ASGITransport(app=app)

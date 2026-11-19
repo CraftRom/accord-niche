@@ -196,6 +196,26 @@ class Subcategory(Base):
     products: Mapped[list[Product]] = relationship(back_populates="subcategory", passive_deletes=True)
 
 
+class Brand(Base):
+    """Бренд парфумерії — єдиний спосіб групувати товари (замість категорій).
+
+    Товар посилається на бренд через brand_id; поле Product.brand лишається
+    копією назви, яку читають сайт, пошук і SEO, і оновлюється разом із
+    перейменуванням бренду. Прихований бренд ховає свої товари з вітрини, не
+    переписуючи їхніх власних прапорців is_active.
+    """
+    __tablename__ = "brands"
+    __table_args__ = (Index("ux_brands_name_key", "name_key", unique=True),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    name_key: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Product(Base):
     __tablename__ = "products"
     __table_args__ = (
@@ -210,6 +230,7 @@ class Product(Base):
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
     subcategory_id: Mapped[int | None] = mapped_column(ForeignKey("subcategories.id", ondelete="SET NULL"))
     external_sku: Mapped[str | None] = mapped_column(String(255), index=True)
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("brands.id", ondelete="RESTRICT"), index=True)
     brand: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
     gender: Mapped[str] = mapped_column(String(12), nullable=False, default="unisex", server_default="unisex")
     volume_ml: Mapped[int | None] = mapped_column(Integer)
@@ -364,6 +385,8 @@ class PromoCode(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     category_ids: Mapped[list] = mapped_column(JsonType, nullable=False, default=list, server_default=text("'[]'"))
+    # Промокод лише на товари цих брендів; порожньо — на весь кошик.
+    brand_ids: Mapped[list] = mapped_column(JsonType, nullable=False, default=list, server_default=text("'[]'"))
 
 
 class PromoUsage(Base):

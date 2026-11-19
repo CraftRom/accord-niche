@@ -50,7 +50,7 @@ try {
       else if (path.endsWith('/chat')) {
         data = route.request().method() === 'POST' ? { id: 2, text: route.request().postDataJSON().text, direction: 'in', created_at: '2026-10-08T12:00:00Z' } : [{ id: 1, text: 'Вітаємо', direction: 'out', created_at: '2026-10-08T12:00:00Z' }]
       } else if (path.endsWith('/profile')) data = { first_name: 'Покупець', bonus_balance: '0', orders_count: 0 }
-      else if (path.endsWith('/categories')) data = Array.from({ length: 18 }, (_, i) => ({ id: i + 1, name: i === 0 ? 'Аксесуари' : `Колекція ${i + 1}` }))
+      else if (path.endsWith('/brands')) data = Array.from({ length: 18 }, (_, i) => ({ id: i + 1, name: i === 0 ? 'Creed' : `Будинок ${i + 1}`, products_count: 1 }))
       else if (/\/products\/\d+$/.test(path)) data = goods.find(item => item.id === Number(path.split('/').pop()))
       else if (path.endsWith('/products')) {
         if (failProducts) { await route.fulfill({ status: 503, json: { detail: 'Каталог тимчасово недоступний' } }); return }
@@ -69,10 +69,10 @@ try {
     check(await p.locator('.store-card-image').first().evaluate(e => getComputedStyle(e).objectFit === 'contain'), `${label}: photos are not cropped`)
     check(await p.locator('.store-card-discount').first().textContent() === '−20%', `${label}: exact discount percent`)
     await p.screenshot({ path: join(output, `catalog-${variant.width}-${variant.scheme}.png`) })
-    const rail = p.getByRole('group', { name: 'Категорії', exact: true })
+    const rail = p.getByRole('group', { name: 'Бренди', exact: true })
     await rail.hover(); await p.mouse.wheel(0, 360)
     await p.waitForFunction(() => document.querySelector('.store-categories').scrollLeft > 0)
-    check(await rail.evaluate(e => e.scrollLeft > 0), `${label}: category wheel scrolling`)
+    check(await rail.evaluate(e => e.scrollLeft > 0), `${label}: brand rail wheel scrolling`)
     const sort = p.getByRole('button', { name: /^Сортування:/ })
     check(await sort.getAttribute('aria-label') === 'Сортування: Спочатку новинки' && await p.locator('.store-card').count() === 12, `${label}: initial catalog prioritizes real new products without hiding others`)
     await sort.click()
@@ -179,7 +179,7 @@ try {
     await p.getByRole('navigation').getByRole('button', { name: 'Каталог', exact: true }).click()
     await p.locator('.store-card').first().waitFor()
     failProducts = true
-    await p.getByRole('group', { name: 'Категорії', exact: true }).getByRole('button', { name: 'Аксесуари', exact: true }).click()
+    await p.getByRole('group', { name: 'Бренди', exact: true }).getByRole('button', { name: 'Creed', exact: true }).click()
     await p.getByRole('heading', { name: 'Не вдалося завантажити каталог' }).waitFor()
     check(await p.locator('.skeleton').count() === 0, `${label}: failed request ends loading`)
     failProducts = false
@@ -188,7 +188,7 @@ try {
     check(await p.getByRole('heading', { name: 'Не вдалося завантажити каталог' }).count() === 0, `${label}: retry recovers`)
     await p.locator('.store-card-title').first().click()
     await p.getByRole('button', { name: 'Назад до каталогу' }).click()
-    check(await p.getByRole('group', { name: 'Категорії', exact: true }).getByRole('button', { name: 'Аксесуари', exact: true }).getAttribute('aria-pressed') === 'true', `${label}: product back keeps catalog category`)
+    check(await p.getByRole('group', { name: 'Бренди', exact: true }).getByRole('button', { name: 'Creed', exact: true }).getAttribute('aria-pressed') === 'true', `${label}: product back keeps the chosen brand`)
     await p.locator('.store-card-title').first().click()
     failCart = true
     await p.getByRole('button', { name: 'Менше', exact: true }).click()

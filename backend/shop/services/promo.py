@@ -49,15 +49,13 @@ async def apply(session: AsyncSession, code: str, user_id: int, subtotal: Decima
         return PromoResult(False, error="Ви вже використали цей промокод")
 
     base = subtotal
-    if promo.category_ids:
-        from shop.models import Subcategory
+    if promo.brand_ids:
         if lines is None:
             from shop.services import cart
             lines = await cart.get_items(session, user_id)
-        parents = {s.id: s.category_id for s in await session.scalars(select(Subcategory))}
-        base = eligible_subtotal(lines, promo.category_ids, parents)
+        base = eligible_subtotal(lines, promo.brand_ids)
         if base <= 0:
-            return PromoResult(False, error="У кошику немає товарів з категорій цього промокоду")
+            return PromoResult(False, error="У кошику немає товарів брендів цього промокоду")
     return PromoResult(True, discount=promo_discount(promo, base), promo=promo)
 
 

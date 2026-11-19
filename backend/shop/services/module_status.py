@@ -12,7 +12,6 @@
 """
 from __future__ import annotations
 
-import os
 
 from shop.config import settings
 from shop.services.shop_settings import get_shop_settings

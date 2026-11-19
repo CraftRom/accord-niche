@@ -16,7 +16,7 @@ os.environ.setdefault("JWT_SECRET", "test" * 8)
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from shop.models import (  # noqa: E402
-    Base, Category, Order, OrderStatus, Product, PromoCode, PromoType,
+    Base, Brand, Order, OrderStatus, Product, PromoCode, PromoType,
 )
 from shop.services import cart as cart_service  # noqa: E402
 from shop.services import orders as order_service  # noqa: E402
@@ -45,11 +45,11 @@ async def main() -> None:
 
     async with Session() as s:
         # --- підготовка каталогу
-        category = Category(name="Одноразові поди")
+        category = Brand(name="Одноразові поди", name_key="одноразові поди")
         s.add(category)
         await s.flush()
-        pod = Product(category_id=category.id, name="Elf Bar BC5000", sku="QA-POD", price=Decimal(400), stock=10)
-        liquid = Product(category_id=category.id, name="Рідина 30 мл", sku="QA-LIQUID", price=Decimal(250), stock=4)
+        pod = Product(brand_id=category.id, brand=category.name, name="Elf Bar BC5000", sku="QA-POD", price=Decimal(400), stock=10)
+        liquid = Product(brand_id=category.id, brand=category.name, name="Рідина 30 мл", sku="QA-LIQUID", price=Decimal(250), stock=4)
         s.add_all([pod, liquid])
         s.add(
             PromoCode(

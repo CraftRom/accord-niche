@@ -40,22 +40,16 @@ const groupId = (value) => (typeof value === 'number' || typeof value === 'strin
 
 export function normalizeCatalogState(state = {}) {
   return {
-    active: groupId(state.active), subcategory: groupId(state.subcategory),
-    ungrouped: state.ungrouped === true, inStock: state.inStock === true,
+    brand: groupId(state.brand), inStock: state.inStock === true,
     search: typeof state.search === 'string' ? state.search : '',
     sort: SORT_OPTIONS.some((option) => option.value === state.sort) ? state.sort : DEFAULT_SORT,
   }
 }
 
-// A deleted/moved group or string ID from restored navigation cannot lock the catalog.
-export function resolveCatalogState(state, categories, subcategories) {
+// A deleted or hidden brand (or a string ID) from restored navigation cannot lock the catalog.
+export function resolveCatalogState(state, brands) {
   const next = normalizeCatalogState(state)
-  if (next.ungrouped) return { ...next, active: null, subcategory: null }
-  if (!categories.some((category) => Number(category.id) === next.active)) next.active = null
-  const sub = subcategories.find((item) => Number(item.id) === next.subcategory)
-  const parent = groupId(sub?.category_id)
-  if (!sub || (parent !== null && !categories.some((category) => Number(category.id) === parent))) next.subcategory = null
-  else next.active = parent
+  if (!brands.some((brand) => Number(brand.id) === next.brand)) next.brand = null
   return next
 }
 

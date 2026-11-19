@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 c = TestClient(app); r = Report("PERFORMANCE")
 
 A = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"login":"admin","password":"secret"}).json()["access_token"]}
-cat = c.post("/api/catalog/categories", json={"name":"К","sort_order":0,"is_active":True}, headers=A).json()
+cat = c.post("/api/catalog/brands", json={"name":"К","sort_order":0,"is_active":True}, headers=A).json()
 print("наповнення: 200 товарів, 60 клієнтів, 200 замовлень…")
 for i in range(200):
-    c.post("/api/catalog/products", json={"category_id":cat["id"],"name":f"Товар {i}",
+    c.post("/api/catalog/products", json={"brand_id":cat["id"],"name":f"Товар {i}",
         "description":"опис "*20,"price":str(100+i),"stock":50,"is_active":True}, headers=A)
 heads=[]
 for i in range(60):

@@ -179,7 +179,7 @@ run qa-isolation qa/qa_isolation.py
 run cart-unstick qa/qa_cart_unstick.py
 run checkout-integrity qa/qa_checkout_integrity.py
 run promo-codes qa/qa_promo_codes.py
-run promo-categories qa/qa_promo_categories.py
+run promo-brands qa/qa_promo_brands.py
 run promo-category-migration qa/qa_promo_category_migration.py
 run working-data qa/qa_working_data.py
 run after-sales-chat qa/qa_after_sales_chat.py

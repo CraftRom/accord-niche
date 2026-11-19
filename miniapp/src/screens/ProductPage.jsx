@@ -78,8 +78,7 @@ export function ProductPage({ config, product, cart, onCartChange, onBack, onCar
         </div>
         <div className="detail-info">
           <div className="product-meta">
-            {product.category_name && <span className="product-pill">{product.category_name}</span>}
-            {product.subcategory_name && <span className="product-pill">{product.subcategory_name}</span>}
+            {product.brand && <span className="product-pill">{product.brand}</span>}
             {product.is_new && <span className="product-pill">Новинка</span>}
             {discounted && <span className="product-pill">Акція</span>}
             <span className={`product-pill stock-pill ${stock.tone}`}>{stock.text}</span>

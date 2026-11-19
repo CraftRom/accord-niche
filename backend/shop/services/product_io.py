@@ -10,12 +10,13 @@ def normalize_sku(value) -> str | None:
     sku=str(value).strip().upper()
     return sku if SKU_RE.fullmatch(sku) else None
 
-def category_code(name: str) -> str:
+def sku_group_code(name: str) -> str:
+    """Перші латинські літери бренду для системного артикула: ELF-CREE-…."""
     chars=''.join(c for c in str(name).upper() if c in string.ascii_uppercase+string.digits)
     return (chars[:4] or 'GEN').ljust(3,'X')
 
-async def generate_sku(repo, category_name='GEN') -> str:
-    prefix=f'ELF-{category_code(category_name)}-'
+async def generate_sku(repo, brand_name='GEN') -> str:
+    prefix=f'ELF-{sku_group_code(brand_name)}-'
     alphabet=string.ascii_uppercase+string.digits
     for _ in range(50):
         sku=prefix+''.join(secrets.choice(alphabet) for _ in range(8))
@@ -113,10 +114,12 @@ def parse_salesdrive_xlsx(raw: bytes):
                 # One bad cell must not abort the whole file or be guessed.
                 out.append({'row':row_number,'name':name,'error':str(exc)})
                 continue
-            own='Субкатегорія' in idx
-            out.append({'row':row_number,'name':name,'sku':get('SKU'),'external_sku':get('Зовнішній артикул'),'category':str(get('Категорія') or '').strip(),
-                        'subcategory':str(get('Субкатегорія') or '').strip(), 'hierarchy':own,
-                        'subcategory_parent':str(get('Батьківська категорія субкатегорії') or '').strip(),
+            # Own export (has «Бренд»; older ones had «Субкатегорія») vs a
+            # SalesDrive file. Categories are no longer used: the brand is.
+            own='Бренд' in idx or 'Субкатегорія' in idx
+            out.append({'row':row_number,'name':name,'sku':get('SKU'),'external_sku':get('Зовнішній артикул'),
+                        'brand':' '.join(str(get('Бренд') or '').split())[:100] if 'Бренд' in idx else None,
+                        'hierarchy':own,
                         'description':get('Опис'),'photo_url':get('Зображення'),
                         'current_price':current,'old_price':old,
                         'regular_price':old if own and old is not None else current,
@@ -128,12 +131,11 @@ def parse_salesdrive_xlsx(raw: bytes):
         wb.close()
 
 
-def export_xlsx(products, subcategories=()):
+def export_xlsx(products):
     wb=Workbook(); ws=wb.active; ws.title='Products'
-    ws.append(['SKU','Товар','Категорія','Субкатегорія','Батьківська категорія субкатегорії','Ціна','Стара ціна','Залишок','Опис','Зображення','Активний','Новинка','Акція','Зовнішній артикул'])
-    parents={s.id:s.category_name for s in subcategories}
+    ws.append(['SKU','Товар','Бренд','Ціна','Стара ціна','Залишок','Опис','Зображення','Активний','Новинка','Акція','Зовнішній артикул'])
     for p in products:
-        values=[p.sku,p.name,p.category_name,p.subcategory_name,parents.get(p.subcategory_id),
+        values=[p.sku,p.name,p.brand or None,
                 float(p.price),float(p.old_price) if p.old_price is not None else None,p.stock,
                 p.description,p.photo_url,'Так' if p.is_active else 'Ні',
                 'Так' if p.is_new else 'Ні','Так' if p.is_sale else 'Ні',p.external_sku]
