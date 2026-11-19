@@ -79,7 +79,7 @@
      темною палітрою на світлому тлі клієнта. */
   --tg-bg: #ffffff;
   --tg-text: #111111;
-  --tg-hint: #69645D;
+  --tg-hint: #615C55;  /* ≥4.5:1 also on light fills (#e4e0db) */
   --tg-secondary-bg: #F5F1EB;
 
   --page: var(--tg-secondary-bg);
@@ -92,12 +92,12 @@
   /* Темніші фірмові відтінки для читабельності на світлих поверхнях. */
   --accent: #111111;
   --mint: #426F56;
-  --amber: #916E34;
+  --amber: #80602B;  /* ≥4.5:1 on --tg-secondary-bg */
   --accent-soft: rgba(17, 17, 17, 0.075);
   --accent-press: rgba(17, 17, 17, 0.14);
   --on-accent: #ffffff;
-  --warn: #cc3355;
-  --warn-soft: rgba(204, 51, 85, 0.09);
+  --warn: #b02a49;  /* ≥4.5:1 on --warn-soft */
+  --warn-soft: rgba(176, 42, 73, 0.09);
 
   --line: rgba(0, 0, 0, 0.08);
   --line-strong: rgba(0, 0, 0, 0.14);

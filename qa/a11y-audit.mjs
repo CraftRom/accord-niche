@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 // Mechanical accessibility and layout checks shared by the dashboard and the
 // Mini App matrices (UI-014 / UI-026). Each check is something that is never
 // acceptable, so a failure is a real defect, not a style opinion.
@@ -86,4 +88,21 @@ export async function auditText(page, label, check, { minFont = 12 } = {}) {
   }, minFont)
   check(low.length === 0, `${label}: text meets WCAG AA contrast ${low.slice(0, 8).join(' | ')}`)
   check(tiny.length === 0, `${label}: functional text is at least ${minFont}px ${tiny.slice(0, 8).join(' | ')}`)
+}
+
+// W-32: axe-core on top of the checks above. Only violations axe rates
+// serious or critical fail the suite; each one is reported with the rule and
+// the first offending element so the log alone is enough to find it.
+const AXE_SOURCE = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8')
+const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
+
+export async function auditAxe(page, label, check, { disable = [] } = {}) {
+  if (!(await page.evaluate(() => Boolean(window.axe)))) await page.addScriptTag({ content: AXE_SOURCE })
+  const violations = await page.evaluate(async ({ tags, disable }) => {
+    const rules = Object.fromEntries(disable.map((id) => [id, { enabled: false }]))
+    const result = await window.axe.run(document, { runOnly: { type: 'tag', values: tags }, rules, resultTypes: ['violations'] })
+    return result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => `${v.id} (${v.impact}, ${v.nodes.length}): ${v.nodes[0]?.target?.join(' ')} — ${v.nodes[0]?.failureSummary?.split('\n')[1]?.trim() || v.help}`)
+  }, { tags: AXE_TAGS, disable })
+  check(violations.length === 0, `${label}: axe-core finds no serious or critical WCAG violations ${violations.join(' | ')}`)
 }
