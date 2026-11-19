@@ -63,6 +63,13 @@ try {
     const facts = page.locator('.buyer-facts article')
     check(await facts.count() === 4, 'W-17: four facts before ordering')
     check(!/(сертифік|гаранті|100%|оригінальн[аі] гарант)/i.test(await page.locator('.buyer-facts').textContent()), 'W-17: no unproven guarantees or certificates')
+    // Stage 6 polish: one icon scale (W-35), one badge height, uncropped bottles (W-38), one voice (W-37).
+    const icons = await page.locator('.header-actions svg').evaluateAll((nodes) => nodes.map((n) => `${n.getAttribute('width')}x${n.getAttribute('height')}`))
+    check(icons.length >= 3 && icons.every((size) => size === '20x20'), `W-35: header icons share one 20 px size (${icons.join(', ')})`)
+    const badges = await page.locator('.product-badges > span').evaluateAll((nodes) => [...new Set(nodes.map((n) => Math.round(n.getBoundingClientRect().height)))])
+    check(badges.length === 1 && badges[0] >= 24, `W-35: badges share one height (${badges.join(', ')} px)`)
+    check(await page.evaluate(() => getComputedStyle(document.createElement('img')) && [...document.querySelectorAll('.photo-tile > img')].every((img) => getComputedStyle(img).objectFit === 'contain')), 'W-38: product photos are never cropped')
+    check(!/(?<![\p{L}])(твій|твоє|твоїм|Знайди|Обери|Увійди|Спробуй)(?![\p{L}])/u.test(await page.locator('body').textContent()), 'W-37: the site speaks to the buyer formally, like the Mini App and the bot')
     const footer = page.locator('.footer')
     check(await footer.locator('h2').allTextContents().then((t) => t.join('|')) === 'Покупцям|Про магазин|Підтримка|Документи', 'W-26: footer has four groups')
     check(await footer.getByRole('link', { name: 'Умови покупки' }).count() === 1 && await footer.getByRole('link', { name: 'Політика конфіденційності' }).count() === 0, 'W-26: only configured documents are linked')

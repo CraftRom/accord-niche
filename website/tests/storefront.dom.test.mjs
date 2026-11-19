@@ -62,7 +62,7 @@ test('an empty API catalog creates no fake cards, brands or bestseller headings'
  try {
   await waitFor(()=>app.document.querySelector('.store-state'))
   assert.equal(app.document.querySelectorAll('.product-card').length,0)
-  assert.doesNotMatch(app.document.body.textContent,/Хіти розливу|\[ЦІНА\]|Aventus/)
+  assert.doesNotMatch(app.document.body.textContent,/Хіти розпиву|Хіти розливу|\[ЦІНА\]|Aventus/)
  } finally {app.close()}
 })
 test('API failure is explicit and retry loads actual products',async()=>{
