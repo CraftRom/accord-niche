@@ -33,7 +33,7 @@ async def list_orders(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     paginated: bool = False,
-    channel: Literal['','website','miniapp','bot','unknown'] = '',
+    channel: Literal['','website','app','miniapp','bot','unknown'] = '',
     queue: Literal['','new','open','without_tracking'] = '',
     payment_method: Literal['','cod','card','unknown'] = '',
     delivery_method: Literal['','warehouse','courier','unknown'] = '',

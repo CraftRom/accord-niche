@@ -128,14 +128,14 @@ async def record_session(session, user_id, session_id, attribution):
 WEBSITE_VISIT_RETENTION_DAYS = 400
 
 
-async def record_website_visit(session, session_id, attribution) -> bool:
-    """Idempotent anonymous main-website visit. True only for a new row."""
+async def record_website_visit(session, session_id, attribution, channel=m.WEBSITE_CHANNEL) -> bool:
+    """Idempotent anonymous visit of the website or the Android app. True only for a new row."""
     exists = await session.scalar(select(m.AnalyticsSession.id).where(
-        m.AnalyticsSession.channel == m.WEBSITE_CHANNEL, m.AnalyticsSession.session_id == session_id))
+        m.AnalyticsSession.channel == channel, m.AnalyticsSession.session_id == session_id))
     if exists:
         return False
     try:
-        session.add(m.AnalyticsSession(user_id=None, channel=m.WEBSITE_CHANNEL, session_id=session_id,
+        session.add(m.AnalyticsSession(user_id=None, channel=channel, session_id=session_id,
                                        attribution=clean_attribution(attribution), started_at=datetime.now(UTC)))
         await session.commit()
         return True
@@ -144,12 +144,12 @@ async def record_website_visit(session, session_id, attribution) -> bool:
         return False
 
 
-async def website_checkout_session(session, session_id) -> str | None:
-    """Link a website order to its visit only if that visit was really recorded."""
+async def website_checkout_session(session, session_id, channel=m.WEBSITE_CHANNEL) -> str | None:
+    """Link a website or app order to its visit only if that visit was really recorded."""
     if not session_id:
         return None
     found = await session.scalar(select(m.AnalyticsSession.session_id).where(
-        m.AnalyticsSession.channel == m.WEBSITE_CHANNEL, m.AnalyticsSession.session_id == session_id))
+        m.AnalyticsSession.channel == channel, m.AnalyticsSession.session_id == session_id))
     return found
 
 
@@ -215,15 +215,15 @@ async def aggregate(session, w, granularity="day"):
     # random session id on a website order (A07).
     owner = or_(
         m.Order.user_id == m.AnalyticsSession.user_id,
-        and_(m.AnalyticsSession.user_id.is_(None), m.AnalyticsSession.channel == m.WEBSITE_CHANNEL,
-             m.Order.attribution["channel"].as_string() == m.WEBSITE_CHANNEL))
+        and_(m.AnalyticsSession.user_id.is_(None), m.AnalyticsSession.channel.in_([m.WEBSITE_CHANNEL, m.APP_CHANNEL]),
+             m.Order.attribution["channel"].as_string() == m.AnalyticsSession.channel))
     converted = set(await session.scalars(select(m.AnalyticsSession.id).distinct().join(
         m.Order, and_(owner, m.Order.attribution["session_id"].as_string() == m.AnalyticsSession.session_id)).where(
         m.AnalyticsSession.started_at >= since, m.AnalyticsSession.started_at < until,
         m.Order.created_at >= m.AnalyticsSession.started_at, m.Order.created_at < until)))
     first_website_visit = await session.scalar(select(func.min(m.AnalyticsSession.started_at)).where(
         m.AnalyticsSession.channel == m.WEBSITE_CHANNEL))
-    channels = {key: slot() for key in (m.WEBSITE_CHANNEL, m.MINIAPP_CHANNEL)}
+    channels = {key: slot() for key in (m.WEBSITE_CHANNEL, m.APP_CHANNEL, m.MINIAPP_CHANNEL)}
     local_start, local_end = since.astimezone(tz), (until - timedelta(microseconds=1)).astimezone(tz)
     spend_rows = (await session.execute(select(m.MarketingSpend).where(
         m.MarketingSpend.day >= local_start.date(), m.MarketingSpend.day <= local_end.date()))).scalars().all()
