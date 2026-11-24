@@ -38,6 +38,7 @@ class DeployHealth(unittest.TestCase):
             (root/'backend/shop').mkdir(parents=True)
             (root/'bin').mkdir()
             shutil.copy(ROOT/'deploy/deploy.sh',root/'deploy/deploy.sh')
+            shutil.copy(ROOT/'deploy/legacy-guard.sh',root/'deploy/legacy-guard.sh')
             shutil.copy(ROOT/'deploy/domain_config.py',root/'deploy/domain_config.py')
             (root/'deploy/check-public-routes.py').write_text("import os,sys\nsys.exit(1 if os.environ.get('QA_FAIL_PUBLIC') == '1' else 0)\n")
             shutil.copy(ROOT/'backend/shop/production_security.py',root/'backend/shop/production_security.py')

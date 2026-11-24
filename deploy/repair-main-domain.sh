@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Reload only main-domain nginx configuration. No migrations or application rebuilds.
 set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/legacy-guard.sh"  # ACCORD uses deploy/domains.sh
 cd "$(dirname "$0")"
 COMPOSE=(docker compose --env-file ../.env -f docker-compose.prod.yml)
 backup=$(mktemp)

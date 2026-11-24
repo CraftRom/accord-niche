@@ -50,7 +50,9 @@ def validate_domain_environment(values: dict[str, str]) -> None:
     except (ValueError, TypeError):
         errors.append('DATA_ENCRYPTION_KEY')
     project = values.get('COMPOSE_PROJECT_NAME', 'accord-niche-test')
-    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', project):
+    # ELFAR runs in the same Docker as Compose project `deploy`; reusing its
+    # name would let ACCORD recreate or remove ELFAR's containers.
+    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', project) or project in ('deploy', 'elfar'):
         errors.append('COMPOSE_PROJECT_NAME')
     ports = []
     for key, default in [('ACCORD_SITE_PORT', '18081'), ('ACCORD_DASHBOARD_PORT', '18082'),

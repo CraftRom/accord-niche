@@ -52,7 +52,7 @@ class Migration(unittest.TestCase):
     def certificate(self, staging=False):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp);(p/'deploy/nginx').mkdir(parents=True);(p/'bin').mkdir()
-            for script in ['domain_config.py','render-nginx.sh','certbot-init.sh']:
+            for script in ['domain_config.py','render-nginx.sh','certbot-init.sh','legacy-guard.sh']:
                 shutil.copy(ROOT/'deploy'/script,p/'deploy'/script)
             shutil.copy(ROOT/'deploy/nginx/app.conf.template',p/'deploy/nginx/app.conf.template')
             (p/'.env').write_text('PUBLIC_URL=https://www.elfar.pp.ua\n')

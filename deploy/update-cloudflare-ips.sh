@@ -8,6 +8,7 @@
 # стерти робочий список: без нього nginx знову бачитиме замість покупців
 # адреси Cloudflare.
 set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/legacy-guard.sh"  # ACCORD uses deploy/domains.sh
 cd "$(dirname "$0")"
 
 TARGET="nginx/cloudflare-realip.conf"

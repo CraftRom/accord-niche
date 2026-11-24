@@ -12,6 +12,11 @@
 # Збірка бекенду. Один і той самий образ для migrate, api, bot і scheduler —
 # різниця лише в команді. UID/GID приходять із .env і мають збігатися
 # з користувачем shop на хості, інакше бекапи в ./backups стануть чужими.
+# Стара спільна інфраструктура. На сервері поруч з ELFAR ACCORD працює лише
+# через deploy/domains.sh; власне ім'я не дає цьому файлу зачепити project
+# ELFAR `deploy` навіть при прямому запуску docker compose.
+name: accord-niche-legacy
+
 x-backend-build: &backend-build
   context: ../backend
   args:

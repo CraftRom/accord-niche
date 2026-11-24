@@ -8,6 +8,7 @@
 # Викликається з deploy.sh і bootstrap.sh перед стартом. Ідемпотентний:
 # запускати можна скільки завгодно разів.
 set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/legacy-guard.sh"  # ACCORD uses deploy/domains.sh
 
 cd "$(dirname "$0")"
 COMPOSE="docker compose --env-file ../.env -f docker-compose.prod.yml"

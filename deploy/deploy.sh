@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Повний production deploy. Запускати з deploy/ або з будь-якої теки.
 set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/legacy-guard.sh"  # ACCORD uses deploy/domains.sh
 
 cd "$(dirname "$0")"
 ENV_FILE="../.env"

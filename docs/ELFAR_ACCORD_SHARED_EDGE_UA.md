@@ -117,7 +117,15 @@ docker ps --format 'table {{.Names}}\t{{.Ports}}'
 
 Подовження сертифіката використовує чинний renew-loop promo-controller, який читає спільний `/etc/letsencrypt`. ACME location додана також у HTTPS-vhost ACCORD, щоб перевірка працювала при перенаправленні HTTP→HTTPS на Cloudflare. Після інсталяції варто окремо перевірити renew dry-run у погодженому режимі обслуговування.
 
-Подальші оновлення ACCORD виконуйте з `--docker-edge`. Зміни `deploy/docker-compose.prod.yml` та новий `deploy/nginx/accord-main.conf` у репозиторії ELFAR потрібно зберегти як власні інфраструктурні зміни, щоб наступне оновлення вихідних файлів їх не затерло.
+Подальші оновлення ACCORD виконуйте з `--docker-edge`.
+
+## Сумісність з ELFAR 1.86.2 і новішими
+
+- **Compose ELFAR.** Репозиторій ELFAR (vapeshop) уже містить мережу `accord-shared-edge` і mount `nginx/accord-main.conf` у тому вигляді, який вписує цей сценарій. Зберігати їх вручну більше не треба, а `patch_compose` не змінює файл ELFAR. Сам `accord-main.conf` ELFAR не зберігає в git. Деплой ELFAR створює заглушку з позначкою цього сценарію, яку сценарій потім замінює.
+- **Перестворення nginx.** Рішення ухвалюється за живим станом `deploy-nginx-1`: чи є в нього mount `20-accord.conf` і мережа `accord-shared-edge`. Тому nginx, піднятий до оновлення ELFAR, буде перестворено один раз. Якщо все вже підключено, виконується лише `nginx -t` і reload.
+- **Один замок на обидва проєкти.** Цей сценарій і `deploy/deploy.sh` ELFAR беруть `/run/lock/elfar-accord-edge.lock`. Якщо деплой ELFAR уже йде, сценарій чекає до 15 хвилин і лише потім змінює nginx.
+- **Імена.** `COMPOSE_PROJECT_NAME=deploy` або `elfar` у `.env.domains` відхиляється, бо це project ELFAR. Старий `deploy/docker-compose.prod.yml` цього репозиторію має власне ім'я `accord-niche-legacy`. Legacy-сценарії (`deploy/deploy.sh`, `bootstrap.sh`, `certbot-init.sh`, `render-nginx.sh`, `repair-main-domain.sh`, `update-cloudflare-ips.sh`) завершуються з кодом 3, якщо поруч є `.env.domains` або `/opt/elfar/deploy`.
+- **З боку ELFAR** деплой перевіряє, що в спільній мережі немає контейнерів з іменами його сервісів (`api`, `dashboard`, `miniapp`…). Також він запускає `nginx -t` з конфігом ACCORD до перестворення nginx і після оновлення показує, чи відповідають домени ACCORD.
 
 ## Межі перевірки збірки
 

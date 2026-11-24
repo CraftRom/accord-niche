@@ -215,7 +215,8 @@ def test_failed_elfar_http_check_rolls_back_existing_edge_with_reload_only(tmp_p
     (project / '.env.domains').write_text('COMPOSE_PROJECT_NAME=accord-niche\n')
     monkeypatch.setattr(edge, 'ROOT', project)
     monkeypatch.setattr(edge.os, 'geteuid', lambda: 0)
-    monkeypatch.setattr(edge, 'inspect_container', lambda *args: {})
+    # The running proxy already carries the edge (mount + network).
+    monkeypatch.setattr(edge, 'inspect_container', lambda *args: {'mounts': [{'Destination': edge.MOUNT_TARGET, 'Source': str(edge_path)}], 'networks': {edge.NETWORK: {}}})
     monkeypatch.setattr(edge, 'validate_layout', lambda *args: None)
     monkeypatch.setattr(edge, 'peer_certificate', lambda *args, **kwargs: b'elfar-original')
     monkeypatch.setattr(edge.subprocess, 'run', lambda *args, **kw: subprocess.CompletedProcess(args[0],0))
@@ -232,3 +233,103 @@ def test_failed_elfar_http_check_rolls_back_existing_edge_with_reload_only(tmp_p
     assert edge_path.read_text() == old_edge
     assert not any('--force-recreate' in args for args in calls)
     assert sum(args[-2:] == ['-s','reload'] for args in calls) == 2
+
+
+# ---------------------------------------------- ELFAR >= 1.86.2 (vapeshop)
+
+ELFAR_1862 = ROOT / 'backend/tests_accord/fixtures/elfar-1.86.2-docker-compose.prod.yml'
+
+
+def test_elfar_release_with_accord_edge_needs_no_patch():
+    # ELFAR keeps the network and the mount in its own repository now; the
+    # installer must leave the file byte for byte untouched.
+    text = ELFAR_1862.read_text()
+    assert edge.patch_compose(text) == text
+    compose = yaml.safe_load(text)
+    assert compose['name'] == 'deploy'
+    assert edge.MOUNT in compose['services']['nginx']['volumes']
+    assert compose['networks']['accord_edge'] == {'external': True, 'name': edge.NETWORK}
+    on_edge = [name for name, service in compose['services'].items() if 'accord_edge' in (service.get('networks') or [])]
+    assert on_edge == ['nginx']
+
+
+def test_live_state_decides_whether_the_proxy_is_recreated(tmp_path):
+    conf = tmp_path / 'accord-main.conf'
+    ready = {'mounts': [{'Destination': edge.MOUNT_TARGET, 'Source': str(conf)}], 'networks': {edge.NETWORK: {}, 'deploy_internal': {}}}
+    assert edge.live_edge_ready(ready, conf)
+    assert not edge.live_edge_ready({**ready, 'networks': {'deploy_internal': {}}}, conf)
+    assert not edge.live_edge_ready({**ready, 'mounts': []}, conf)
+    assert not edge.live_edge_ready({}, conf)
+
+
+def run_installer(tmp_path, monkeypatch, nginx_state, existing_edge=True):
+    project = tmp_path / 'accord'
+    elfar = tmp_path / 'elfar/deploy'
+    (project / 'deploy/nginx').mkdir(parents=True)
+    (elfar / 'nginx').mkdir(parents=True)
+    (project / 'deploy/nginx/accord-elfar-docker-edge.conf.template').write_text(
+        (ROOT / 'deploy/nginx/accord-elfar-docker-edge.conf.template').read_text())
+    compose = elfar / 'docker-compose.prod.yml'
+    compose.write_text(ELFAR_1862.read_text())
+    edge_path = elfar / 'nginx/accord-main.conf'
+    if existing_edge:  # ELFAR's shared-edge.sh placeholder
+        edge_path.write_text(edge.MARKER + '# ACCORD ще не підключено\n')
+    (project / '.env.domains').write_text('COMPOSE_PROJECT_NAME=accord-niche\n')
+    monkeypatch.setattr(edge, 'ROOT', project)
+    monkeypatch.setattr(edge.os, 'geteuid', lambda: 0)
+    state = nginx_state(edge_path)
+    monkeypatch.setattr(edge, 'inspect_container', lambda name: state)
+    monkeypatch.setattr(edge, 'validate_layout', lambda *args: None)
+    monkeypatch.setattr(edge, 'peer_certificate', lambda host, **kwargs: b'elfar-original' if host == 'elfar.pp.ua' else b'accord-cert')
+    monkeypatch.setattr(edge.subprocess, 'run', lambda *args, **kw: subprocess.CompletedProcess(args[0], 0))
+    monkeypatch.setattr(edge, 'probe_http', lambda: None)
+    monkeypatch.setattr(edge, 'check_local_http', lambda host: None)
+    calls = []
+    monkeypatch.setattr(edge, 'run', lambda args, **kw: calls.append(args) or '')
+    assert edge.main(['--elfar-dir', str(elfar)]) == 0
+    assert compose.read_text() == ELFAR_1862.read_text()
+    return [args for args in calls if '--force-recreate' in args]
+
+
+def test_proxy_already_carrying_the_edge_is_only_reloaded(tmp_path, monkeypatch):
+    restarts = run_installer(tmp_path, monkeypatch, lambda conf: {
+        'mounts': [{'Destination': edge.MOUNT_TARGET, 'Source': str(conf)}], 'networks': {edge.NETWORK: {}}})
+    assert restarts == []
+
+
+def test_proxy_started_before_the_edge_is_recreated_once(tmp_path, monkeypatch):
+    restarts = run_installer(tmp_path, monkeypatch, lambda conf: {'mounts': [], 'networks': {'deploy_internal': {}}})
+    assert len(restarts) == 1 and restarts[0][-2:] == ['nginx', 'promo-controller']
+
+
+def test_installer_waits_for_the_elfar_deploy_lock(tmp_path, monkeypatch):
+    import fcntl, os, threading, time
+    lock = tmp_path / 'edge.lock'
+    monkeypatch.setattr(edge, 'EDGE_LOCK', lock)
+    fd = os.open(lock, os.O_RDONLY | os.O_CREAT, 0o666)
+    fcntl.flock(fd, fcntl.LOCK_EX)  # ELFAR deploy.sh holds the edge
+    entered = []
+    worker = threading.Thread(target=lambda: edge.edge_lock(timeout=10).__enter__() and None or entered.append(time.monotonic()))
+    started = time.monotonic(); worker.start(); time.sleep(0.5)
+    assert entered == []
+    fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd); worker.join(5)
+    assert entered and entered[0] - started >= 0.5
+
+
+@pytest.mark.parametrize('name', ['deploy', 'elfar'])
+def test_accord_can_never_take_elfar_compose_project_name(name):
+    from shop.domain_security import validate_domain_environment
+    with pytest.raises(Exception) as error:
+        validate_domain_environment({'COMPOSE_PROJECT_NAME': name})
+    assert 'COMPOSE_PROJECT_NAME' in str(error.value)
+
+
+def test_legacy_scripts_refuse_to_run_next_to_elfar(tmp_path):
+    elfar = tmp_path / 'elfar/deploy'; elfar.mkdir(parents=True)
+    (elfar / 'docker-compose.prod.yml').write_text('name: deploy\n')
+    env = {**__import__('os').environ, 'ELFAR_DEPLOY_DIR': str(elfar), 'PATH': '/usr/bin:/bin'}
+    for script in ('deploy.sh', 'bootstrap.sh', 'certbot-init.sh', 'render-nginx.sh', 'repair-main-domain.sh', 'update-cloudflare-ips.sh'):
+        result = subprocess.run(['bash', str(ROOT / 'deploy' / script)], env=env, capture_output=True, text=True, timeout=20)
+        assert result.returncode == 3, (script, result.stderr)
+        assert 'domains.sh' in result.stderr
+    assert yaml.safe_load((ROOT / 'deploy/docker-compose.prod.yml').read_text())['name'] != 'deploy'

@@ -5,7 +5,9 @@ Run as root on the VPS after DNS is ready. Never changes ELFAR's .env or volumes
 """
 from __future__ import annotations
 import argparse
+from contextlib import contextmanager
 from datetime import datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -30,6 +32,48 @@ NETWORK = 'accord-shared-edge'
 ORIGIN_MARKER = '# TLS provider: cloudflare-origin-ca\n'
 MARKER = '# Managed by ACCORD NICHE shared-edge installer\n'
 MOUNT = './nginx/accord-main.conf:/etc/nginx/conf.d/20-accord.conf:ro'
+MOUNT_TARGET = '/etc/nginx/conf.d/20-accord.conf'
+# The same host lock ELFAR's deploy/deploy.sh holds while it rebuilds and
+# recreates its nginx: the two operations never replace the proxy at once.
+EDGE_LOCK = Path(os.environ.get('ELFAR_ACCORD_EDGE_LOCK') or
+                 (('/run/lock' if Path('/run/lock').is_dir() else '/tmp') + '/elfar-accord-edge.lock'))
+
+
+@contextmanager
+def edge_lock(timeout=900):
+    old = os.umask(0)
+    try:
+        fd = os.open(EDGE_LOCK, os.O_RDONLY | os.O_CREAT, 0o666)
+    finally:
+        os.umask(old)
+    try:
+        deadline = time.monotonic() + timeout
+        announced = False
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not announced:
+                    print('Чекаю завершення деплою ELFAR (спільний nginx)…', flush=True)
+                    announced = True
+                if time.monotonic() > deadline:
+                    raise RuntimeError('Деплой ELFAR тримає спільний nginx понад 15 хвилин; спробуйте пізніше')
+                time.sleep(2)
+        yield
+    finally:
+        os.close(fd)
+
+
+def live_edge_ready(nginx, edge_path):
+    """True when the running ELFAR nginx already has ACCORD's mount and network.
+
+    ELFAR >= 1.86.2 ships both in its own Compose file, so the text patch is a
+    no-op; the proxy must still be recreated once if it was started before.
+    """
+    mounted = any(m.get('Destination') == MOUNT_TARGET and m.get('Source') == str(edge_path)
+                  for m in nginx.get('mounts') or [])
+    return mounted and NETWORK in (nginx.get('networks') or {})
 
 
 def patch_compose(text: str) -> str:
@@ -93,7 +137,7 @@ def run(args, *, capture=False, cwd=None, timeout=None):
 
 
 def inspect_container(name):
-    fmt = '{"labels":{{json .Config.Labels}},"mounts":{{json .Mounts}}}'
+    fmt = '{"labels":{{json .Config.Labels}},"mounts":{{json .Mounts}},"networks":{{json .NetworkSettings.Networks}}}'
     return json.loads(run(['docker', 'inspect', '--format', fmt, name], capture=True))
 
 
@@ -288,7 +332,7 @@ def main(argv=None):
         edge_path.write_text(selected_tls or (old_edge if old_edge and 'listen 443 ssl;' in old_edge else bootstrap_config()))
         run(compose + ['config', '--quiet'], cwd=elfar)
         run(compose + ['run', '--rm', '--no-deps', '--pull', 'never', 'nginx', 'nginx', '-t'], cwd=elfar)
-        if patched != original or not old_edge:
+        if patched != original or not old_edge or not live_edge_ready(nginx, edge_path):
             live_changed = True
             recreated = True
             run(restart, cwd=elfar)
@@ -342,8 +386,13 @@ def main(argv=None):
         raise
 
 
+def locked_main(argv=None):
+    with edge_lock():
+        return main(argv)
+
+
 if __name__ == '__main__':
-    try: sys.exit(main())
+    try: sys.exit(locked_main())
     except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
         print('ПОМИЛКА:', str(exc), file=sys.stderr)
         sys.exit(1)

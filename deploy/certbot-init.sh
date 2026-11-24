@@ -13,6 +13,7 @@
 #
 # Тому тут entrypoint явно перевизначається на сам certbot.
 set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/legacy-guard.sh"  # ACCORD uses deploy/domains.sh
 
 SCRIPT_VERSION="2026-11-02.1"
 
