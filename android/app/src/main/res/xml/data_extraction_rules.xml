@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The session cookie and a pending checkout never leave this device. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="accord_cookies.xml" />
+        <exclude domain="file" path="datastore/accord_checkout.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="accord_cookies.xml" />
+        <exclude domain="file" path="datastore/accord_checkout.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>
