@@ -11,6 +11,7 @@ import hmac
 import logging
 import re
 import secrets
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
@@ -182,6 +183,18 @@ async def session(request: Request, response: Response, repo: Repository = Depen
             'phone_telegram_enabled': phone_verification.telegram_ready()}
 
 
+def android_client_ids() -> frozenset[str]:
+    """OAuth client IDs of the shop's own Android app (comma separated env).
+
+    Android Credential Manager asks Google for an ID token for the website's
+    (server) client, so ``aud`` is the same web client ID; ``azp`` is the
+    Android client that requested it. Only these IDs may stand in for it.
+    """
+    raw = os.getenv('ACCORD_GOOGLE_ANDROID_CLIENT_IDS', '')
+    return frozenset(part.strip() for part in raw.replace(';', ',').split(',')
+                     if re.fullmatch(r'[0-9]{6,32}-[a-z0-9]{8,64}\.apps\.googleusercontent\.com', part.strip()))
+
+
 async def _google_identity(token: str, client_id: str):
     client_id = (client_id or '').strip()
     if not client_id:
@@ -214,7 +227,7 @@ async def _google_identity(token: str, client_id: str):
                             options={'require': ['iss', 'aud', 'exp', 'iat', 'sub']}, leeway=30)
         if not claims.get('email_verified') or not claims.get('sub') or not claims.get('email'):
             raise ValueError('Google email is not verified')
-        if claims.get('azp') and claims['azp'] != client_id:
+        if claims.get('azp') and claims['azp'] != client_id and claims['azp'] not in android_client_ids():
             raise ValueError('Google authorized party mismatch')
         return claims
     except (httpx.HTTPError, jwt.PyJWTError, ValueError, KeyError, StopIteration) as exc:
