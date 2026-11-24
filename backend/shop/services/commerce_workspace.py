@@ -13,8 +13,8 @@ def channel_expression():
     channel=func.coalesce(m.Order.attribution['channel'].as_string(),'')
     session=func.coalesce(m.Order.attribution['session_id'].as_string(),'')
     return case(
-        (channel=='accord_website','website'),(channel=='telegram_bot','bot'),(channel=='telegram_miniapp','miniapp'),
-        (source=='accord_website','website'),(source=='telegram_bot','bot'),
+        (channel=='accord_website','website'),(channel=='accord_android','app'),(channel=='telegram_bot','bot'),(channel=='telegram_miniapp','miniapp'),
+        (source=='accord_website','website'),(source=='accord_android','app'),(source=='telegram_bot','bot'),
         (or_(source.in_(['telegram','miniapp','telegram_miniapp']),session!=''),'miniapp'),
         else_='unknown')
 
@@ -45,7 +45,7 @@ async def workspace(repo,*,can_moderate=False,low_stock=3):
         count_if(and_(sellable,photos)).label('missing_photos')))).mappings().one()
     pending=(await repo.s.scalars(select(m.Order).where(queue_condition('new')).order_by(m.Order.created_at,m.Order.id).limit(6))).all()
     products=(await repo.s.scalars(select(m.Product).where(sellable,m.Product.stock>0,m.Product.stock<=low_stock).order_by(m.Product.stock,m.Product.id).limit(8))).all()
-    result={'generated_at':datetime.now(timezone.utc),'orders':dict(orders),'channels':{key:int(channels.get(key,0)) for key in ['website','miniapp','bot','unknown']},
+    result={'generated_at':datetime.now(timezone.utc),'orders':dict(orders),'channels':{key:int(channels.get(key,0)) for key in ['website','app','miniapp','bot','unknown']},
         'stock':dict(stock),'low_stock_threshold':low_stock,
         'queue':[{'id':row.id,'name':row.contact_name or 'Покупець','phone':row.contact_phone or '',
             'total':str(row.total),'status':row.status.value,'created_at':aware(row.created_at),

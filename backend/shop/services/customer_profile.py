@@ -19,7 +19,7 @@ from shop.services import order_business
 from shop.services.commerce_workspace import channel_expression
 from shop.services.website_identity import _owned_user_ids
 
-CHANNELS = {"website": "Сайт", "miniapp": "Mini App", "bot": "Бот", "unknown": "Невідомо"}
+CHANNELS = {"website": "Сайт", "app": "Застосунок", "miniapp": "Mini App", "bot": "Бот", "unknown": "Невідомо"}
 
 
 async def accounts_for(repo, user_ids) -> dict[int, m.WebsiteAccount]:

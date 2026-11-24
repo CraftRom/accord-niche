@@ -49,7 +49,7 @@ async def test_workspace_counts_match_actionable_queue_and_channels(api):
     assert result.status_code==200,result.text
     data=result.json()
     assert data['orders']=={'new':2,'open':4,'without_tracking':2}
-    assert data['channels']=={'website':1,'miniapp':1,'bot':1,'unknown':1}
+    assert data['channels']=={'website':1,'app':0,'miniapp':1,'bot':1,'unknown':1}
     assert [row['id'] for row in data['queue']]==[1,2]
     assert 'crm_snapshot' not in result.text and 'token' not in result.text
     for queue in ['new','open','without_tracking']:
@@ -92,6 +92,18 @@ async def test_explicit_channel_takes_precedence_over_campaign_source(api):
     await session.commit()
     legacy=(await client.get('/api/orders?paginated=true&channel=website')).json()
     assert legacy['total']==1 and legacy['items'][0]['attribution']['source']=='accord_website'
+
+
+@pytest.mark.asyncio
+async def test_android_app_orders_are_their_own_channel(api):
+    client,session,_,_=api
+    # The app sends a session id like the Mini App; its explicit channel still wins.
+    session.add(m.Order(id=30,user_id=1,attribution={'source':'accord_android','channel':'accord_android','session_id':'app-launch-1'}))
+    await session.commit()
+    assert (await client.get('/api/orders/operations')).json()['channels']['app']==1
+    page=(await client.get('/api/orders?paginated=true&channel=app')).json()
+    assert page['total']==1 and page['items'][0]['attribution']['channel']=='accord_android'
+    assert (await client.get('/api/orders?paginated=true&channel=miniapp')).json()['total']==0
 
 
 @pytest.mark.asyncio

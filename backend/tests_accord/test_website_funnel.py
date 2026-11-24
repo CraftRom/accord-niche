@@ -115,3 +115,38 @@ async def test_website_visits_have_a_bounded_retention(db):
     assert removed == 1
     left = {row.session_id for row in (await db.scalars(select(m.AnalyticsSession))).all()}
     assert left == {'miniapp-visit-000001', 'fresh-visit-00000001'}
+
+
+async def app_visit(session, sid):
+    body = web.WebsiteVisitIn(session_id=sid, attribution={'source': 'accord_android', 'medium': 'app'})
+    return await web.website_visit(body, request(agent='AccordNicheAndroid/1.3.0 (Android 15)'), SqlRepository(session))
+
+
+@pytest.mark.asyncio
+async def test_android_app_is_its_own_channel_and_never_mixes_with_the_website(db):
+    for sid in ['app-launch-0001-abcdef', 'app-launch-0002-abcdef']:
+        assert (await app_visit(db, sid)).status_code == 204
+    await app_visit(db, 'app-launch-0001-abcdef')  # retried POST of the same launch
+    await visit(db, 'site-visit-0001-abcdef')
+    rows = (await db.scalars(select(m.AnalyticsSession).order_by(m.AnalyticsSession.id))).all()
+    assert [r.channel for r in rows] == [m.APP_CHANNEL, m.APP_CHANNEL, m.WEBSITE_CHANNEL]
+    # An app visit id is not a website visit and the other way round.
+    assert await analytics.website_checkout_session(db, 'app-launch-0001-abcdef') is None
+    assert await analytics.website_checkout_session(db, 'app-launch-0001-abcdef', m.APP_CHANNEL) == 'app-launch-0001-abcdef'
+    now = datetime.now(timezone.utc)
+    db.add(m.User(id=1, tg_id=-1, referral_code='G1'))
+    db.add(order(1, 1, 'app-launch-0001-abcdef', now + timedelta(minutes=3), channel=m.APP_CHANNEL))
+    # A website order carrying an app id converts neither.
+    db.add(order(2, 1, 'app-launch-0002-abcdef', now + timedelta(minutes=4)))
+    await db.commit()
+    data = await analytics.aggregate(db, report_window(now))
+    channels = {c['channel']: c for c in data['channels']}
+    assert channels[m.APP_CHANNEL] == {'channel': m.APP_CHANNEL, 'sessions': 2, 'converted_sessions': 1, 'conversion': 50.0}
+    assert channels[m.WEBSITE_CHANNEL]['sessions'] == 1 and channels[m.WEBSITE_CHANNEL]['converted_sessions'] == 0
+
+
+def test_client_channel_from_attribution():
+    assert web._client_channel({'source': 'accord_android'}) == m.APP_CHANNEL
+    assert web._client_channel({'source': 'ACCORD_ANDROID '}) == m.APP_CHANNEL
+    for other in [None, {}, {'source': 'instagram'}, {'source': 'accord_website'}]:
+        assert web._client_channel(other) == m.WEBSITE_CHANNEL

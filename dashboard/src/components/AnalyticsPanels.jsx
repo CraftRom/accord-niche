@@ -77,7 +77,7 @@ function ChannelTable({ rows, campaigns = false }) {
   </table>{!rows.length && <p className="muted">За цей період даних немає.</p>}</ManagedTable>
 }
 
-const CHANNEL_TITLES = { accord_website: 'Сайт', telegram_miniapp: 'Mini App' }
+const CHANNEL_TITLES = { accord_website: 'Сайт', accord_android: 'Застосунок', telegram_miniapp: 'Mini App' }
 
 // A07: the funnel is shown per channel; a channel without recorded visits is
 // "no data", never an artificial 0%.

@@ -18,7 +18,7 @@ def order_attribution(attribution, snapshot=None):
     local = clean_attribution(attribution)
     if isinstance(attribution, dict) and attribution.get('session_id'):
         local['session_id'] = str(attribution['session_id'])[:64]
-    if isinstance(attribution,dict) and attribution.get('channel') in {'accord_website','telegram_miniapp','telegram_bot'}:
+    if isinstance(attribution,dict) and attribution.get('channel') in {'accord_website','accord_android','telegram_miniapp','telegram_bot'}:
         local['channel']=attribution['channel']
     if local['source'] != 'unknown':
         return local

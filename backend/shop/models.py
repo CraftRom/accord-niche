@@ -789,6 +789,8 @@ class CatalogImport(Base):
 
 
 WEBSITE_CHANNEL = "accord_website"
+# The ACCORD Android app: same /api/web endpoints as the website, its own channel.
+APP_CHANNEL = "accord_android"
 MINIAPP_CHANNEL = "telegram_miniapp"
 
 
@@ -798,14 +800,18 @@ class AnalyticsSession(Base):
     Mini App visits belong to an authenticated Telegram user. Main-website
     visits are anonymous first-party rows (user_id NULL, channel
     accord_website) keyed only by the random per-tab session id, so a guest
-    who later signs in with Google is still the same single visit.
+    who later signs in with Google is still the same single visit. Android
+    app launches are recorded the same way with channel accord_android.
     """
     __tablename__ = "analytics_sessions"
     __table_args__ = (UniqueConstraint("user_id", "session_id", name="uq_analytics_user_session"),
                       Index("ix_analytics_sessions_started", "started_at"),
                       Index("ux_analytics_website_session", "session_id", unique=True,
                             postgresql_where=text("channel = 'accord_website'"),
-                            sqlite_where=text("channel = 'accord_website'")),)
+                            sqlite_where=text("channel = 'accord_website'")),
+                      Index("ux_analytics_app_session", "session_id", unique=True,
+                            postgresql_where=text("channel = 'accord_android'"),
+                            sqlite_where=text("channel = 'accord_android'")),)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     channel: Mapped[str] = mapped_column(String(24), default=MINIAPP_CHANNEL, server_default=MINIAPP_CHANNEL)

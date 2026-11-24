@@ -355,6 +355,16 @@ async def checkout_status(request: Request, checkout_key: str = Query(min_length
     return {'found':True,'order_id':order.id,'total':order.total,'payment_method':order.payment_method,'replayed':True}
 
 
+def _client_channel(attribution: dict | None) -> str:
+    """Sales channel of a /api/web request: the Android app marks itself, everything else is the website.
+
+    Only reporting depends on it (dashboard channel, funnel); prices, stock and
+    permissions are identical for both clients.
+    """
+    source = str((attribution or {}).get('source') or '').strip().lower()
+    return m.APP_CHANNEL if source == m.APP_CHANNEL else m.WEBSITE_CHANNEL
+
+
 _VISIT_BOT_RE = re.compile(r"bot|crawler|spider|slurp|facebookexternalhit|preview|monitor|uptime|headless", re.I)
 
 
@@ -381,7 +391,7 @@ async def website_visit(data: WebsiteVisitIn, request: Request, repo: Repository
     attribution = data.attribution.model_dump(exclude={'session_id'})
     if not attribution.get('source') or attribution['source'] == 'unknown':
         attribution = {**attribution, 'source': 'accord_website', 'medium': attribution.get('medium') or 'website'}
-    await record_website_visit(repo.s, data.session_id, attribution)
+    await record_website_visit(repo.s, data.session_id, attribution, _client_channel(attribution))
     return Response(status_code=204)
 
 
@@ -412,7 +422,8 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
     # Website attribution must be distinct from Telegram analytics. The visit
     # id is kept only when that visit was really recorded (A07 funnel).
     from shop.services.analytics import website_checkout_session
-    visit_id = await website_checkout_session(repo.s, data.attribution.session_id if data.attribution else None)
+    channel = _client_channel(data.attribution.model_dump() if data.attribution else None)
+    visit_id = await website_checkout_session(repo.s, data.attribution.session_id if data.attribution else None, channel)
     order, error = await svc.create_order(
         repo, user, contact_surname=data.contact_surname, contact_name=data.contact_name,
         contact_patronymic=data.contact_patronymic, contact_phone=data.contact_phone,
@@ -422,7 +433,7 @@ async def checkout(data: WebsiteCheckoutIn, request: Request, repo: Repository =
         promo_code=data.promo_code, use_bonus=data.use_bonus, comment=data.comment,
         checkout_key=data.checkout_key, expected_quote=data.quote_token,
         attribution={**clean_attribution(data.attribution.model_dump() if data.attribution else
-            {'source':'accord_website','medium':'website'}),'channel':'accord_website',
+            {'source':'accord_website','medium':'website'}),'channel':channel,
             **({'session_id': visit_id} if visit_id else {})},
     )
     if error or order is None:

@@ -1,12 +1,13 @@
 import {canAccessPage} from './roles.js'
 
 export const LOW_STOCK=3
-export const CHANNELS=[['website','Сайт'],['miniapp','Mini App'],['bot','Telegram-бот'],['unknown','Не визначено']]
+export const CHANNELS=[['website','Сайт'],['app','Застосунок'],['miniapp','Mini App'],['bot','Telegram-бот'],['unknown','Не визначено']]
 export function orderChannel(order) {
   const {source='',channel='',session_id=''}=order.attribution || {}
-  const explicit={accord_website:'website',telegram_bot:'bot',telegram_miniapp:'miniapp'}[channel]
+  const explicit={accord_website:'website',accord_android:'app',telegram_bot:'bot',telegram_miniapp:'miniapp'}[channel]
   if(explicit)return explicit
   if(source==='accord_website')return 'website'
+  if(source==='accord_android')return 'app'
   if(source==='telegram_bot')return 'bot'
   if(['telegram','miniapp','telegram_miniapp'].includes(source) || session_id)return 'miniapp'
   return 'unknown'
