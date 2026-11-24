@@ -319,7 +319,8 @@ def test_host_initialization_refuses_unsafe_targets(tmp_path, monkeypatch, probl
     elif problem == 'credentials':
         row['Config']['Env'][0] = 'POSTGRES_USER=foreign'
     monkeypatch.setattr(host.HostBackup, 'inventory', lambda self: {'db': row})
-    with pytest.raises(files.BackupError):
+    # ELFAR's project name is rejected already by the .env.domains check.
+    with pytest.raises(ValueError if problem == 'namespace' else files.BackupError):
         host.HostBackup(tmp_path)
 
 

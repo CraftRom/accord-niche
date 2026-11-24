@@ -32,6 +32,7 @@ class DeploySecurity(unittest.TestCase):
             (root / "backend/shop").mkdir(parents=True)
             (root / "bin").mkdir()
             shutil.copy(ROOT / "deploy/deploy.sh", root / "deploy/deploy.sh")
+            shutil.copy(ROOT / "deploy/legacy-guard.sh", root / "deploy/legacy-guard.sh")
             shutil.copy(ROOT / "backend/shop/production_security.py", root / "backend/shop/production_security.py")
             (root / ".env").write_text("\n".join(f"{k}={v}" for k, v in {**VALID, **changes}.items()))
             calls = root / "docker-calls"

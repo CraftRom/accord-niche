@@ -8,6 +8,7 @@
 # вже заповнений .env. Це навмисно — перший запуск рідко проходить з першого
 # разу, і скрипт, який при повторі стирає конфіг, гірший за його відсутність.
 set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/legacy-guard.sh"  # ACCORD uses deploy/domains.sh
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_USER="${SERVICE_USER:-shop}"
