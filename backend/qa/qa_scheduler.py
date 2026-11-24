@@ -96,11 +96,14 @@ async def scenario():
         r.check(future.id not in ids, "майбутня не потрапляє")
         r.check(draft.id not in ids, "чернетка без дати не потрапляє")
 
-        # Тихі години мають зупинити запуск, а не пропустити його назавжди
+        # Тихі години мають зупинити запуск, а не пропустити його назавжди.
+        # Вікно будується довкола поточної години: фіксоване 0→23 UTC не
+        # покривало 23:00–23:59 UTC, і набір падав щоночі незалежно від коду.
+        hour = datetime.now(timezone.utc).hour
         await save_shop_settings(repo, {
             "quiet_hours_enabled": True,
-            "quiet_hours_start": 0,
-            "quiet_hours_end": 23,
+            "quiet_hours_start": (hour - 1) % 24,
+            "quiet_hours_end": (hour + 2) % 24,
             "timezone": "UTC",
         })
 
