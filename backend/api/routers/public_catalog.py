@@ -48,6 +48,29 @@ async def site_config(repo: Repository = Depends(get_repo)):
         "privacy_url": "/privacy",
     }
 
+_ANDROID_PACKAGE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+$")
+_CERT_SHA256 = re.compile(r"^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$")
+
+
+@router.get("/android/assetlinks.json", include_in_schema=False)
+async def android_asset_links(response: Response):
+    """Digital Asset Links for the ACCORD Android app (served at /.well-known/).
+
+    Lets Android 12+ open accordniche.pp.ua product, catalog and blog links
+    straight in the installed app. Empty list until the signing certificate
+    fingerprint is configured, so nothing is claimed by default.
+    """
+    package = os.getenv("ACCORD_ANDROID_PACKAGE", "ua.accordniche.shop").strip()
+    prints = [value.strip().upper() for value in os.getenv("ACCORD_ANDROID_CERT_SHA256", "").replace(";", ",").split(",")]
+    prints = [value for value in prints if _CERT_SHA256.fullmatch(value)]
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    if not prints or not _ANDROID_PACKAGE.fullmatch(package):
+        return []
+    return [{"relation": ["delegate_permission/common.handle_all_urls"],
+             "target": {"namespace": "android_app", "package_name": package,
+                        "sha256_cert_fingerprints": prints}}]
+
+
 # Only local product media exposed by this *product-authorized* endpoint.
 # It must never become a general purpose /data/media file server.
 _LOCAL_MEDIA = re.compile(r"^/media/([a-zA-Z0-9_-]+\.(?:png|jpg|jpeg|webp|gif))$")
