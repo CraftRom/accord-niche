@@ -21,8 +21,15 @@ class PostIn(BaseModel):
     status: PostStatus = 'draft'
     comments_enabled: bool = True
     published_at: datetime | None = None
+    # SEO: empty = built from the title and the excerpt.
+    seo_title: str = Field('', max_length=120)
+    seo_description: str = Field('', max_length=300)
+    focus_keyword: str = Field('', max_length=80)
+    cover_alt: str = Field('', max_length=200)
+    noindex: bool = False
 
-    @field_validator('title', 'slug', 'excerpt', 'body', 'cover_url', 'author_name', mode='before')
+    @field_validator('title', 'slug', 'excerpt', 'body', 'cover_url', 'author_name', 'seo_title',
+                     'seo_description', 'focus_keyword', 'cover_alt', mode='before')
     @classmethod
     def clean(cls, value):
         if not isinstance(value, str):
@@ -74,11 +81,16 @@ class PostCard(BaseModel):
 class PublicPost(PostCard):
     body: str
     comments_enabled: bool
+    cover_alt: str = ''
 
 
 class AdminPost(PublicPost):
     status: PostStatus
     version: int
+    seo_title: str = ''
+    seo_description: str = ''
+    focus_keyword: str = ''
+    noindex: bool = False
     created_by: str
     updated_by: str
     created_at: datetime
@@ -117,6 +129,47 @@ class Moderation(CommentDelete):
     note: str = Field('', max_length=500)
 
 
+class BulkModeration(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    ids: list[int] = Field(min_length=1, max_length=100)
+    action: Literal['approve','reject','delete']
+    note: str = Field('', max_length=500)
+
+
+class BanIn(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    user_id: int = Field(gt=0)
+    reason: str = Field('', max_length=500)
+    # None — безстрокове блокування.
+    days: int | None = Field(None, ge=1, le=3650)
+    # none — лишити коментарі; hide — відхилити очікувані й схвалені; delete — видалити всі.
+    comments: Literal['none','hide','delete'] = 'hide'
+
+
+class BanOut(BaseModel):
+    user_id: int
+    author_name: str
+    reason: str
+    banned_by: str
+    expires_at: datetime | None
+    created_at: datetime
+    comment_count: int = 0
+
+
+class ModerationSettingsIn(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    mode: Literal['manual','trusted'] = 'manual'
+    trusted_after: int = Field(3, ge=1, le=100)
+    stop_words: str = Field('', max_length=5000)
+    stop_word_action: Literal['hold','reject'] = 'hold'
+    hold_links: bool = True
+
+
+class ModerationSettingsOut(ModerationSettingsIn):
+    updated_by: str = ''
+    updated_at: datetime | None = None
+
+
 class PublicComment(BaseModel):
     id: int
     parent_id: int | None
@@ -136,8 +189,15 @@ class OwnComment(PublicComment):
 class AdminComment(OwnComment):
     post_id: int
     post_title: str
+    post_slug: str = ''
     moderation_note: str
     moderated_by: str | None
+    moderated_at: datetime | None = None
+    author_user_id: int | None = None
+    flags: str = ''
+    author_banned: bool = False
+    author_approved: int = 0
+    author_rejected: int = 0
 
 
 class PostPage(BaseModel):

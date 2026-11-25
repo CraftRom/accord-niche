@@ -9,17 +9,19 @@ import math
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import select, update, func, or_, exists
+from sqlalchemy import delete, select, update, func, or_, exists
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
 
 from api.auth import Principal, require_admin
 from api.blog_schemas import (PostIn, PostUpdate, PostCard, PublicPost, AdminPost, PostPage,
-    CommentIn, CommentEdit, CommentDelete, Moderation, PublicComment, OwnComment, AdminComment, CommentPage)
+    CommentIn, CommentEdit, CommentDelete, Moderation, PublicComment, OwnComment, AdminComment, CommentPage,
+    BulkModeration, BanIn, BanOut, ModerationSettingsIn, ModerationSettingsOut)
 from api.routers.website_shop import _account, _require_csrf
 from shop import models as m, security_log
 from shop.repo.base import Repository
 from shop.repo.factory import get_repo
+from shop.services import comment_moderation as rules
 from shop.services.website_identity import _owned_user_ids
 
 admin = APIRouter(dependencies=[Depends(require_admin)])
@@ -91,6 +93,16 @@ async def commit(repo):
     except IntegrityError:
         await repo.s.rollback()
         raise HTTPException(409, 'Адреса або ключ запиту вже використані; оновіть дані') from None
+
+
+def published(post):
+    """Sitemaps rebuild now; search engines hear about a live, indexable article."""
+    from shop.services import indexnow, seo
+    seo.invalidate()
+    at = post.published_at
+    live = post.status == 'published' and at is not None and (at if at.tzinfo else at.replace(tzinfo=timezone.utc)) <= now()
+    if live and not post.noindex:
+        indexnow.notify(seo.post_url(post), seo.ORIGIN + '/blog')
 
 
 async def reserve_slug(repo, slug, post_id):
@@ -186,6 +198,7 @@ async def create_post(data: PostIn, who: Principal = Depends(require_admin), rep
         await repo.s.rollback()
         raise
     security_log.record('blog.post.created',actor=who.login,role=who.role.value,reason=str(post.id))
+    published(post)
     return await post_out(repo,post,AdminPost)
 
 
@@ -210,6 +223,7 @@ async def update_post(post_id: int,data: PostUpdate,who: Principal = Depends(req
         await repo.s.rollback()
         raise
     security_log.record('blog.post.changed',actor=who.login,role=who.role.value,reason=str(post.id))
+    published(post)
     return await post_out(repo,post,AdminPost)
 
 
@@ -263,7 +277,12 @@ async def insert_comment(repo,post_id,data,*,user_id=None,identity_ids=None,name
             m.BlogComment.post_id == post_id,m.BlogComment.parent_id.is_(None),m.BlogComment.status == 'approved'))
         if not parent:
             raise HTTPException(409,'Відповідь доступна тільки до схваленого коментаря цієї статті')
+    status,flags,note='approved' if staff else 'pending','',''
     if not staff:
+        ban=await rules.active_ban(repo,identities)
+        if ban:
+            raise HTTPException(403,rules.ban_message(ban))
+        status,flags,note=await rules.decide(repo,data.body,identities)
         latest=await repo.s.scalar(select(func.max(m.BlogComment.created_at)).where(m.BlogComment.author_user_id.in_(identities)))
         if latest:
             aware=latest if latest.tzinfo else latest.replace(tzinfo=timezone.utc)
@@ -275,8 +294,9 @@ async def insert_comment(repo,post_id,data,*,user_id=None,identity_ids=None,name
             raise HTTPException(429,'Досягнуто ліміт коментарів за годину',headers={'Retry-After':'3600'})
     row=m.BlogComment(post_id=post_id,parent_id=data.parent_id,author_user_id=user_id,
         author_name=' '.join(name.split())[:120] or 'Покупець',body=data.body,is_staff=staff,
-        status='approved' if staff else 'pending',client_key=key,
-        moderated_by=actor if staff else None,moderated_at=now() if staff else None)
+        status=status,client_key=key,flags=flags,moderation_note=note,
+        moderated_by=actor if staff else ('auto' if status!='pending' else None),
+        moderated_at=now() if staff or status!='pending' else None)
     repo.s.add(row)
     await commit(repo)
     return row
@@ -308,9 +328,15 @@ async def edit_comment(comment_id: int,data: CommentEdit,request: Request,repo: 
     _require_csrf(request)
     row=await owned_comment(repo,request,comment_id)
     await writable_post(repo,row.post_id)
+    identities=await _owned_user_ids(repo,await member(request,repo))
+    ban=await rules.active_ban(repo,identities)
+    if ban:
+        raise HTTPException(403,rules.ban_message(ban))
+    status,flags,note=await rules.decide(repo,data.body,identities)
     changed=await repo.s.execute(update(m.BlogComment).where(m.BlogComment.id == row.id,
-        m.BlogComment.version == data.version).values(body=data.body,status='pending',version=data.version+1,
-        updated_at=now(),moderated_by=None,moderated_at=None,moderation_note='').returning(m.BlogComment))
+        m.BlogComment.version == data.version).values(body=data.body,status=status,version=data.version+1,flags=flags,
+        updated_at=now(),moderated_by='auto' if status!='pending' else None,
+        moderated_at=now() if status!='pending' else None,moderation_note=note).returning(m.BlogComment))
     result=changed.scalar_one_or_none()
     if result is None:
         await repo.s.rollback()
@@ -332,18 +358,48 @@ async def delete_comment(comment_id: int,data: CommentDelete,request: Request,re
     return {'deleted':True}
 
 
+def _like(value):
+    return '%' + value.strip().casefold().replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
+
+
+async def admin_comments(repo,rows):
+    """AdminComment rows with the author's history and ban state."""
+    authors={r.author_user_id for r,_,_ in rows if r.author_user_id}
+    banned=set((await repo.s.scalars(select(m.BlogCommentBan.user_id).where(m.BlogCommentBan.user_id.in_(authors),
+        or_(m.BlogCommentBan.expires_at.is_(None),m.BlogCommentBan.expires_at > now())))).all()) if authors else set()
+    history={}
+    if authors:
+        for author,status,count in (await repo.s.execute(select(m.BlogComment.author_user_id,m.BlogComment.status,func.count())
+                .where(m.BlogComment.author_user_id.in_(authors)).group_by(m.BlogComment.author_user_id,m.BlogComment.status))).all():
+            history.setdefault(author,{})[status]=count
+    return [comment_out(r,AdminComment,post_title=title,post_slug=slug,author_banned=r.author_user_id in banned,
+                        author_approved=history.get(r.author_user_id,{}).get('approved',0),
+                        author_rejected=history.get(r.author_user_id,{}).get('rejected',0)) for r,title,slug in rows]
+
+
 @admin.get('/comments')
-async def moderation_queue(status: str = Query('pending',pattern='^(|pending|approved|rejected|deleted)$'),
-                           post_id: int | None = Query(None,gt=0),limit: int = Query(20,ge=1,le=50),
+async def moderation_queue(status: str = Query('pending',pattern='^(|all|pending|approved|rejected|deleted)$'),
+                           post_id: int | None = Query(None,gt=0),author_user_id: int | None = Query(None,gt=0),
+                           q: str = Query('',max_length=120),flagged: bool = False,
+                           limit: int = Query(20,ge=1,le=50),
                            offset: int = Query(0,ge=0),repo: Repository = Depends(get_repo)):
     filters=[]
-    if status: filters.append(m.BlogComment.status == status)
     if post_id: filters.append(m.BlogComment.post_id == post_id)
-    rows=(await repo.s.execute(select(m.BlogComment,m.BlogPost.title).join(m.BlogPost)
+    if author_user_id: filters.append(m.BlogComment.author_user_id == author_user_id)
+    if flagged: filters.append(m.BlogComment.flags != '')
+    if q.strip():
+        term=_like(q)
+        filters.append(or_(func.lower(m.BlogComment.body).like(term,escape='\\'),
+                           func.lower(m.BlogComment.author_name).like(term,escape='\\')))
+    counts=dict((await repo.s.execute(select(m.BlogComment.status,func.count()).where(*filters)
+        .group_by(m.BlogComment.status))).all())
+    if status and status != 'all': filters.append(m.BlogComment.status == status)
+    rows=(await repo.s.execute(select(m.BlogComment,m.BlogPost.title,m.BlogPost.slug).join(m.BlogPost)
         .where(*filters).order_by(m.BlogComment.created_at.desc(),m.BlogComment.id.desc())
         .offset(offset).limit(limit))).all()
     total=await repo.s.scalar(select(func.count()).select_from(m.BlogComment).where(*filters))
-    return {'items':[comment_out(r,AdminComment,post_title=title) for r,title in rows],'total':total or 0}
+    return {'items':await admin_comments(repo,rows),'total':total or 0,
+            'counts':{key:counts.get(key,0) for key in ('pending','approved','rejected','deleted')}}
 
 
 @admin.post('/comments/{comment_id}/moderate',response_model=AdminComment)
@@ -363,7 +419,106 @@ async def moderate(comment_id: int,data: Moderation,who: Principal = Depends(req
     await commit(repo)
     security_log.record('blog.comment.moderated',actor=who.login,role=who.role.value,reason=str(comment_id)+':'+data.status)
     post=await get_post(repo,row.post_id)
-    return comment_out(changed,AdminComment,post_title=post.title)
+    return (await admin_comments(repo,[(changed,post.title,post.slug)]))[0]
+
+
+async def remove_comments(repo,ids):
+    """Permanent removal by the editors; replies go with their comment."""
+    ids=list(ids)
+    if not ids:
+        return 0
+    replies=(await repo.s.scalars(select(m.BlogComment.id).where(m.BlogComment.parent_id.in_(ids)))).all()
+    gone=set(ids)|set(replies)
+    nested=await repo.s.execute(delete(m.BlogComment).where(m.BlogComment.parent_id.in_(list(gone))))
+    result=await repo.s.execute(delete(m.BlogComment).where(m.BlogComment.id.in_(list(gone))))
+    return (nested.rowcount or 0)+(result.rowcount or 0)
+
+
+@admin.delete('/comments/{comment_id}')
+async def delete_comment_admin(comment_id: int,who: Principal = Depends(require_admin),repo: Repository = Depends(get_repo)):
+    if await repo.s.get(m.BlogComment,comment_id) is None:
+        raise HTTPException(404,'Коментар не знайдено')
+    removed=await remove_comments(repo,[comment_id])
+    await commit(repo)
+    security_log.record('blog.comment.deleted',actor=who.login,role=who.role.value,reason=str(comment_id))
+    return {'deleted':removed}
+
+
+@admin.post('/comments/bulk')
+async def bulk_moderation(data: BulkModeration,who: Principal = Depends(require_admin),repo: Repository = Depends(get_repo)):
+    ids=sorted(set(data.ids))
+    if data.action == 'delete':
+        changed=await remove_comments(repo,ids)
+    else:
+        status='approved' if data.action == 'approve' else 'rejected'
+        result=await repo.s.execute(update(m.BlogComment).where(m.BlogComment.id.in_(ids),m.BlogComment.status != 'deleted',
+            m.BlogComment.status != status).values(status=status,version=m.BlogComment.version+1,moderated_by=who.login,
+            moderated_at=now(),updated_at=now(),moderation_note=data.note))
+        changed=result.rowcount or 0
+    await commit(repo)
+    security_log.record('blog.comment.bulk',actor=who.login,role=who.role.value,reason=data.action+':'+str(len(ids)))
+    return {'changed':changed}
+
+
+async def ban_out(repo,row):
+    count=await repo.s.scalar(select(func.count()).select_from(m.BlogComment).where(m.BlogComment.author_user_id == row.user_id))
+    values={c.name:getattr(row,c.name) for c in m.BlogCommentBan.__table__.columns}
+    values={k:(v.replace(tzinfo=timezone.utc) if isinstance(v,datetime) and v.tzinfo is None else v) for k,v in values.items()}
+    return BanOut(**values,comment_count=count or 0)
+
+
+@admin.get('/bans',response_model=list[BanOut])
+async def list_bans(repo: Repository = Depends(get_repo)):
+    rows=(await repo.s.scalars(select(m.BlogCommentBan).order_by(m.BlogCommentBan.created_at.desc(),m.BlogCommentBan.id.desc()).limit(200))).all()
+    return [await ban_out(repo,row) for row in rows]
+
+
+@admin.post('/bans',response_model=BanOut,status_code=201)
+async def ban_author(data: BanIn,who: Principal = Depends(require_admin),repo: Repository = Depends(get_repo)):
+    if await repo.s.get(m.User,data.user_id) is None:
+        raise HTTPException(404,'Покупця не знайдено')
+    name=await repo.s.scalar(select(m.BlogComment.author_name).where(m.BlogComment.author_user_id == data.user_id)
+        .order_by(m.BlogComment.id.desc()).limit(1)) or ''
+    row=await repo.s.scalar(select(m.BlogCommentBan).where(m.BlogCommentBan.user_id == data.user_id))
+    if row is None:
+        row=m.BlogCommentBan(user_id=data.user_id)
+        repo.s.add(row)
+    row.author_name,row.reason,row.banned_by=name,data.reason,who.login
+    row.expires_at=now()+timedelta(days=data.days) if data.days else None
+    row.created_at=now()
+    if data.comments == 'hide':
+        await repo.s.execute(update(m.BlogComment).where(m.BlogComment.author_user_id == data.user_id,
+            m.BlogComment.status.in_(('pending','approved'))).values(status='rejected',version=m.BlogComment.version+1,
+            moderated_by=who.login,moderated_at=now(),updated_at=now(),moderation_note='Автор заблокований'))
+    elif data.comments == 'delete':
+        ids=(await repo.s.scalars(select(m.BlogComment.id).where(m.BlogComment.author_user_id == data.user_id))).all()
+        await remove_comments(repo,ids)
+    await commit(repo)
+    security_log.record('blog.author.banned',actor=who.login,role=who.role.value,reason=str(data.user_id)+':'+data.comments)
+    return await ban_out(repo,row)
+
+
+@admin.delete('/bans/{user_id}')
+async def unban_author(user_id: int,who: Principal = Depends(require_admin),repo: Repository = Depends(get_repo)):
+    result=await repo.s.execute(delete(m.BlogCommentBan).where(m.BlogCommentBan.user_id == user_id))
+    if not result.rowcount:
+        raise HTTPException(404,'Блокування не знайдено')
+    await commit(repo)
+    security_log.record('blog.author.unbanned',actor=who.login,role=who.role.value,reason=str(user_id))
+    return {'unbanned':True}
+
+
+@admin.get('/moderation-settings',response_model=ModerationSettingsOut)
+async def get_moderation_settings(repo: Repository = Depends(get_repo)):
+    return ModerationSettingsOut(**await rules.load_settings(repo))
+
+
+@admin.put('/moderation-settings',response_model=ModerationSettingsOut)
+async def put_moderation_settings(data: ModerationSettingsIn,who: Principal = Depends(require_admin),
+                                  repo: Repository = Depends(get_repo)):
+    saved=await rules.save_settings(repo,data.model_dump(),who.login)
+    security_log.record('blog.moderation.settings',actor=who.login,role=who.role.value,reason=data.mode)
+    return ModerationSettingsOut(**saved)
 
 
 @admin.post('/posts/{post_id}/reply',response_model=AdminComment)
@@ -374,4 +529,4 @@ async def staff_reply(post_id: int,data: CommentIn,who: Principal = Depends(requ
     post=await get_post(repo,post_id)
     # writable_post already holds the post lock for persistent retry keys.
     row=await insert_comment(repo,post_id,data,name=who.name or 'Редакція ACCORD NICHE',staff=True,actor=who.login)
-    return comment_out(row,AdminComment,post_title=post.title)
+    return comment_out(row,AdminComment,post_title=post.title,post_slug=post.slug)

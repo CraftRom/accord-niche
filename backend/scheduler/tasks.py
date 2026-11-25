@@ -280,3 +280,31 @@ async def refresh_salesdrive_orders() -> dict:
             extra={"event": "salesdrive.background_refresh.pass", **result},
         )
     return result
+
+
+# ------------------------------------------------------------------ SEO
+
+async def announce_scheduled_posts(state: dict) -> int:
+    """IndexNow for articles whose scheduled time has just come.
+
+    Saving an article in the panel notifies search engines at once; a post
+    scheduled for later goes live without any request, so the scheduler
+    tells them. The window starts at the previous check (10 minutes back
+    after a restart). Without ACCORD_INDEXNOW_KEY nothing is sent.
+    """
+    from sqlalchemy import select
+    from shop import models as m
+    from shop.services import indexnow, seo
+    if not indexnow.key():
+        return 0
+    now = datetime.now(timezone.utc)
+    since = state.get("seo_posts_since") or now - timedelta(minutes=10)
+    async with open_repo() as repo:
+        posts = (await repo.s.scalars(select(m.BlogPost).where(
+            m.BlogPost.status == "published", m.BlogPost.noindex.is_(False),
+            m.BlogPost.published_at > since, m.BlogPost.published_at <= now))).all()
+        urls = [seo.post_url(post) for post in posts]
+    state["seo_posts_since"] = now
+    if urls:
+        await indexnow._send(urls + [seo.ORIGIN + "/blog", seo.ORIGIN + "/sitemap.xml"])
+    return len(urls)

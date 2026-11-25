@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../api'
 import { ErrorBar, Field, Modal, useToast } from '../ui'
-import { BrandFields, DescriptionField, DisplayFields, PriceFields, ProductImageField, PerfumeFields, perfumePayload, changeField, emptyProduct, brandPayload, pricePayload, validateProduct } from './ProductFields'
+import { AromaFields, BrandFields, DescriptionField, DisplayFields, PriceFields, ProductImageField, PerfumeFields, SeoFields, aromaPayload, perfumePayload, seoPayload, changeField, emptyProduct, brandPayload, pricePayload, validateProduct } from './ProductFields'
 
 export default function NewProductModal({ brands, onManageBrands, onClose, onSaved }) {
   const [form, setForm] = useState({ ...emptyProduct })
@@ -15,7 +15,7 @@ export default function NewProductModal({ brands, onManageBrands, onClose, onSav
     if (problem) { setError(problem); return }
     setBusy(true); setError('')
     try {
-      const product = await api.products.create({ ...form, name: form.name.trim(), ...brandPayload(form), ...pricePayload(form), ...perfumePayload(form), stock: Number(form.stock), sort_order: Number(form.sort_order), description: form.description || null, photo_url: form.photo_url || null })
+      const product = await api.products.create({ ...form, name: form.name.trim(), ...brandPayload(form), ...pricePayload(form), ...perfumePayload(form), ...aromaPayload(form), ...seoPayload(form), stock: Number(form.stock), sort_order: Number(form.sort_order), description: form.description || null, photo_url: form.photo_url || null })
       onSaved(product); notify(`Товар створено · ${product.sku}`); onClose()
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
@@ -28,6 +28,8 @@ export default function NewProductModal({ brands, onManageBrands, onClose, onSav
         <section className="catalog-form-section"><h3>Бренд і характеристики</h3><BrandFields form={form} setForm={setForm} brands={brands} onManage={onManageBrands} /><PerfumeFields form={form} setForm={setForm} /></section>
         <section className="catalog-form-section"><h3>Ціни</h3><PriceFields form={form} setForm={setForm} /></section>
         <section className="catalog-form-section"><h3>Опис і зображення</h3><DescriptionField form={form} setForm={setForm} /><ProductImageField form={form} setForm={setForm} /></section>
+        <section className="catalog-form-section"><h3>Про аромат: ноти та характеристики</h3><AromaFields form={form} setForm={setForm} /></section>
+        <section className="catalog-form-section"><h3>SEO та пошук</h3><SeoFields form={form} setForm={setForm} brandName={brands.find((b) => String(b.id) === String(form.brand_id))?.name || ''} /></section>
         <section className="catalog-form-section"><h3>Відображення та склад</h3><DisplayFields form={form} setForm={setForm} /></section>
       </fieldset>
     </form>

@@ -4,6 +4,7 @@ import { SiteLink } from '../router'
 import { ImageTile } from '../ui/ImageTile'
 import { RequestStatus } from '../ui/RequestStatus'
 import { useStoreRequest } from '../useStoreRequest'
+import { aromaPath } from '../catalog/aromaPath'
 
 // W-16: one dominant action; the formats line appears only when the live
 // assortment confirms it, never as a hard-coded promise.
@@ -12,7 +13,7 @@ export function volumesOf(items = []) {
 }
 
 export function Hero({go, item, volumes = []}) {
-  const target = item ? '/aroma/' + (item.default_product_id || item.id) : ''
+  const target = item ? aromaPath(item) : ''
   return <section className="hero shell" aria-labelledby="hero-title"><div className="hero-content"><p className="eyebrow">НІШЕВА ПАРФУМЕРІЯ У ВАШОМУ ФОРМАТІ</p><h1 id="hero-title">Знайдіть аромат,<br/>який стане<br/>вашим</h1><p className="hero-description">Обирайте аромат і зручний об’єм. Знайомтеся з парфумерією у власному ритмі — перед рішенням про повний флакон.</p>
     {volumes.length > 0 && <p className="hero-formats">Об’єми {volumes.join(' / ')} мл · ціна за мілілітр біля кожного аромату</p>}
     <div className="hero-cta"><SiteLink className="btn primary" to="/catalog" onNavigate={go}>ОБРАТИ АРОМАТ</SiteLink><SiteLink className="hero-secondary" to="/catalog?kind=new" onNavigate={go}>Новинки <span aria-hidden="true">→</span></SiteLink></div></div>

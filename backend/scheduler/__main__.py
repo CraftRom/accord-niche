@@ -22,7 +22,7 @@ from shop.config import settings
 from shop.services.salesdrive_reconciler import ACTIVE_REFRESH_SECONDS
 from shop.logging_setup import setup as setup_logging
 from scheduler.tasks import (
-    refresh_salesdrive_orders, run_backup_if_due, run_due_broadcasts,
+    announce_scheduled_posts, refresh_salesdrive_orders, run_backup_if_due, run_due_broadcasts,
     run_housekeeping, sync_salesdrive,
 )
 
@@ -41,6 +41,7 @@ BROADCAST_CHECK_SECONDS = 15
 SALESDRIVE_WRITE_RETRY_SECONDS = 30
 BACKUP_CHECK_SECONDS = 300
 HOUSEKEEPING_SECONDS = 24 * 3600
+SEO_ANNOUNCE_SECONDS = 300
 
 
 def _due(state: dict, key: str, interval: float, *, now: float | None = None) -> bool:
@@ -105,6 +106,13 @@ async def tick(state: dict) -> None:
             state["salesdrive_background_read_next_at"] = time.monotonic() + min(
                 1800, max(300, SALESDRIVE_BACKGROUND_READ_SECONDS * 2)
             )
+
+    # Відкладені статті блогу: повідомити пошуковики (IndexNow), коли вони вийшли.
+    if _due(state, "seo_announce_next_at", SEO_ANNOUNCE_SECONDS, now=now_mono):
+        try:
+            await announce_scheduled_posts(state)
+        except Exception:
+            log.exception("Помилка під час сповіщення пошуковиків")
 
     # Retention не залежить від успішності/увімкнення backup. Раніше log
     # pruning виконувався лише після успішного pg_dump, тому при вимкнених

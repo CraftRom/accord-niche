@@ -71,11 +71,11 @@ try:
     else: raise SystemExit('API did not start')
     st, body = get('/aroma/7')
     head = body.split('</head>')[0]
-    check('product title in raw HTML', 'Creed Aventus' in head and '450.00 ₴' in head, head)
+    check('product title in raw HTML', 'Creed Aventus' in head and 'від 450 ₴' in head, head)
     check('script-breaking name is escaped', '</script><b>' not in head and '&lt;/script&gt;' in head, head)
     check('JSON-LD cannot close its element', head.count('</script>') == head.count('<script'), head)
     check('og:image https product photo', 'og:image" content="https://cdn.example/a.jpg"' in head, head)
-    check('canonical product URL', 'rel="canonical" href="https://accordniche.pp.ua/aroma/7"' in head, head)
+    check('canonical product URL is readable', 'rel="canonical" href="https://accordniche.pp.ua/aroma/7-creed-aventus-script-b"' in head, head)
     check('fallback block not duplicated', head.count('<title>') == 1, head)
     st, body = get('/blog/staryi-slug?utm_source=x')
     head = body.split('</head>')[0]
@@ -85,8 +85,17 @@ try:
     check('hidden product is noindex and generic', 'noindex' in head and 'Hidden' not in head, head)
     st, body = get('/checkout'); check('checkout is noindex', 'noindex' in body.split('</head>')[0])
     st, body = get('/'); check('home canonical', 'href="https://accordniche.pp.ua"' in body)
+    st, body = get('/aroma/7-creed-aventus-script-b'); check('readable aroma address serves the page', st == 200 and '"@type":"Product"' in body.split('</head>')[0], body[:300])
     st, body = get('/sitemap.xml')
-    check('sitemap lists product and post, not hidden', '/aroma/7<' in body and '/blog/novyi-slug<' in body and '/aroma/8<' not in body, body)
+    check('sitemap index lists its sections', '<sitemapindex' in body and '/sitemap-aromas.xml<' in body and '/sitemap-blog.xml<' in body, body)
+    st, aromas = get('/sitemap-aromas.xml'); st, posts = get('/sitemap-blog.xml')
+    check('sitemaps list product and post, not hidden', '/aroma/7-creed-aventus-script-b<' in aromas and '/blog/novyi-slug<' in posts and '/aroma/8' not in aromas, aromas + posts)
+    try:
+        st, body = get('/sitemap-secret.xml'); check('unknown sitemap name is not served', st == 404, body)
+    except urllib.error.HTTPError as e: check('unknown sitemap name is not served', e.code == 404)
+    try:
+        st, body = get('/abcdefgh123.txt'); check('IndexNow key is not guessable', st == 404, body)
+    except urllib.error.HTTPError as e: check('IndexNow key is not guessable', e.code == 404)
     st, body = get('/robots.txt'); check('robots points to sitemap', 'Sitemap: https://accordniche.pp.ua/sitemap.xml' in body)
     try:
         st, body = get('/__seo_head'); check('internal location exposes nothing', st in (204, 404) and not body, body)
@@ -98,5 +107,5 @@ finally:
     ng.terminate(); ng.wait(timeout=10)
     if api.poll() is None: api.terminate()
     shutil.rmtree(work, ignore_errors=True)
-print(f'SEO E2E: {ok}/15')
-sys.exit(0 if ok == 15 else 1)
+print(f'SEO E2E: {ok}/19')
+sys.exit(0 if ok == 19 else 1)

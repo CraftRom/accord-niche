@@ -307,6 +307,11 @@ def _published():
     return and_(m.Product.is_active.is_(True), _parents_active())
 
 
+# Текстові SEO-поля й картка аромату (порожній рядок = не задано).
+AROMA_TEXT_FIELDS = ("seo_title", "seo_description", "image_alt", "concentration", "fragrance_family",
+                     "top_notes", "heart_notes", "base_notes", "perfumer")
+
+
 def _product(row, parent_active: bool = True) -> Product | None:
     if row is None:
         return None
@@ -320,6 +325,8 @@ def _product(row, parent_active: bool = True) -> Product | None:
         name_lower=row.name_lower or row.name.lower(),
         brand=row.brand or "", gender=row.gender or "unisex", volume_ml=row.volume_ml,
         is_featured=bool(row.is_featured),
+        **{key: getattr(row, key) or "" for key in AROMA_TEXT_FIELDS},
+        release_year=row.release_year, updated_at=row.updated_at,
     )
 
 

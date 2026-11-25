@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom'
 const assets=new URL('../dist/assets/',import.meta.url)
 const bundle=readFileSync(new URL(readdirSync(assets).find(name=>/^index-.*\.js$/.test(name)),assets),'utf8')
 const article={id:5,slug:'real-article',title:'Стаття з бази',excerpt:'Опис із редактора',author_name:'Автор редакції',cover_url:'',published_at:'2026-11-01T10:00:00Z',updated_at:'2026-11-01T10:00:00Z',reading_minutes:2,comment_count:1,comments_enabled:true,
-  body:'## Корисний заголовок\n\n**Справжній текст**\n\n<script>window.hacked=true</script>\n\n[Небезпечне](javascript:alert%281%29)\n\n![Небезпечне](data:image/svg+xml;base64,AAAA)\n\n[Каталог](https://accordniche.pp.ua/catalog)\n\n![Фото](/media/image-123.jpg)'}
+  body:'## Корисний заголовок\n\n**Справжній текст**\n\n<script>window.hacked=true</script>\n\n[Небезпечне](javascript:alert%281%29)\n\n![Небезпечне](data:image/svg+xml;base64,AAAA)\n\n[Каталог](https://accordniche.pp.ua/catalog)\n\n[Зовнішнє](https://example.com/a)\n\n![Фото](/media/image-123.jpg)'}
 const root={id:9,parent_id:null,author_name:'Покупець',is_staff:false,body:'<img src=x onerror=alert(1)>',created_at:'2026-11-02T11:00:00Z',updated_at:'2026-11-02T11:00:00Z',reply_count:0}
 const response=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json'}})
 async function waitFor(check){const until=Date.now()+4000;while(Date.now()<until){if(check())return;await new Promise(resolve=>setTimeout(resolve,15))}assert.ok(check(),'Blog DOM did not become ready')}
@@ -64,6 +64,9 @@ test('Markdown renders safely, comments remain plain text and guest sessions can
     assert.equal(prose.querySelectorAll('a[href^="javascript:"],img[src^="data:"]').length,0)
     assert.equal(prose.querySelector('img').getAttribute('src'),'/media/image-123.jpg')
     assert.equal(prose.querySelector('a[href^="https:"]').rel,'noopener noreferrer nofollow')
+    // Links to the shop are internal: same tab, followed by crawlers, SPA navigation.
+    const internal=prose.querySelector('a[href="/catalog"]')
+    assert.ok(internal && !internal.rel && !internal.target)
     assert.equal(app.document.querySelector('.blog-comment p').textContent,root.body)
     assert.equal(app.document.querySelector('.blog-comment img'),null)
     assert.equal(app.document.querySelector('.comment-form'),null)

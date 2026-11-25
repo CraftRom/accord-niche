@@ -218,6 +218,13 @@ export const api = {
     comments: (params) => request('/blog/comments', {params}),
     moderate: (id,body) => request('/blog/comments/' + id + '/moderate', {method:'POST',body}),
     reply: (id,body) => request('/blog/posts/' + id + '/reply', {method:'POST',body}),
+    removeComment: (id) => request('/blog/comments/' + id, {method:'DELETE'}),
+    bulk: (body) => request('/blog/comments/bulk', {method:'POST',body}),
+    bans: () => request('/blog/bans'),
+    ban: (body) => request('/blog/bans', {method:'POST',body}),
+    unban: (userId) => request('/blog/bans/' + userId, {method:'DELETE'}),
+    moderationSettings: () => request('/blog/moderation-settings'),
+    saveModerationSettings: (body) => request('/blog/moderation-settings', {method:'PUT',body}),
   },
   legal: {
     list: () => request('/legal'),

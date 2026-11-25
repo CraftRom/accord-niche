@@ -272,6 +272,22 @@ class Product(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Готове поле для пошуку без урахування регістру (ILIKE не використовує індекс)
     name_lower: Mapped[str] = mapped_column(String(255), default="")
+    # SEO і картка аромату. Поля аромату (ноти, концентрація, парфумер…) спільні
+    # для всіх обʼємів одного аромату: панель зберігає їх в усіх його SKU.
+    # Порожній seo_title/seo_description означає «скласти автоматично».
+    seo_title: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    seo_description: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    image_alt: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    concentration: Mapped[str] = mapped_column(String(24), default="", server_default="")
+    fragrance_family: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    top_notes: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    heart_notes: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    base_notes: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    perfumer: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    release_year: Mapped[int | None] = mapped_column(Integer)
+    # lastmod у sitemap.xml: змінюється з кожним збереженням товару.
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                                        onupdate=func.now())
 
     category: Mapped[Category | None] = relationship(back_populates="products")
     subcategory: Mapped[Subcategory | None] = relationship(back_populates="products")
@@ -857,6 +873,12 @@ class BlogPost(Base):
     cover_url: Mapped[str] = mapped_column(String(512), default="", server_default="")
     author_name: Mapped[str] = mapped_column(String(120), default="Редакція ACCORD NICHE", server_default="Редакція ACCORD NICHE")
     status: Mapped[str] = mapped_column(String(16), default="draft", server_default="draft")
+    # SEO: порожні поля складаються із заголовка й короткого опису.
+    seo_title: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    seo_description: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    focus_keyword: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    cover_alt: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    noindex: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     comments_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -892,7 +914,37 @@ class BlogComment(Base):
     client_key: Mapped[str | None] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     moderation_note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    # Причини автоматичної модерації через кому: stop_word, link, contact.
+    flags: Mapped[str] = mapped_column(String(200), default="", server_default="")
     moderated_by: Mapped[str | None] = mapped_column(String(64))
     moderated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BlogCommentBan(Base):
+    """Заборона коментувати для покупця (усі його привʼязані ідентичності)."""
+    __tablename__ = "blog_comment_bans"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    author_name: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    reason: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    banned_by: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BlogModerationSettings(Base):
+    """Правила автоматичної модерації коментарів. Один рядок з id = 1."""
+    __tablename__ = "blog_moderation_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # manual — кожен коментар перевіряє редакція; trusted — автори з історією
+    # схвалених коментарів і без відхилених публікуються одразу.
+    mode: Mapped[str] = mapped_column(String(16), default="manual", server_default="manual")
+    trusted_after: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    stop_words: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # reject — коментар зі стоп-словом відхиляється одразу; hold — лишається в черзі з позначкою.
+    stop_word_action: Mapped[str] = mapped_column(String(16), default="hold", server_default="hold")
+    hold_links: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    updated_by: Mapped[str] = mapped_column(String(64), default="", server_default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
