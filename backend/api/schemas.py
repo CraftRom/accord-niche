@@ -81,7 +81,52 @@ class BrandOut(ORMModel):
     products_count: int = 0
 
 
-class ProductIn(BaseModel):
+CONCENTRATIONS = ("", "parfum", "extrait", "edp", "edt", "edc", "cologne", "oil", "other")
+
+
+def _seo_clean(value):
+    """One-line text for SEO fields; control characters are never stored."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Потрібен текст")
+    if any(ord(char) < 32 and char not in "\n\t\r" for char in value):
+        raise ValueError("Недопустимі керівні символи")
+    return " ".join(value.split())
+
+
+class AromaSeoFields(BaseModel):
+    """SEO та картка аромату. None — не змінювати (старі клієнти й імпорт)."""
+    seo_title: str | None = Field(None, max_length=120)
+    seo_description: str | None = Field(None, max_length=300)
+    image_alt: str | None = Field(None, max_length=200)
+    concentration: str | None = Field(None, max_length=24)
+    fragrance_family: str | None = Field(None, max_length=80)
+    top_notes: str | None = Field(None, max_length=500)
+    heart_notes: str | None = Field(None, max_length=500)
+    base_notes: str | None = Field(None, max_length=500)
+    perfumer: str | None = Field(None, max_length=120)
+    release_year: int | None = Field(None, ge=1700, le=2100)
+
+    @field_validator("seo_title", "seo_description", "image_alt", "fragrance_family", "top_notes",
+                     "heart_notes", "base_notes", "perfumer", mode="before")
+    @classmethod
+    def one_line(cls, value):
+        return _seo_clean(value)
+
+    @field_validator("concentration", mode="before")
+    @classmethod
+    def known_concentration(cls, value):
+        value = _seo_clean(value)
+        if value is not None and value.casefold() not in CONCENTRATIONS:
+            raise ValueError("Невідома концентрація")
+        return value.casefold() if value is not None else None
+
+
+AROMA_FIELDS = tuple(AromaSeoFields.model_fields)
+
+
+class ProductIn(AromaSeoFields):
     # Бренд обирається зі списку брендів (brand_id). Назва (brand) приймається
     # для імпорту й старих клієнтів: бренд із такою назвою знаходиться або
     # створюється автоматично.
@@ -112,7 +157,7 @@ class ProductIn(BaseModel):
         return value.strip()
 
 
-class ProductPatch(BaseModel):
+class ProductPatch(AromaSeoFields):
     model_config = ConfigDict(extra="forbid")
     brand_id: int | None = Field(None, gt=0)
     name: str | None = Field(None, min_length=1, max_length=255)
@@ -146,6 +191,7 @@ class ProductPatch(BaseModel):
 class ProductOut(ORMModel, ProductIn):
     id: int
     photo_file_id: str | None = Field(None, exclude=True)
+    updated_at: datetime | None = None
 
     @computed_field
     @property

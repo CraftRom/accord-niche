@@ -6,6 +6,7 @@ import { sanitizeCart } from './catalog'
 import { Brands } from './catalog/BrandsPage'
 import { Catalog } from './catalog/CatalogPage'
 import { Detail } from './catalog/ProductPage'
+import { AROMA_ROUTE } from './catalog/aromaPath'
 import { recordVisit, rememberCampaign } from './checkout'
 import { CheckoutPage } from './checkout/CheckoutPage'
 import { CheckoutSuccess } from './checkout/CheckoutSuccess'
@@ -74,7 +75,7 @@ export default function App() {
     setCart(old => ({...old, [product.id]: Math.min((Number(old[product.id]) || 0) + 1, product.stock, 99)}))
     setBasketOpen(true)
   }
-  const detail = path.match(/^\/aroma\/(\d+)$/)
+  const detail = path.match(AROMA_ROUTE)
   const blogMatch = path.match(/^\/blog\/([^/]+)$/)
   let blogSlug = blogMatch?.[1] || ''
   try { blogSlug = decodeURIComponent(blogSlug) } catch {}

@@ -1,8 +1,14 @@
+# ACCORD NICHE — https://accordniche.pp.ua
+# Shop pages, aromas, brands and the blog are indexed. Checkout, the customer
+# account, order pages and the API are private. Filtered and sorted catalog
+# views point their canonical to the main list, internal search is noindex.
 User-agent: *
+Allow: /
 Disallow: /checkout
 Disallow: /profile
 Disallow: /order/
 Disallow: /api/
-Allow: /api/public/catalog/
+Disallow: /__seo
+Allow: /api/public/catalog/*/photo
 
 Sitemap: https://accordniche.pp.ua/sitemap.xml

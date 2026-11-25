@@ -14,6 +14,7 @@ from api.auth import Principal, require_admin, require_staff
 from api.schemas import BrandIn, BrandOut, BrandPatch, ProductIn, ProductOut, ProductPatch, StockDeltaIn, StockIn
 from shop.repo.base import Repository
 from shop.repo.factory import get_repo
+from shop.services import aroma_seo
 
 router = APIRouter(dependencies=[Depends(require_staff)])
 
@@ -50,6 +51,7 @@ async def update_brand(brand_id: int, data: BrandPatch, repo: Repository = Depen
         raise HTTPException(409, str(exc)) from exc
     if not found:
         raise HTTPException(404, "Бренд не знайдено")
+    _changed()
     return found
 
 
@@ -69,6 +71,7 @@ async def delete_brand(brand_id: int, repo: Repository = Depends(get_repo)):
 async def purge_product(product_id: int, repo: Repository = Depends(get_repo)):
     if not await repo.purge_product(product_id):
         raise HTTPException(404, "Товар не знайдено")
+    _changed()
 
 
 
@@ -97,12 +100,15 @@ async def list_products(brand_id: int | None = Query(None, gt=0),
 
 @router.post("/products", response_model=ProductOut, status_code=201)
 async def create_product(data: ProductIn, who: Principal = Depends(require_admin), repo: Repository = Depends(get_repo)):
-    payload = data.model_dump()
+    payload = _aroma_payload(data.model_dump(), clear_missing=False)
     payload.pop("sku", None)
     try:
         product = await repo.create_product(payload)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    await aroma_seo.inherit(repo, product.id)
+    product = await repo.get_product(product.id)
+    await _announce(repo, product.id)
     from shop.services.panel_notifications import safe_publish
     await safe_publish(repo, "product.created", "Новий товар у каталозі",
                        f"{product.name} · {product.stock} шт. · {product.price} ₴",
@@ -135,6 +141,36 @@ async def get_product(product_id: int, repo: Repository = Depends(get_repo)):
     return found
 
 
+def _aroma_payload(payload: dict, *, clear_missing: bool) -> dict:
+    """None in an SEO field: keep (PUT/create) or clear (explicit PATCH null)."""
+    for key in aroma_seo.FIELDS:
+        if key not in payload:
+            continue
+        if payload[key] is None and key != "release_year":
+            if clear_missing:
+                payload[key] = ""
+            else:
+                payload.pop(key)
+        elif payload[key] is None and not clear_missing:
+            payload.pop(key)
+    return payload
+
+
+def _changed() -> None:
+    """Catalog changed: storefront and sitemaps are rebuilt on the next request."""
+    from shop.services import seo, storefront
+    storefront._cache.clear()
+    seo.invalidate()
+
+
+async def _announce(repo, *product_ids: int) -> None:
+    """Tell IndexNow search engines about the canonical aroma pages (no-op without a key)."""
+    from shop.services import indexnow
+    _changed()
+    if indexnow.key() and product_ids:
+        indexnow.notify(*(indexnow.ORIGIN + path for path in await aroma_seo.canonical_paths(repo, product_ids)))
+
+
 async def _save_product(product_id, payload, repo):
     try:
         product = await repo.update_product(product_id, payload)
@@ -142,19 +178,22 @@ async def _save_product(product_id, payload, repo):
         raise HTTPException(400, str(exc)) from exc
     if not product:
         raise HTTPException(404, "Товар не знайдено")
+    # Notes, concentration and SEO texts belong to the aroma: every volume gets them.
+    touched = await aroma_seo.share(repo, product_id, {k: payload[k] for k in aroma_seo.FIELDS if k in payload})
+    await _announce(repo, product_id, *touched)
     return product
 
 
 @router.put("/products/{product_id}", response_model=ProductOut, dependencies=[Depends(require_admin)])
 async def update_product(product_id: int, data: ProductIn, repo: Repository = Depends(get_repo)):
-    payload = data.model_dump()
+    payload = _aroma_payload(data.model_dump(), clear_missing=False)
     payload.pop("sku", None)
     return await _save_product(product_id, payload, repo)
 
 
 @router.patch("/products/{product_id}", response_model=ProductOut, dependencies=[Depends(require_admin)])
 async def patch_product(product_id: int, data: ProductPatch, repo: Repository = Depends(get_repo)):
-    payload = data.model_dump(exclude_unset=True)
+    payload = _aroma_payload(data.model_dump(exclude_unset=True), clear_missing=True)
     if "photo_url" in payload:
         payload["photo_file_id"] = None
     return await _save_product(product_id, payload, repo)
@@ -186,6 +225,7 @@ async def delete_product(product_id: int, repo: Repository = Depends(get_repo)):
     # М'яке видалення — історія замовлень має лишитись читабельною
     if not await repo.update_product(product_id, {"is_active": False}):
         raise HTTPException(404, "Товар не знайдено")
+    _changed()
 
 # ------------------------------- bulk product import / export
 from fastapi import BackgroundTasks, File, Form, UploadFile

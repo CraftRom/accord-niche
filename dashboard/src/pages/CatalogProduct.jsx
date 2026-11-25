@@ -4,17 +4,19 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, isAdmin } from '../api'
 import { useProductImage } from '../components/catalog/useProductImage'
 import { ErrorBar, Field, Info, Loading, money, useToast } from '../components/ui'
-import { BrandFields, DescriptionField, DisplayFields, PriceFields, ProductImageField, PerfumeFields, perfumePayload, changeField, brandPayload, pricePayload } from '../components/catalog/ProductFields'
+import { AromaFields, BrandFields, CONCENTRATIONS, DescriptionField, DisplayFields, PriceFields, ProductImageField, PerfumeFields, SeoFields, aromaPayload, perfumePayload, seoPayload, changeField, brandPayload, pricePayload, validateAroma } from '../components/catalog/ProductFields'
 import { PageHeader } from '../components/page'
 import { StateBadge } from '../components/StateBadge'
 
-function EditBlock({ title, product, fields, payload, onSaved, children }) {
+function EditBlock({ title, product, fields, payload, validate, onSaved, children }) {
   const [editing, setEditing] = useState(false), [form, setForm] = useState(product)
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const notify = useToast()
   const start = () => { setForm({ ...product }); setError(''); setEditing(true) }
   const save = async (event) => {
     event.preventDefault(); if (busy) return
+    const problem = validate?.(form)
+    if (problem) { setError(problem); return }
     setBusy(true); setError('')
     try {
       const changes = payload(form)
@@ -28,6 +30,15 @@ function EditBlock({ title, product, fields, payload, onSaved, children }) {
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   return <section className="catalog-edit-block" aria-label={title}><div className="catalog-block-head"><h2>{title}</h2>{!editing && isAdmin() && <button className="btn ghost small" onClick={start}>Редагувати</button>}</div>{editing ? <form onSubmit={save}><ErrorBar error={error} /><fieldset disabled={busy}>{fields(form, setForm)}</fieldset><div className="catalog-block-actions"><button className="btn ghost" type="button" disabled={busy} onClick={() => setEditing(false)}>Скасувати</button><button className="btn" disabled={busy}>{busy ? 'Зберігаємо…' : 'Зберегти блок'}</button></div></form> : children}</section>
+}
+function AromaSummary({ product }) {
+  const concentration = CONCENTRATIONS.find(([value]) => value && value === product.concentration)?.[1]
+  const rows = [['Концентрація', concentration], ['Сімейство', product.fragrance_family], ['Верхні ноти', product.top_notes], ['Ноти серця', product.heart_notes], ['Базові ноти', product.base_notes], ['Парфумер', product.perfumer], ['Рік', product.release_year]].filter(([, v]) => v)
+  if (!rows.length) return <p className="muted">Ноти й характеристики не заповнено. Вони потрібні покупцям і пошуковикам (блок «Про аромат», розширені результати Google).</p>
+  return <dl className="catalog-aroma-summary">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+}
+function SeoSummary({ product }) {
+  return <><p><strong>Title:</strong> {product.seo_title || <span className="muted">автоматично з бренду, назви й ціни</span>}</p><p><strong>Description:</strong> {product.seo_description || <span className="muted">автоматично з нот і обʼємів</span>}</p><p><strong>Alt фото:</strong> {product.image_alt || <span className="muted">бренд і назва</span>}</p></>
 }
 function CurrentImage({ product }) {
   const [image, error] = useProductImage(product)
@@ -59,6 +70,8 @@ export default function CatalogProduct() {
       <EditBlock {...props} title="Парфумерія" payload={perfumePayload} fields={(f, set) => <PerfumeFields form={f} setForm={set} />}><p>{product.volume_ml ? `${product.volume_ml} мл` : "Обʼєм не задано"} · {{male:"чоловічий",female:"жіночий",unisex:"унісекс"}[product.gender] || "унісекс"}{product.is_featured ? " · рекомендація магазину" : ""}</p></EditBlock>
       <EditBlock {...props} title="Ціни та акція" payload={pricePayload} fields={(f, set) => <PriceFields form={f} setForm={set} />}><p className="catalog-detail-price">{money(product.price)} {product.is_sale && <s>{money(product.old_price)}</s>}</p><p>{product.is_sale ? 'Акція · знижка відображається в каталозі' : 'Акція вимкнена'}</p></EditBlock>
       <EditBlock {...props} title="Зображення" payload={(f) => ({ photo_url: f.photo_url || null })} fields={(f, set) => <><ProductImageField form={f} setForm={set} />{product.has_photo && !f.photo_url && <p className="muted">Збереження порожнього зображення прибере поточне фото.</p>}</>}><CurrentImage product={product} /></EditBlock>
+      <EditBlock {...props} title="Про аромат" payload={aromaPayload} validate={validateAroma} fields={(f, set) => <AromaFields form={f} setForm={set} />}><AromaSummary product={product} /></EditBlock>
+      <EditBlock {...props} title="SEO та пошук" payload={seoPayload} fields={(f, set) => <SeoFields form={f} setForm={set} brandName={product.brand} productId={product.id} />}><SeoSummary product={product} /></EditBlock>
       <div className="catalog-description-block"><EditBlock {...props} title="Опис" payload={(f) => ({ description: f.description || null })} fields={(f, set) => <DescriptionField form={f} setForm={set} />}><p className="catalog-detail-description">{product.description || 'Опис не додано'}</p></EditBlock></div>
     </div>
   </div>

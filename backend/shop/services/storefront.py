@@ -38,7 +38,8 @@ def group_catalog(products, sales, serialize):
         # A missing identity must not merge unrelated unnamed records.
         group = groups.setdefault(key, dict(key=key, id=product.id, name=name, brand=brand,
             gender=product.gender or 'unisex', description=product.description or '', variants=[],
-            is_new=False, is_featured=False, is_set=False, _units=0, _order=product.sort_order))
+            is_new=False, is_featured=False, is_set=False, _units=0, _order=product.sort_order, _products=[]))
+        group['_products'].append(product)
         group['id'] = min(group['id'], product.id)
         group['variants'].append(serialize(product))
         group['is_new'] |= bool(product.is_new)
@@ -59,6 +60,15 @@ def group_catalog(products, sales, serialize):
         group['image'] = next((p.photo_url or p.photo_endpoint for p in group['variants'] if p.photo_url or p.photo_endpoint), '')
         group['volumes'] = sorted({p.volume_ml for p in group['variants'] if p.volume_ml and p.volume_ml > 0})
         group['bestseller_rank'] = None
+        # Aroma card: the first SKU (by id) that has a value. aroma_seo keeps them equal.
+        from shop.services.aroma_seo import FIELDS, aroma_slug, first_value
+        sources = group.pop('_products')
+        for field in FIELDS:
+            group[field] = first_value(sources, field)
+        group['slug'] = aroma_slug(group['brand'], group['name'])
+        group['path'] = f"/aroma/{group['id']}-{group['slug']}"
+        stamps = [p.updated_at for p in sources if getattr(p, 'updated_at', None)]
+        group['updated_at'] = max(stamps) if stamps else None
     ranked = sorted((g for g in result if g['_units'] > 0 and g['stock'] > 0),
                     key=lambda g: (-g['_units'], g['_order'], g['id']))
     for rank, group in enumerate(ranked, 1):

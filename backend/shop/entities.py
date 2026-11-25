@@ -114,6 +114,17 @@ class Product:
     gender: str = "unisex"
     volume_ml: int | None = None
     is_featured: bool = False
+    seo_title: str = ""
+    seo_description: str = ""
+    image_alt: str = ""
+    concentration: str = ""
+    fragrance_family: str = ""
+    top_notes: str = ""
+    heart_notes: str = ""
+    base_notes: str = ""
+    perfumer: str = ""
+    release_year: int | None = None
+    updated_at: datetime | None = None
     # Активність бренду. is_active лишається індивідуальним прапорцем товару:
     # приховування бренду не переписує його, і повторне ввімкнення бренду не
     # публікує товари, приховані окремо (A08).

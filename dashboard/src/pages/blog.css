@@ -25,3 +25,10 @@
 .legal-notice p + p { margin-top: 8px; }
 .legal-notice, .legal-editor { overflow-wrap: anywhere; min-width: 0; }
 .legal-editor .blog-format-tools, .legal-editor .row { flex-wrap: wrap; }
+.blog-seo{display:grid;gap:12px;margin:18px 0;padding-top:16px;border-top:1px solid var(--line,rgba(148,163,184,.2))}.blog-seo h2{margin:0;font-size:16px}
+.blog-moderation-head{display:flex;gap:12px;align-items:flex-start}.blog-moderation-item.selected{outline:2px solid var(--focus-ring)}
+.blog-flags{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.blog-flag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:rgba(217,119,6,.15);color:var(--status-warning);margin-left:6px}.blog-flags .blog-flag{margin-left:0}.blog-flag.danger{background:rgba(242,96,126,.15);color:var(--status-danger)}
+.blog-bulk-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0;padding:10px 12px;border:1px solid var(--line,rgba(148,163,184,.2));border-radius:12px}
+.blog-ban-form{margin-top:14px;padding:14px;border:1px solid rgba(242,96,126,.35);border-radius:12px;display:grid;gap:10px}.blog-ban-form h3{margin:0}.blog-ban-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.blog-author-filter{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.blog-rules{display:grid;gap:14px;max-width:760px}.blog-rules fieldset{display:grid;gap:14px;border:0;padding:0;margin:0}
+@media(max-width:760px){.blog-ban-grid{grid-template-columns:1fr}.blog-bulk-bar .btn{flex:1}}

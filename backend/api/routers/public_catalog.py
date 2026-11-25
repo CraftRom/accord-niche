@@ -208,6 +208,17 @@ class PublicAroma(BaseModel):
     is_featured: bool
     is_set: bool
     bestseller_rank: int | None
+    # Readable canonical address: /aroma/<id>-<brand-name>.
+    slug: str = ''
+    path: str = ''
+    image_alt: str = ''
+    concentration: str = ''
+    fragrance_family: str = ''
+    top_notes: str = ''
+    heart_notes: str = ''
+    base_notes: str = ''
+    perfumer: str = ''
+    release_year: int | None = None
 
 
 class AromaPage(BaseModel):
