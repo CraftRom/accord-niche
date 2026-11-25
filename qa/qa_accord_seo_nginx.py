@@ -17,7 +17,8 @@ def free():
 api_port, web_port = free(), free()
 db = work / 'seo.db'
 env = {**os.environ, 'DATABASE_URL': f'sqlite+aiosqlite:///{db}', 'TRUSTED_HOSTS': 'accordniche.pp.ua,127.0.0.1,localhost',
-       'BOT_TOKEN': '', 'OPTIONAL_TELEGRAM': 'true', 'JWT_SECRET': 'x' * 48, 'REDIS_URL': '', 'PYTHONPATH': str(ROOT / 'backend')}
+       'BOT_TOKEN': '', 'OPTIONAL_TELEGRAM': 'true', 'JWT_SECRET': 'x' * 48, 'REDIS_URL': '', 'PYTHONPATH': str(ROOT / 'backend'),
+       'ELFAR_DATA_ROOT': str(work / 'data')}
 seed = '''
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -100,6 +101,14 @@ try:
     try:
         st, body = get('/__seo_head'); check('internal location exposes nothing', st in (204, 404) and not body, body)
     except urllib.error.HTTPError as e: check('internal location exposes nothing', e.code == 404)
+    # Test mode: the SSI head subrequest carries the administrator's cookie; other visitors see the shop.
+    enable = 'import asyncio\nfrom shop.services import test_mode\nprint(test_mode.token(asyncio.run(test_mode.enable("qa", 1))))'
+    token = subprocess.run([sys.executable, '-c', enable], env=env, cwd=ROOT / 'backend', check=True, capture_output=True, text=True).stdout.strip()
+    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/aroma/1-creed-aventus', headers={'Host': 'accordniche.pp.ua', 'Cookie': f'__Host-accord_test={token}'})
+    with urllib.request.urlopen(req, timeout=5) as r: head = r.read().decode().split('</head>')[0]
+    check('test-mode browser gets sandbox head, noindex', '[ТЕСТ] Creed Aventus' in head and 'noindex' in head, head)
+    st, body = get('/aroma/7'); head = body.split('</head>')[0]
+    check('other visitors still get the live shop', 'Aventus &lt;/script&gt;' in head and '[ТЕСТ]' not in head, head)
     api.terminate(); api.wait(timeout=10)
     st, body = get('/aroma/7'); head = body.split('</head>')[0]
     check('API down: page still served with fallback tags', st == 200 and head.count('<title>') == 1 and 'розпив оригінальної' in head and 'error' not in head.lower(), head)
@@ -107,5 +116,5 @@ finally:
     ng.terminate(); ng.wait(timeout=10)
     if api.poll() is None: api.terminate()
     shutil.rmtree(work, ignore_errors=True)
-print(f'SEO E2E: {ok}/19')
-sys.exit(0 if ok == 19 else 1)
+print(f'SEO E2E: {ok}/21')
+sys.exit(0 if ok == 21 else 1)

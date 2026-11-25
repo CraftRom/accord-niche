@@ -112,6 +112,9 @@ from api.request_log import RequestLogMiddleware, client_ip, current_request_id
 
 # Порядок важливий: журнал ставимо першим, щоб він бачив і ті запити,
 # які CORS відхилить, — саме вони найчастіше й спантеличують.
+# Test mode is the innermost layer: host, CSRF and security checks run first.
+from api.test_mode_middleware import SandboxModeMiddleware
+app.add_middleware(SandboxModeMiddleware)
 app.add_middleware(RequestLogMiddleware)
 
 app.add_middleware(
@@ -304,6 +307,9 @@ app.include_router(broadcasts.router, prefix="/api/broadcasts", tags=["broadcast
 app.include_router(operators.router, prefix="/api/operators", tags=["operators"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(system_router.router, prefix="/api/system", tags=["system"])
+from api.routers import test_mode as test_mode_router
+app.include_router(test_mode_router.admin, prefix="/api/system/test-mode", tags=["system"])
+app.include_router(test_mode_router.public, prefix="/api/public/test-mode", tags=["test-mode"])
 # Вебхук зовнішніх систем — без авторизації панелі (див. модуль), а
 # перевірка звʼязку — лише для системного адміністратора.
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])

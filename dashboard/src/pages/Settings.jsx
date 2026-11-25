@@ -5,6 +5,7 @@ import { filterSettingGroups } from '../roles'
 import { ErrorBar, Field, Loading, useToast } from '../components/ui'
 import { SETTINGS_CATEGORIES, categoryFor, changedSettings, visibleItems } from '../settingsModel'
 import ModuleStatus from '../components/ModuleStatus'
+import TestModeCard from '../components/TestModeCard'
 import { PageHeader, SectionCard } from '../components/page'
 import { StateBadge } from '../components/StateBadge'
 
@@ -955,6 +956,8 @@ export default function Settings() {
       )}
 
       {isSysadmin() && !needle && category === 'system' && <EnvironmentCard />}
+
+      {isSysadmin() && !needle && category === 'system' && <TestModeCard />}
 
       {isSysadmin() && !needle && category === 'system' && (
       <div className="card u-mb-5">

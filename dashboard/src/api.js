@@ -515,6 +515,9 @@ export const api = {
   system: {
     modules: () => request('/system/modules'),
     readiness: () => request('/system/readiness'),
+    testMode: () => request('/system/test-mode'),
+    enableTestMode: (hours) => request('/system/test-mode', { method: 'POST', body: { hours } }),
+    disableTestMode: () => request('/system/test-mode', { method: 'DELETE' }),
   },
   settings: {
     environment: () => request('/settings/environment'),

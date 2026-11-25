@@ -114,6 +114,10 @@ def _json_ld(data: dict) -> str:
 
 def render(meta: dict) -> str:
     e = lambda value: html.escape(str(value), quote=True)
+    from shop.services import test_mode
+    if test_mode.active():
+        # Sandbox pages are only for the administrator's browser: never indexed.
+        meta = {**meta, "noindex": True, "title": "[ТЕСТ] " + meta["title"], "google_verification": None}
     tags = [f"<title>{e(meta['title'])}</title>",
             f'<meta name="description" content="{e(meta["description"])}" />']
     if meta.get("noindex"):
