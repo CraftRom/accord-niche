@@ -433,6 +433,11 @@ def current() -> ShopSettings:
 
 async def get_shop_settings(repo) -> ShopSettings:
     global _cache
+    from shop.services import test_mode
+    if test_mode.active():
+        # The test-mode sandbox has no settings of its own and must never
+        # fill the shared cache: it reads the live shop's values.
+        return _cache[1] if _cache else ShopSettings.from_env()
     now = time.monotonic()
     if _cache and now - _cache[0] < CACHE_TTL_SECONDS:
         return _cache[1]

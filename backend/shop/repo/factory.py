@@ -18,7 +18,12 @@ async def open_repo() -> AsyncIterator[Repository]:
     from shop.db import SessionMaker
     from shop.repo.sql import SqlRepository
 
-    async with SessionMaker() as session:
+    from shop.services import test_mode
+    sandbox = test_mode.active()
+    # Website requests of the system administrator's test mode go to the
+    # sandbox database; everything else (and every other visitor) uses the shop's.
+    maker = test_mode.session_maker(sandbox) if sandbox else SessionMaker
+    async with maker() as session:
         yield SqlRepository(session)
 
 

@@ -15,6 +15,7 @@ import { Home, HowItWorks } from './home/HomePage'
 import { Footer } from './layout/Footer'
 import { Header } from './layout/Header'
 import { InfoModal } from './layout/InfoModal'
+import { TestModeBanner } from './layout/TestModeBanner'
 import { startReveal } from './motion'
 import { ProfilePage } from './profile/ProfilePage'
 import { useRoute } from './router'
@@ -89,7 +90,7 @@ export default function App() {
     catch (error) {setNotice(error.message || 'Не вдалося вийти. Спробуйте ще раз.')}
   }
   const count = Object.values(cart).reduce((sum,qty) => sum + Number(qty), 0)
-  return <><Header route={route} go={go} onCart={() => setBasketOpen(true)} onLogout={logout} count={count} account={commerce.account}/>
+  return <><TestModeBanner/><Header route={route} go={go} onCart={() => setBasketOpen(true)} onLogout={logout} count={count} account={commerce.account}/>
     {notice && <div className="shell notice" role="alert">{notice}<button onClick={() => setNotice('')}>Закрити</button></div>}
     {path === '/' ? <Home go={go}/> : path === '/catalog' || path === '/sets' ? <Catalog key={path} route={route} go={go} sets={path === '/sets'}/> : path === '/brands' ? <Brands go={go}/> : path === '/blog' ? <BlogList route={route} go={go}/> : blogMatch ? <BlogArticle key={blogSlug} slug={blogSlug} shop={commerce} go={go}/> : detail ? <Detail id={Number(detail[1])} go={go} add={add}/> : path === '/checkout' ? <CheckoutPage site={site} shop={commerce} cart={cart} products={products} cartRequest={cartRequest} change={change} go={go} complete={result => {setOrderResult(result); setNotice(''); setCart({})}}/> : path === '/profile' ? <ProfilePage key={commerce.account.account_key || 'guest'} shop={commerce} go={go}/> : path === '/order/success' ? <CheckoutSuccess result={commerce.account.has_session?orderResult:null} go={go}/> : path === '/terms' || path === '/privacy' ? <LegalPage key={path} docKey={path.slice(1)} go={go}/> : path === '/how' ? <main><PageTitle label="ПРОСТО І ЗРОЗУМІЛО" title="Як це працює"/><HowItWorks/></main> : <main><PageTitle label="404" title="Сторінку не знайдено"/><div className="shell"><button className="btn outline" onClick={() => go('/')}>На головну</button></div></main>}
     <Footer go={go} setInfo={setInfo} site={site}/><Basket lineNotes={lineNotes} open={basketOpen} close={() => setBasketOpen(false)} cart={cart} products={products} change={change} go={go} site={site} request={cartRequest}/><InfoModal name={info} close={() => setInfo('')} site={site}/>
