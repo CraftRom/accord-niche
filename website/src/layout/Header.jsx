@@ -27,6 +27,11 @@ export function Header({go, onCart, onLogout, count, account, route}) {
   useEffect(()=>{
     if(previousRoute.current!==route){previousRoute.current=route;setMenu(false);setSearch(false)}
   },[route])
+  // The full-screen phone menu: the page underneath does not scroll.
+  useEffect(()=>{
+    document.documentElement.classList.toggle('menu-open',menu)
+    return()=>document.documentElement.classList.remove('menu-open')
+  },[menu])
   useEffect(()=>{
     if(!menu && !search)return
     const close=event=>{if(event.key==='Escape' && !document.querySelector('[aria-modal="true"]')){event.preventDefault();setMenu(false);setSearch(false);(search?searchButton:menuButton).current?.focus()}}

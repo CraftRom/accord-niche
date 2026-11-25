@@ -255,3 +255,54 @@ a.section-link,a.product-link{display:block}
 /* Documents (/terms, /privacy): the article layout, numbered clauses read easily. */
 .legal-page .blog-prose h2{font-size:24px;margin-top:1.6em}
 .legal-switch{margin-top:40px;padding-top:16px;border-top:1px solid #e8e3dc}
+
+/* ------------------------------------------------------- phones: larger, easier */
+/* The header stays on screen while scrolling, the brand and icons are sized
+   for a thumb (48 px targets, 24 px icons) and the menu takes the whole screen
+   with large rows. Small print and buttons grow one step on phones only. */
+@media (max-width: 750px) {
+  :root{--font-small:13px;--font-control:14px}
+  .header{position:sticky;top:0}
+  .header .header-inner{min-height:72px;gap:10px}
+  .header .brandmark{width:132px}
+  .header .brandmark strong{font-size:22px}
+  .header .brandmark-bottom{font-size:8px;margin-top:7px}
+  .header .header-actions{gap:2px}
+  .header .icon-btn{width:48px;height:48px}
+  .header .icon-btn svg{width:24px;height:24px}
+  .header .cart-count{min-width:20px;height:20px;right:2px;top:2px;font-size:12px;line-height:16px}
+  .header .header-nav{position:fixed;top:72px;bottom:0;max-height:none;padding:8px 20px calc(28px + env(safe-area-inset-bottom));box-shadow:none;border-top:1px solid var(--line)}
+  .header .header-nav.open{gap:0;justify-content:flex-start}
+  .header .header-nav :is(button,a){display:flex;align-items:center;justify-content:space-between;min-height:64px;padding:16px 8px;font-size:22px;letter-spacing:-.01em;color:var(--text-primary);border-left:0;border-bottom:1px solid #f0ece6}
+  .header .header-nav a::after{content:'→';display:block;position:static;width:auto;height:auto;background:none;transform:none;font-size:18px;color:var(--text-accent)}
+  .header .header-nav [aria-current="page"]{background:var(--surface-soft);box-shadow:inset 3px 0 0 var(--text-primary);font-weight:600}
+  .header .header-nav .nav-logout{font-size:18px;border-bottom:0}
+  html.menu-open,html.menu-open body{overflow:hidden}
+  .search-strip{min-height:60px}
+  .search-strip input{font-size:18px;min-height:48px}
+  .search-strip .text-action{font-size:15px;min-height:48px}
+  .btn{min-height:52px}
+  .catalog-filters :is(select,input),.blog-search input,.shop-field :is(input,textarea,select){font-size:16px;min-height:48px}
+  .catalog-filters label{font-size:13px}
+  .product-meta h3{font-size:17px}
+  .product-meta strong{font-size:15px}
+  .product-meta p,.product-meta .unit-price,.product-meta .availability{font-size:13px}
+  .detail-back button,.back-link{font-size:15px;min-height:44px}
+  .catalog-summary,.basket-info p,.summary-line small{font-size:13px}
+  .basket-head h2{font-size:28px}
+  .basket-head .icon-btn svg,.modal-close svg{width:24px;height:24px}
+  .basket-info h3{font-size:16px}
+  .basket .qty-control button,.summary-line .qty-control button{min-width:44px;min-height:44px;font-size:18px}
+  .qty-control .remove-btn{font-size:14px;min-height:44px}
+  .shop-hint{font-size:13px!important}
+  .text-muted-button{font-size:14px;min-height:44px}
+}
+/* Narrow phones (360–380 px): the same layout one step smaller, nothing clipped. */
+@media (max-width: 380px) {
+  .header .header-inner{gap:6px}
+  .header .brandmark{width:112px}
+  .header .brandmark strong{font-size:19px}
+  .header .icon-btn{width:44px;height:44px}
+  .header .icon-btn svg{width:22px;height:22px}
+  .header .header-nav :is(button,a){font-size:20px;min-height:58px}
+}
