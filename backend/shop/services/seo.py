@@ -75,7 +75,13 @@ def _text(value, limit, *, markdown=False) -> str:
         raw = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", raw)          # links -> text
         raw = re.sub(r"[#*_>`]", " ", raw)
     clean = re.sub(r"\s+", " ", raw).strip()
-    return clean if len(clean) <= limit else clean[: limit - 1].rstrip(" ,.;:—-") + "…"
+    if len(clean) <= limit:
+        return clean
+    cut = clean[: limit - 1]
+    # Never end on half a word: "чорна сморо…" reads as a mistake in a snippet.
+    if " " in cut and not clean[limit - 1].isspace():
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,.;:—-") + "…"
 
 
 def _title(main: str, limit: int = TITLE_LIMIT) -> str:
@@ -184,10 +190,12 @@ def _volumes(group) -> str:
 
 
 def _notes_sentence(group) -> str:
-    parts = [(label, group.get(field) or "") for label, field in
-             (("верхні", "top_notes"), ("серце", "heart_notes"), ("база", "base_notes"))]
-    parts = [f"{label} — {value}" for label, value in parts if value.strip()]
-    return ("Ноти: " + "; ".join(parts) + ".") if parts else ""
+    """'Ноти: ананас, бергамот, береза, пачулі, мускус, дубовий мох.' — two per tier, lowercase."""
+    notes = []
+    for field in ("top_notes", "heart_notes", "base_notes"):
+        parts = [p.strip() for p in re.split(r"[,;]", group.get(field) or "") if p.strip()]
+        notes += [p[:1].lower() + p[1:] if p[:2] != p[:2].upper() else p for p in parts[:2]]
+    return ("Ноти: " + ", ".join(notes) + ".") if notes else ""
 
 
 def aroma_title(group) -> str:
@@ -211,10 +219,11 @@ def aroma_description(group) -> str:
     kind = GENDER_UA.get(group.get("gender") or "unisex", "унісекс")
     family = (group.get("fragrance_family") or "").strip()
     lead = f"{name}{' (' + concentration + ')' if concentration else ''} — оригінальний {kind} аромат"
-    lead += f", {family.casefold()}" if family else ""
     volumes = _volumes(group)
     offer = f" на розпив {volumes} від {_price(group['min_price'])}" if volumes else f" на розпив від {_price(group['min_price'])}"
     sentence = lead + offer + "."
+    if family:
+        sentence += f" {family[:1].upper() + family[1:]}."
     extra = _notes_sentence(group) or _text(group.get("description"), 300, markdown=True)
     return _text(f"{sentence} {extra}".strip(), DESCRIPTION_LIMIT)
 
