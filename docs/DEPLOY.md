@@ -469,6 +469,50 @@ chown -R shop:shop /opt/elfar
 
 ---
 
+## Android-застосунок
+
+Сайт заявляє застосунок ACCORD NICHE у `https://accordniche.pp.ua/.well-known/assetlinks.json`, щоб
+посилання на аромати, каталог і блог відкривались у ньому (Android App Links). Змінні в `.env.domains`:
+
+- `ACCORD_ANDROID_CERT_SHA256` — відбиток SHA-256 сертифіката підпису (з Google Play Console → «Цілісність
+  застосунку» → «Підписання застосунку»); без нього відповідь `[]`;
+- `ACCORD_ANDROID_PACKAGE` — пакет (типово `ua.accordniche.shop`);
+- `ACCORD_GOOGLE_ANDROID_CLIENT_IDS` — OAuth-клієнти Android для входу через Google.
+
+Формат значень: навколишні лапки `"…"`/`'…'` і пробіли прибираються (Docker `env_file` передає їх буквально);
+кілька значень розділяються комою, крапкою з комою або пробілом. Відбиток SHA-256 приймається в будь-якому
+регістрі, з двокрапками (`AB:CD:…`) або як 64 hex-символи без них — у заяві він завжди `AB:CD:…`.
+
+Після зміни: `bash deploy/domains.sh up -d --build`.
+
+Перевірка в обхід Cloudflare (на сервері, з кореня проєкту):
+
+```bash
+# 1. Чи дійшла змінна до контейнера API (лапки навколо значення допустимі)
+bash deploy/domains.sh exec api printenv ACCORD_ANDROID_CERT_SHA256
+
+# 2. Що віддає сам сайт, без Cloudflare. Порт — ACCORD_SITE_PORT з .env.domains (типово 18081).
+ACCORD_SITE_PORT=$(grep -E '^ACCORD_SITE_PORT=' .env.domains | cut -d= -f2); ACCORD_SITE_PORT=${ACCORD_SITE_PORT:-18081}
+curl -s -H 'Host: accordniche.pp.ua' http://127.0.0.1:$ACCORD_SITE_PORT/.well-known/assetlinks.json
+curl -sI -H 'Host: accordniche.pp.ua' http://127.0.0.1:$ACCORD_SITE_PORT/.well-known/assetlinks.json | grep -i 'cache-control\|content-type'
+
+# 3. Чому порожньо: попередження з назвою змінної і причиною (саме значення в журнал не пишеться)
+bash deploy/domains.sh logs api | grep -i 'ACCORD_ANDROID\|ACCORD_GOOGLE_ANDROID'
+```
+
+- Порожня `printenv` — змінна не потрапила в контейнер: перевірте назву в `.env.domains` і перезапустіть
+  `bash deploy/domains.sh up -d api` (лише `restart` нових змінних не підхоплює).
+- Локально заява є, а `https://accordniche.pp.ua/.well-known/assetlinks.json` повертає `[]` — це старий кеш
+  Cloudflare. Очищення: Cloudflare → домен accordniche.pp.ua → **Caching → Configuration → Purge Cache →
+  Custom Purge → URL** → `https://accordniche.pp.ua/.well-known/assetlinks.json` → Purge. Або через API:
+  `curl -X POST "https://api.cloudflare.com/client/v4/zones/<ZONE_ID>/purge_cache" -H "Authorization: Bearer <TOKEN>"
+  -H 'Content-Type: application/json' --data '{"files":["https://accordniche.pp.ua/.well-known/assetlinks.json"]}'`.
+  З v1.49.2 порожня відповідь має `Cache-Control: no-store`, а заповнена — `public, max-age=300`, тож ця
+  ситуація більше не має повторюватися.
+- Після цього Android перевіряє домен під час встановлення/оновлення застосунку; повторна перевірка на
+  пристрої: `adb shell pm verify-app-links --re-verify ua.accordniche.shop`, стан —
+  `adb shell pm get-app-links ua.accordniche.shop` (має бути `verified`).
+
 ## Оновлення
 
 ```bash

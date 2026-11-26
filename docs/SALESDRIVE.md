@@ -286,9 +286,11 @@ Webhook — основний live-канал SalesDrive → ELFAR. Scheduler д�
 
 Локальна PostgreSQL **не змінюється**: використовується звична база `shop`.
 Окремість реалізується всередині SalesDrive: створіть у «Інтеграція з сайтом» окрему
-форму/базу заявок з назвою **ELFAR — Telegram Bot**. Її ключ форми задається як
+форму/базу заявок з назвою **ACCORD — Telegram Bot**. Її ключ форми задається як
 `SALESDRIVE_FORM_KEY`, а числовий ID бази (`data.formId` у webhook) — як
-`salesdrive_telegram_form_id` у панелі налаштувань.
+`salesdrive_telegram_form_id` у панелі налаштувань. Назва форми — лише підпис для менеджерів:
+інтеграція звіряє тільки числовий `formId`, тож форму зі старою назвою «ELFAR — Telegram Bot»
+можна перейменувати в SalesDrive без змін у налаштуваннях.
 
 Інтеграція працює fail-closed: без позитивного `formId` у полі «ID форми Telegram»
 відправка вимкнена. Webhook-и приймаються лише коли `data.formId` точно збігається

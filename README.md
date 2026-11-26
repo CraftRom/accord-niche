@@ -2,7 +2,7 @@
 
 Публічний магазин: **https://accordniche.pp.ua/**. Telegram Mini App: **https://shop.accordniche.pp.ua/**. Панель: **https://dashboard.accordniche.pp.ua/**.
 
-Поточне оновлення **v1.49.1** — технічний порядок: репозиторій бази розбито на модулі, описи релізів перенесено до `docs/releases/`, додано Dependabot із 14-денною паузою для нових версій; поведінка сайту не змінюється. [Опис релізу](docs/releases/ACCORD_NICHE_v1.49.1_UA.md). Попереднє: [v1.49.0](docs/releases/ACCORD_NICHE_v1.49.0_UA.md) — тест-режим для всього сайту.
+Поточне оновлення **v1.49.2** — `/.well-known/assetlinks.json` для Android-застосунку: порожня відповідь не кешується, відбиток приймається в лапках і будь-якому форматі, некоректне значення видно в журналі; у SalesDrive — «Замовлення ACCORD №…». [Опис релізу](docs/releases/ACCORD_NICHE_v1.49.2_UA.md). Попереднє: [v1.49.1](docs/releases/ACCORD_NICHE_v1.49.1_UA.md) — порядок у коді й репозиторії.
 
 Оновлення **v1.48.7** — оновлення фреймворків: FastAPI 0.162, Starlette 1.10, Pydantic 2.13, Alembic 1.20, redis-py 8, Vite 8 у всіх застосунках, React 19 і recharts 3 у панелі (вітрина й Mini App свідомо лишаються на React 18 заради швидкості). [Опис релізу](docs/releases/ACCORD_NICHE_v1.48.7_UA.md).
 

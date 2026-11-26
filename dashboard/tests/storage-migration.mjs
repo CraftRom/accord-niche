@@ -58,7 +58,7 @@ test('the migration runs before the app and no elfar names are left in the dashb
   const allowed=new Set(['storageKeys.js','ManagedTable.jsx'])
   // Deliberate mentions of the neighbouring ELFAR shop: it shares the server
   // (a restore does not stop it) and names the SalesDrive form base.
-  const deliberate=[/ELFAR не зупиняється/g,/«ELFAR — Telegram Bot»/g]
+  const deliberate=[/ELFAR не зупиняється/g]
   const offenders=[]
   const walk=dir=>{for(const name of readdirSync(dir)){const path=join(dir,name);if(statSync(path).isDirectory())walk(path);else if(/\.(jsx?|css)$/.test(name)&&!allowed.has(name)){const text=deliberate.reduce((t,re)=>t.replace(re,''),readFileSync(path,'utf8'));if(/elfar/i.test(text))offenders.push(path)}}}
   walk(fileURLToPath(new URL('../src/',import.meta.url)))

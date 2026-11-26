@@ -6,6 +6,12 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 
+# Public files whose endpoint chooses its own Cache-Control (every other API
+# answer is no-store). assetlinks.json: no-store while empty, 5 minutes once
+# filled, so Cloudflare never keeps an empty answer for an hour.
+OWN_CACHE_PATHS = frozenset({"/api/public/android/assetlinks.json"})
+
+
 class SecurityMiddleware:
     def __init__(self, app):
         self.app = app
@@ -133,8 +139,9 @@ class SecurityMiddleware:
             async def protected_send(message):
                 if message["type"] == "http.response.start" and path.startswith("/api/"):
                     response_headers = list(message.get("headers", []))
-                    response_headers = [(k, v) for k, v in response_headers if k.lower() != b"cache-control"]
-                    response_headers.append((b"cache-control", b"no-store"))
+                    if path not in OWN_CACHE_PATHS or not any(k.lower() == b"cache-control" for k, _ in response_headers):
+                        response_headers = [(k, v) for k, v in response_headers if k.lower() != b"cache-control"]
+                        response_headers.append((b"cache-control", b"no-store"))
                     response_headers.extend([(b"x-content-type-options", b"nosniff"), (b"referrer-policy", b"no-referrer")])
                     message = {**message, "headers": response_headers}
                 await send(message)

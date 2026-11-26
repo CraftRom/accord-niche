@@ -102,7 +102,7 @@ async def _check(repo) -> dict:
         return {"ok": False, "problem": str(exc)}
     form_id = salesdrive.telegram_form_id(shop)
     return {"ok": True, "problem": None, "telegramFormId": form_id or None,
-            "sourceName": "ELFAR — Telegram Bot",
+            "sourceName": "ACCORD — Telegram Bot",
             "mappingReady": bool(mapping_ready(shop))}
 
 
