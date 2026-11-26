@@ -48,10 +48,6 @@ async def site_config(repo: Repository = Depends(get_repo)):
         "privacy_url": "/privacy",
     }
 
-_ANDROID_PACKAGE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+$")
-_CERT_SHA256 = re.compile(r"^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$")
-
-
 @router.get("/android/assetlinks.json", include_in_schema=False)
 async def android_asset_links(response: Response):
     """Digital Asset Links for the ACCORD Android app (served at /.well-known/).
@@ -59,13 +55,17 @@ async def android_asset_links(response: Response):
     Lets Android 12+ open accordniche.pp.ua product, catalog and blog links
     straight in the installed app. Empty list until the signing certificate
     fingerprint is configured, so nothing is claimed by default.
+
+    The empty answer is ``no-store``: Cloudflare must not keep ``[]`` for an
+    hour after the fingerprint is added. A filled one is cached briefly.
     """
-    package = os.getenv("ACCORD_ANDROID_PACKAGE", "ua.accordniche.shop").strip()
-    prints = [value.strip().upper() for value in os.getenv("ACCORD_ANDROID_CERT_SHA256", "").replace(";", ",").split(",")]
-    prints = [value for value in prints if _CERT_SHA256.fullmatch(value)]
-    response.headers["Cache-Control"] = "public, max-age=3600"
-    if not prints or not _ANDROID_PACKAGE.fullmatch(package):
+    from shop import android_config
+    prints = android_config.cert_fingerprints()
+    package = android_config.package_name() if prints else None
+    if not prints or not package:
+        response.headers["Cache-Control"] = "no-store"
         return []
+    response.headers["Cache-Control"] = "public, max-age=300"
     return [{"relation": ["delegate_permission/common.handle_all_urls"],
              "target": {"namespace": "android_app", "package_name": package,
                         "sha256_cert_fingerprints": prints}}]

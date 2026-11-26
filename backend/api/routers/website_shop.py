@@ -184,15 +184,15 @@ async def session(request: Request, response: Response, repo: Repository = Depen
 
 
 def android_client_ids() -> frozenset[str]:
-    """OAuth client IDs of the shop's own Android app (comma separated env).
+    """OAuth client IDs of the shop's own Android app (ACCORD_GOOGLE_ANDROID_CLIENT_IDS).
 
     Android Credential Manager asks Google for an ID token for the website's
     (server) client, so ``aud`` is the same web client ID; ``azp`` is the
     Android client that requested it. Only these IDs may stand in for it.
+    Quotes, commas, semicolons and spaces are handled in shop.android_config.
     """
-    raw = os.getenv('ACCORD_GOOGLE_ANDROID_CLIENT_IDS', '')
-    return frozenset(part.strip() for part in raw.replace(';', ',').split(',')
-                     if re.fullmatch(r'[0-9]{6,32}-[a-z0-9]{8,64}\.apps\.googleusercontent\.com', part.strip()))
+    from shop.android_config import google_android_client_ids
+    return google_android_client_ids()
 
 
 async def _google_identity(token: str, client_id: str):

@@ -98,7 +98,7 @@ class SalesDriveError(Exception):
 
 
 def telegram_form_id(shop) -> int:
-    """ID дозволеної бази/форми SalesDrive «ELFAR — Telegram Bot».
+    """ID дозволеної бази/форми SalesDrive «ACCORD — Telegram Bot».
 
     Значення зберігається разом з іншими налаштуваннями інтеграції та
     редагується системним адміністратором у панелі. 0/відсутність означає
@@ -119,7 +119,7 @@ def _webhook_account_matches(payload: dict, shop) -> bool:
 
 
 def source_matches(payload: dict, shop) -> bool:
-    """Webhook належить саме нашому акаунту і базі «ELFAR — Telegram Bot»."""
+    """Webhook належить саме нашому акаунту і базі «ACCORD — Telegram Bot»."""
     expected = telegram_form_id(shop)
     if expected <= 0 or not _webhook_account_matches(payload, shop):
         return False
@@ -241,7 +241,7 @@ def _comment(order: Order, shop) -> str:
                      + f"; до сплати {shipment.money(order.total)} {shop.currency}")
     if order.promo_code:
         lines.append(f"Промокод: {order.promo_code}")
-    lines.append(f"Замовлення Elfar №{order.id}")
+    lines.append(f"Замовлення ACCORD №{order.id}")
     return "\n".join(lines)
 
 
@@ -833,7 +833,7 @@ async def _send(shop, path: str, payload: dict) -> dict:
     # guard помилково блокував редагування вже пов'язаної заявки, якщо formId
     # тимчасово не заповнений у налаштуваннях панелі.
     if path == "/handler/" and telegram_form_id(shop) <= 0:
-        raise SalesDriveError("Не вказано ID форми SalesDrive «ELFAR — Telegram Bot»; створення заблоковано", temporary=False)
+        raise SalesDriveError("Не вказано ID форми SalesDrive «ACCORD — Telegram Bot»; створення заблоковано", temporary=False)
     if path.startswith("/api/") and not getattr(shop, "salesdrive_api_connected", False):
         raise SalesDriveError("Не задано API-ключ SalesDrive", temporary=False)
     url = base_url(shop) + path

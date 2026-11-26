@@ -324,7 +324,7 @@ const FIELDS = [
     items: [
       { key: 'salesdrive_domain', label: 'Субдомен', hint: 'Лише субдомен: «accord» для accord.salesdrive.me' },
       { key: 'salesdrive_telegram_form_id', label: 'ID форми Telegram', type: 'number',
-        hint: 'formId окремої бази заявок «ELFAR — Telegram Bot». Інтеграція приймає webhook лише з цієї бази.' },
+        hint: 'formId окремої бази заявок «ACCORD — Telegram Bot». Інтеграція приймає webhook лише з цієї бази.' },
       {
         key: 'salesdrive_form_key',
         label: 'Ключ форми (бази заявок)',

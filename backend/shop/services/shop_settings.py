@@ -100,7 +100,7 @@ class ShopSettings:
     salesdrive_enabled: bool
     salesdrive_domain: str
     salesdrive_form_key: str
-    # ID форми/бази заявок «ELFAR — Telegram Bot». Редагується з панелі.
+    # ID форми/бази заявок «ACCORD — Telegram Bot». Редагується з панелі.
     salesdrive_telegram_form_id: int
     salesdrive_api_key: str
     salesdrive_webhook_token: str
