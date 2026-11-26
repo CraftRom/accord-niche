@@ -316,6 +316,8 @@ class Order(Base):
         Index("ix_orders_user_created", "user_id", "created_at"),
         Index("ix_orders_search", "search_key"),
         Index("ux_orders_checkout_key", "checkout_key", unique=True),
+        # Sales windows: «business state X within a period» (migration c2f51b8d9e40).
+        Index("ix_orders_business_state_event", "business_state", "business_state_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -604,6 +606,8 @@ class SupportThread(Base):
 
     __tablename__ = "support_threads"
     __table_args__ = (
+        # Client's sessions by state, newest first (migration 0c5a6d91e7f2).
+        Index("ix_support_threads_user_status_updated", "user_id", "status", "updated_at"),
         Index(
             "uq_support_threads_one_open_per_user",
             "user_id",
@@ -730,7 +734,8 @@ class ArchivedMessageRef(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(16))
     entity_id: Mapped[int] = mapped_column(Integer, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    # No own index: uq_archived_message_ref (kind, user_id, …) serves every lookup.
+    user_id: Mapped[int] = mapped_column(Integer)
     tg_message_id: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

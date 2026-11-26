@@ -346,7 +346,6 @@ async def _seed(connection) -> dict:
     """Write the test catalog and blog into a fresh sandbox (SQLite connection)."""
     from sqlalchemy import insert
     from shop import models as m
-    from shop.services.storefront import aroma_name  # noqa: F401  (grouping rules match the site)
     now = datetime.now(timezone.utc)
     brands = {}
     for index, name in enumerate(BRAND_TEXT, 1):

@@ -9,7 +9,6 @@ refuses an existing file, so it can never write into a real database.
 import asyncio, sys, time, tracemalloc
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from types import SimpleNamespace
 from sqlalchemy import event, insert
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from fastapi import Request

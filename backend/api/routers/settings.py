@@ -19,7 +19,7 @@ from shop.services.shop_settings import current, get_shop_settings, save_shop_se
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 # Central role policy. Managers have no writable settings, including loyalty.
-from shop.access import INFRA_FIELDS, MODULE_FIELDS, editable_settings
+from shop.access import INFRA_FIELDS, editable_settings  # INFRA_FIELDS is re-exported for QA
 OPERATOR_FIELDS = frozenset()  # Compatibility for QA/imports: no manager exceptions.
 
 

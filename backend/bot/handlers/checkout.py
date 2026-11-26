@@ -15,7 +15,6 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove, InlineKey
 from bot import keyboards as kb
 from bot import texts
 from bot.states import Checkout
-from shop.services.shop_settings import current
 from shop.services.notifications import notify_new_order
 from shop.services.shop_settings import get_shop_settings
 from shop.entities import User
