@@ -164,8 +164,20 @@ async def disable() -> None:
     disable_sync()
 
 
+class Unavailable(RuntimeError):
+    """Test mode cannot start on this server; the message says why."""
+
+
+def check_driver() -> None:
+    import importlib.util
+    if importlib.util.find_spec("aiosqlite") is None:
+        raise Unavailable("Тест-режим недоступний: на сервері немає драйвера SQLite (aiosqlite). "
+                          "Оновіть образ: bash deploy/domains.sh up -d --build")
+
+
 async def enable(actor: str, hours: int = DEFAULT_HOURS) -> dict:
     """Fresh sandbox with seed data. An existing one is replaced."""
+    check_driver()
     await disable()
     hours = max(1, min(MAX_HOURS, int(hours)))
     sandbox_id = secrets.token_hex(8)
