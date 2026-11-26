@@ -56,6 +56,29 @@ async def sitemap_section(section: str, if_none_match: str | None = Header(None,
     return await _sitemap(repo, section, if_none_match)
 
 
+async def _feed(repo, name: str, media_type: str, if_none_match: str | None):
+    from shop.services import feeds
+    body, etag = await feeds.document(repo, name)
+    headers = {"Cache-Control": "public, max-age=300", "ETag": f'"{etag}"'}
+    if if_none_match and etag in if_none_match:
+        return Response(status_code=304, headers=headers)
+    return Response(body, media_type=media_type, headers=headers)
+
+
+@router.get("/merchant.xml", include_in_schema=False)
+async def merchant_feed(if_none_match: str | None = Header(None, max_length=200),
+                        repo: Repository = Depends(get_repo)):
+    """Google Merchant Center product feed (https://<domain>/feeds/google-merchant.xml)."""
+    return await _feed(repo, "merchant", "application/xml; charset=utf-8", if_none_match)
+
+
+@router.get("/blog-rss.xml", include_in_schema=False)
+async def blog_rss(if_none_match: str | None = Header(None, max_length=200),
+                   repo: Repository = Depends(get_repo)):
+    """Blog RSS 2.0 (https://<domain>/blog/rss.xml)."""
+    return await _feed(repo, "rss", "application/rss+xml; charset=utf-8", if_none_match)
+
+
 @router.get("/indexnow/{name}.txt", include_in_schema=False)
 async def indexnow_key(name: str):
     """IndexNow ownership proof: https://<domain>/<key>.txt returns the key itself."""
