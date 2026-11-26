@@ -17,6 +17,10 @@ from shop.services import test_mode
 
 SCOPES = ("/api/public/", "/api/web/")
 SAFE = {"GET", "HEAD", "OPTIONS"}
+# Feeds read by Google Merchant Center and RSS readers always come from the
+# live shop: their fetchers are not all recognisable crawlers, and a test
+# aroma must never reach Google Shopping or a subscriber.
+LIVE_ONLY = frozenset({"/api/public/seo/merchant.xml", "/api/public/seo/blog-rss.xml"})
 
 
 def _header(scope, name: bytes) -> str:
@@ -40,7 +44,7 @@ class SandboxModeMiddleware:
 
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "") if scope["type"] == "http" else ""
-        if not path.startswith(SCOPES):
+        if not path.startswith(SCOPES) or path in LIVE_ONLY:
             return await self.app(scope, receive, send)
         sandbox = test_mode.current()
         if sandbox is None or test_mode.crawler(_header(scope, b"user-agent")):

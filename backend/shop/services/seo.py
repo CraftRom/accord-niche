@@ -134,6 +134,7 @@ def render(meta: dict) -> str:
     for rel in ("prev", "next"):
         if meta.get(rel):
             tags.append(f'<link rel="{rel}" href="{e(meta[rel])}" />')
+    tags.append(f'<link rel="alternate" type="application/rss+xml" title="Блог {SITE}" href="{ORIGIN}/blog/rss.xml" />')
     tags += [f'<meta property="og:site_name" content="{SITE}" />',
              f'<meta property="og:type" content="{e(meta.get("type", "website"))}" />',
              f'<meta property="og:title" content="{e(meta.get("og_title") or meta["title"])}" />',
@@ -499,8 +500,10 @@ _NS = ('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
 
 
 def invalidate() -> None:
-    """Content changed: the next request rebuilds every sitemap."""
+    """Content changed: the next request rebuilds every sitemap and feed."""
     _SITEMAP_CACHE.clear()
+    from shop.services import feeds
+    feeds.invalidate()
 
 
 def _lastmod(value: datetime | None) -> str:

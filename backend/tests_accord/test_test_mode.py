@@ -101,6 +101,16 @@ async def test_crawlers_and_link_previews_keep_the_live_site(site):
 
 
 @pytest.mark.asyncio
+async def test_merchant_feed_and_rss_never_carry_test_aromas(site):
+    client, _ = site
+    await enable(client)
+    for path in ('/api/public/seo/merchant.xml', '/api/public/seo/blog-rss.xml'):
+        response = await client.get(path, headers=BROWSER)
+        assert response.status_code == 200 and 'x-accord-test-mode' not in response.headers
+        assert 'Aventus' not in response.text and 'set-cookie' not in response.headers
+
+
+@pytest.mark.asyncio
 async def test_sandbox_pages_are_noindex_and_outside_writes_are_refused(site):
     client, _ = site
     await enable(client)
@@ -141,26 +151,6 @@ async def test_sandbox_never_fills_the_shared_settings_cache(site):
     await enable(client)
     await client.get('/api/public/site-config', headers=BROWSER)
     assert shop_settings._cache is None, 'live settings are not replaced by sandbox values'
-
-
-def test_runtime_image_installs_the_sandbox_driver():
-    """Production log 26.11: enabling test mode failed with 500, no aiosqlite in the image."""
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[1]
-    for name in ('requirements.txt', 'requirements-lock.txt'):
-        lines = [line.split('#')[0].strip().lower() for line in (root / name).read_text().splitlines()]
-        assert any(line.startswith('aiosqlite==') for line in lines), name
-
-
-@pytest.mark.asyncio
-async def test_missing_driver_is_a_clear_503_not_a_crash(site, monkeypatch):
-    client, _ = site
-    import importlib.util
-    real = importlib.util.find_spec
-    monkeypatch.setattr(importlib.util, 'find_spec', lambda name, *a: None if name == 'aiosqlite' else real(name, *a))
-    response = await client.post('/api/system/test-mode', json={'hours': 1})
-    assert response.status_code == 503 and 'aiosqlite' in response.json()['detail']
-    assert (await client.get('/api/system/test-mode')).json() == {'active': False}
 
 
 def test_runtime_image_installs_the_sandbox_driver():
