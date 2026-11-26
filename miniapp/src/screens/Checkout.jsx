@@ -215,6 +215,14 @@ function Requirement({ optional = false }) {
     : <span className="field-requirement required"><span aria-hidden="true">*</span> Обовʼязково</span>
 }
 
+// Довідник Нової пошти не відповідає взагалі (не налаштований, на паузі
+// після збою перевізника або сервер не встиг відповісти). Тоді немає сенсу
+// повторювати пошук: покупець одразу переходить до ручного введення.
+// 502 — відмова на конкретний запит, її можна повторити з іншим текстом.
+export function directoryUnavailable(err) {
+  return err?.status === 503 || err?.status === 504 || err?.name === 'TimeoutError'
+}
+
 export function Checkout({ config, cart, profile, onDone, onLegal }) {
   const submittingRef = useRef(false)
   const pendingPayload = useRef(null)
@@ -309,8 +317,8 @@ export function Checkout({ config, cart, profile, onDone, onLegal }) {
       } catch (err) {
         if (!alive) return
         setCityHits([])
-        // 503 — ключа немає зовсім; питати далі немає сенсу
-        if (err.status === 503) setDirectoryDown(true)
+        // 503/504/тайм-аут — довідника немає або він на паузі; питати далі немає сенсу
+        if (directoryUnavailable(err)) setDirectoryDown(true)
       } finally {
         if (alive) setCityBusy(false)
       }
@@ -340,7 +348,7 @@ export function Checkout({ config, cart, profile, onDone, onLegal }) {
       } catch (err) {
         if (!alive) return
         setPoints([])
-        if (err.status === 503) setDirectoryDown(true)
+        if (directoryUnavailable(err)) setDirectoryDown(true)
       } finally {
         if (alive) setPointsBusy(false)
       }

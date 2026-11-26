@@ -113,6 +113,7 @@ run_node text-input tests/text-input.mjs
 run_node design tests/storefront-design.mjs
 run_node ui-refresh tests/ui-refresh.mjs
 run_node checkout-required tests/checkout-required-fields.mjs
+run_node checkout-outage tests/checkout-directory-outage.mjs
 run_node deep-actions tests/deep-actions.mjs
 run_node crm-status-ui tests/crm-status-source.mjs dashboard
 run_node crm-api-rich tests/crm-api-richness.mjs dashboard
