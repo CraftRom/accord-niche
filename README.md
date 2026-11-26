@@ -2,7 +2,9 @@
 
 Публічний магазин: **https://accordniche.pp.ua/**. Telegram Mini App: **https://shop.accordniche.pp.ua/**. Панель: **https://dashboard.accordniche.pp.ua/**.
 
-Поточне оновлення **v1.48.5** — безпека залежностей: Pillow 13, certifi і opentelemetry-api без відомих уразливостей (було 45), набір перевірок обробки зображень, аудит Python- і npm-залежностей у CI. [Опис релізу](ACCORD_NICHE_v1.48.5_UA.md).
+Поточне оновлення **v1.48.7** — оновлення фреймворків: FastAPI 0.162, Starlette 1.10, Pydantic 2.13, Alembic 1.20, redis-py 8, Vite 8 у всіх застосунках, React 19 і recharts 3 у панелі (вітрина й Mini App свідомо лишаються на React 18 заради швидкості). [Опис релізу](ACCORD_NICHE_v1.48.7_UA.md).
+
+Оновлення **v1.48.5** — безпека залежностей: Pillow 13, certifi і opentelemetry-api без відомих уразливостей (було 45), набір перевірок обробки зображень, аудит Python- і npm-залежностей у CI. [Опис релізу](ACCORD_NICHE_v1.48.5_UA.md).
 
 Оновлення **v1.48.4** — тест-режим справді показує 10 тестових ароматів і 3 статті (cookie Google-входу більше не ховає cookie тест-режиму), окремий кошик для тест-режиму. [Опис релізу](ACCORD_NICHE_v1.48.4_UA.md).
 

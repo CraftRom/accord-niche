@@ -39,12 +39,19 @@ function releasePlugin(component) {
 export default defineConfig({
   plugins: [react(), releasePlugin('dashboard')],
   build: {
-    rollupOptions: {
+    // Vite 8 (Rolldown): групи модулів задаються через codeSplitting. Графіки
+    // (recharts тягне d3 і redux) потрібні лише на «Огляді» й вантажаться
+    // окремо; React і роутер — спільний модуль. Залежності не захоплюються
+    // рекурсивно, інакше React потрапляв би в модуль графіків і той
+    // вантажився б на кожній сторінці.
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          // recharts тягне d3 — виносимо окремо, щоб не роздувати основний бандл
-          charts: ['recharts'],
-          vendor: ['react', 'react-dom', 'react-router-dom'],
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: 'vendor', test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/, priority: 20 },
+            { name: 'charts', test: /[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|internmap|@reduxjs|redux|react-redux|reselect|immer|es-toolkit|decimal\.js-light|eventemitter3)[\\/]/, priority: 10 },
+          ],
         },
       },
     },
