@@ -150,3 +150,42 @@ async def test_missing_driver_is_a_clear_503_not_a_crash(site, monkeypatch):
     response = await client.post('/api/system/test-mode', json={'hours': 1})
     assert response.status_code == 503 and 'aiosqlite' in response.json()['detail']
     assert (await client.get('/api/system/test-mode')).json() == {'active': False}
+
+
+@pytest.mark.asyncio
+async def test_google_sign_in_cookie_does_not_hide_the_sandbox(site):
+    """Production 26.11: banner said «test mode», but products and posts were the live shop's.
+
+    Google sign-in leaves g_state={"i_l":0} in the browser; the stdlib cookie
+    parser stopped there and never saw the test-mode cookie.
+    """
+    client, _ = site
+    token = await enter(client)
+    client.cookies.clear()
+    header = 'g_state={"i_l":0,"i_ll":1764150000000}; __Host-accord_csrf=' + 'a' * 48 + '; ' + test_mode.COOKIE + '=' + token
+    banner = (await client.get('/api/public/test-mode/status', headers={'Cookie': header})).json()
+    data = (await client.get('/api/public/aromas', params={'limit': 30}, headers={'Cookie': header})).json()
+    posts = (await client.get('/api/public/blog', headers={'Cookie': header})).json()
+    assert banner['active'] is True
+    assert data['total'] == 10 and 'Real' not in data['brands'], 'banner and data agree'
+    assert len(posts['items']) == 3
+
+
+def test_cookie_split_over_several_headers_is_read():
+    from api.test_mode_middleware import _cookie
+    scope = {'headers': [(b'cookie', b'g_state={"i_l":0}'), (b'cookie', b'__Host-accord_test=x.1.y')]}
+    assert _cookie(scope) == 'x.1.y'
+    assert _cookie({'headers': []}) is None
+
+
+@pytest.mark.asyncio
+async def test_enter_sets_the_cart_marker_and_exit_clears_both(site):
+    client, _ = site
+    info = (await client.post('/api/system/test-mode', json={'hours': 1})).json()
+    entered = await client.get('/api/public/test-mode/enter', params={'token': info['enter_url'].split('token=')[1]})
+    cookies = entered.headers.get_list('set-cookie')
+    marker = next(c for c in cookies if c.startswith('accord_test_view=1'))
+    assert 'HttpOnly' not in marker and 'Secure' in marker
+    left = (await client.get('/api/public/test-mode/exit')).headers.get_list('set-cookie')
+    assert any(c.startswith(test_mode.COOKIE + '=""') or c.startswith(test_mode.COOKIE + '=;') or 'Max-Age=0' in c and c.startswith(test_mode.COOKIE) for c in left)
+    assert any(c.startswith('accord_test_view=') and 'Max-Age=0' in c for c in left)

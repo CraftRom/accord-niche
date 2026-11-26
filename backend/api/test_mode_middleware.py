@@ -8,7 +8,7 @@ them. Everyone else never notices the middleware.
 from __future__ import annotations
 
 import json
-from http.cookies import SimpleCookie
+from starlette.requests import cookie_parser
 
 from shop.services import test_mode
 
@@ -17,16 +17,14 @@ SAFE = {"GET", "HEAD", "OPTIONS"}
 
 
 def _cookie(scope) -> str | None:
-    for name, value in scope.get("headers", ()):
-        if name == b"cookie":
-            jar = SimpleCookie()
-            try:
-                jar.load(value.decode("latin-1"))
-            except Exception:
-                return None
-            morsel = jar.get(test_mode.COOKIE)
-            return morsel.value if morsel else None
-    return None
+    # Starlette's lenient parser, the same one request.cookies uses. The
+    # stdlib SimpleCookie stops at the first value it does not like, e.g.
+    # Google sign-in's g_state={"i_l":0}, and then lost the test-mode cookie:
+    # the banner (request.cookies) said «test mode» while every request read
+    # the live database.
+    # HTTP/2 clients may split cookies over several headers: read them all.
+    raw = "; ".join(value.decode("latin-1") for name, value in scope.get("headers", ()) if name == b"cookie")
+    return cookie_parser(raw).get(test_mode.COOKIE) if raw else None
 
 
 class SandboxModeMiddleware:
