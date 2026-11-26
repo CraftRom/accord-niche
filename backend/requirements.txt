@@ -3,6 +3,8 @@ fastapi==0.143.0
 starlette==1.7.0
 uvicorn[standard]==0.34.0
 sqlalchemy[asyncio]==2.0.36
+# SQLite driver for the system administrator's test mode (sandbox database).
+aiosqlite==0.22.1
 asyncpg==0.30.0
 alembic==1.14.0
 pydantic==2.10.4

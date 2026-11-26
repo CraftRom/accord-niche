@@ -24,7 +24,10 @@ async def status():
 
 @admin.post("")
 async def enable(data: EnableIn, who: Principal = Depends(require_sysadmin)):
-    created = await test_mode.enable(who.login, data.hours)
+    try:
+        created = await test_mode.enable(who.login, data.hours)
+    except test_mode.Unavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
     security_log.record("system.test_mode.enabled", actor=who.login, role=who.role.value, reason=f"{data.hours}h")
     return test_mode.public(created)
 

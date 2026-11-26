@@ -88,6 +88,8 @@ async def publish_order_changed(
         return
 
     try:
+        from shop.redis_dns import ensure_resolvable
+        await ensure_resolvable(url, 0.4)
         import redis.asyncio as redis
 
         client = redis.from_url(
@@ -168,6 +170,8 @@ async def subscribe_order_events() -> AsyncIterator[dict | None]:
         return
 
     try:
+        from shop.redis_dns import ensure_resolvable
+        await ensure_resolvable(url, 1.0)
         import redis.asyncio as redis
 
         client = redis.from_url(
