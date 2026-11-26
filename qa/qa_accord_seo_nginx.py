@@ -59,7 +59,10 @@ subprocess.run([NGINX, '-t', '-c', str(conf / 'nginx.conf'), '-p', str(work)], c
 ng = subprocess.Popen([NGINX, '-c', str(conf / 'nginx.conf'), '-p', str(work), '-g', 'daemon off;'])
 def get(path):
     req = urllib.request.Request(f'http://127.0.0.1:{web_port}{path}', headers={'Host': 'accordniche.pp.ua', 'User-Agent': 'TelegramBot (like TwitterBot)'})
-    with urllib.request.urlopen(req, timeout=5) as r: return r.status, r.read().decode()
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r: return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
 ok = 0
 def check(name, cond, detail=''):
     global ok
@@ -83,7 +86,7 @@ try:
     check('old slug canonicalizes to current', 'href="https://accordniche.pp.ua/blog/novyi-slug"' in head and 'BlogPosting' in head, head)
     check('relative cover becomes absolute', 'og:image" content="https://accordniche.pp.ua/media/cover.jpg"' in head, head)
     st, body = get('/aroma/8'); head = body.split('</head>')[0]
-    check('hidden product is noindex and generic', 'noindex' in head and 'Hidden' not in head, head)
+    check('hidden product is noindex and generic', st == 404 and 'noindex' in head and 'Hidden' not in head, head)
     st, body = get('/checkout'); check('checkout is noindex', 'noindex' in body.split('</head>')[0])
     st, body = get('/'); check('home canonical', 'href="https://accordniche.pp.ua"' in body)
     st, body = get('/aroma/7-creed-aventus-script-b'); check('readable aroma address serves the page', st == 200 and '"@type":"Product"' in body.split('</head>')[0], body[:300])
@@ -98,6 +101,17 @@ try:
         st, body = get('/abcdefgh123.txt'); check('IndexNow key is not guessable', st == 404, body)
     except urllib.error.HTTPError as e: check('IndexNow key is not guessable', e.code == 404)
     st, body = get('/robots.txt'); check('robots points to sitemap', 'Sitemap: https://accordniche.pp.ua/sitemap.xml' in body)
+    def status(path):
+        try:
+            st, body = get(path); return st, body
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+    missing = [status(p) for p in ('/aroma/999', '/aroma/8', '/blog/nema-takoi', '/zovsim/nevidoma')]
+    check('unknown or hidden pages answer HTTP 404 with the site page', all(st == 404 and 'id="root"' in body and 'noindex' in body for st, body in missing), str([st for st, _ in missing]))
+    present = [status(p)[0] for p in ('/', '/index.html', '/catalog', '/catalog?brand=Creed', '/aroma/7-creed-aventus-script-b', '/blog/staryi-slug', '/checkout', '/order/success', '/blog')]
+    check('real pages answer 200', present == [200] * len(present), str(present))
+    st, body = status('/site.webmanifest')
+    check('web manifest is served as JSON', st == 200 and '"short_name"' in body, str(st))
     try:
         st, body = get('/__seo_head'); check('internal location exposes nothing', st in (204, 404) and not body, body)
     except urllib.error.HTTPError as e: check('internal location exposes nothing', e.code == 404)
@@ -120,9 +134,11 @@ try:
     api.terminate(); api.wait(timeout=10)
     st, body = get('/aroma/7'); head = body.split('</head>')[0]
     check('API down: page still served with fallback tags', st == 200 and head.count('<title>') == 1 and 'розпив оригінальної' in head and 'error' not in head.lower(), head)
+    st, body = get('/aroma/999')
+    check('API down: no false 404s, the page is served', st == 200 and 'id="root"' in body, str(st))
 finally:
     ng.terminate(); ng.wait(timeout=10)
     if api.poll() is None: api.terminate()
     shutil.rmtree(work, ignore_errors=True)
-print(f'SEO E2E: {ok}/22')
-sys.exit(0 if ok == 22 else 1)
+print(f'SEO E2E: {ok}/26')
+sys.exit(0 if ok == 26 else 1)

@@ -215,3 +215,18 @@ async def test_endpoint_prefers_the_nginx_original_uri_header(repo):
         assert section.status_code == 200 and '/aroma/7-creed-aventus-script' in section.text
         assert (await http.get('/api/public/seo/sitemap-secret.xml')).status_code == 404
         assert (await http.get('/api/public/seo/indexnow/abc.txt')).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_page_exists_drives_real_404s(repo):
+    for path in ('/', '/index.html', '/catalog', '/catalog?brand=Nope', '/blog?page=3', '/checkout', '/profile?returnTo=/blog',
+                 '/order/success', '/aroma/7', '/aroma/7-creed-aventus-script', '/blog/current', '/blog/old', '/terms'):
+        assert await seo.page_exists(repo, path), path
+    for path in ('/aroma/8', '/aroma/9', '/aroma/404', '/blog/draft', '/blog/future', '/blog/none', '/unknown/page', '/admin'):
+        assert not await seo.page_exists(repo, path), path
+    app = FastAPI()
+    app.include_router(seo_router.router, prefix='/api/public/seo')
+    app.dependency_overrides[get_repo] = lambda: repo
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='https://accordniche.pp.ua') as http:
+        assert (await http.get('/api/public/seo/exists', headers={'X-Accord-Path': '/aroma/7'})).status_code == 204
+        assert (await http.get('/api/public/seo/exists', headers={'X-Accord-Path': '/aroma/404'})).status_code == 403

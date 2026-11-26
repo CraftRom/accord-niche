@@ -17,7 +17,7 @@ export function Hero({go, item, volumes = []}) {
   return <section className="hero shell" aria-labelledby="hero-title"><div className="hero-content"><p className="eyebrow">НІШЕВА ПАРФУМЕРІЯ У ВАШОМУ ФОРМАТІ</p><h1 id="hero-title">Знайдіть аромат,<br/>який стане<br/>вашим</h1><p className="hero-description">Обирайте аромат і зручний об’єм. Знайомтеся з парфумерією у власному ритмі — перед рішенням про повний флакон.</p>
     {volumes.length > 0 && <p className="hero-formats">Об’єми {volumes.join(' / ')} мл · ціна за мілілітр біля кожного аромату</p>}
     <div className="hero-cta"><SiteLink className="btn primary" to="/catalog" onNavigate={go}>ОБРАТИ АРОМАТ</SiteLink><SiteLink className="hero-secondary" to="/catalog?kind=new" onNavigate={go}>Новинки <span aria-hidden="true">→</span></SiteLink></div></div>
-    {item?.image ? <SiteLink className="hero-product" to={target} onNavigate={go}><ImageTile item={item} className="hero-tile" priority/><span><b>{[item.brand, item.name].filter(Boolean).join(' · ')}</b>{item.min_price != null && <em>від {money(item.min_price)}</em>}</span></SiteLink> : <div className="hero-lettering" aria-hidden="true"><span>A</span><p>ACCORD NICHE</p><i>Ваш аромат. Ваш формат.</i></div>}</section>
+    {item?.image ? <SiteLink className="hero-product" to={target} onNavigate={go}><ImageTile item={item} className="hero-tile" priority sizes="(max-width: 750px) 100vw, 45vw"/><span><b>{[item.brand, item.name].filter(Boolean).join(' · ')}</b>{item.min_price != null && <em>від {money(item.min_price)}</em>}</span></SiteLink> : <div className="hero-lettering" aria-hidden="true"><span>A</span><p>ACCORD NICHE</p><i>Ваш аромат. Ваш формат.</i></div>}</section>
 }
 
 // W-17: answers to «what is in the vial, what does it cost, when is it sent,

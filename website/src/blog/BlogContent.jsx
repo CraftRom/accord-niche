@@ -1,4 +1,5 @@
 import Markdown from 'react-markdown'
+import {responsiveSource} from '../ui/responsive'
 
 const elements=['p','h1','h2','h3','h4','h5','h6','strong','em','ul','ol','li','blockquote','pre','code','a','img','hr','br']
 // Links to the shop itself stay in the same tab and are followed by crawlers
@@ -11,7 +12,7 @@ export default function BlogContent({body,go}) {
       ? <a href={href.replace(/^https:\/\/accordniche\.pp\.ua/i,'') || '/'} onClick={event=>{if(!go || event.button!==0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();go(href.replace(/^https:\/\/accordniche\.pp\.ua/i,'') || '/')}}>{children}</a>
       : <a href={href || undefined} target="_blank" rel="noopener noreferrer nofollow">{children}</a>,
     img:({src,alt})=>src && (/^https:\/\//i.test(src) || /^\/media\/[A-Za-z0-9_-]+\.(png|jpe?g|gif|webp)$/i.test(src))
-      ? <img src={src} alt={alt || ''} loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
+      ? <img src={responsiveSource(src)?.src || src} srcSet={responsiveSource(src)?.srcSet} sizes="(max-width: 750px) 100vw, 760px" alt={alt || ''} loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
       : null,
   }}>{body || ''}</Markdown></div>
 }

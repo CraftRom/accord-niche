@@ -37,3 +37,22 @@ test('robots.txt allows product photos and the dashboard and Mini App are never 
     assert.match(conf,/location = \/robots\.txt \{[^}]*Disallow: \//)
   }
 })
+test('uploaded images get WebP widths for srcset; external photos stay as they are', async () => {
+  const {responsiveSource, WIDTHS} = await import('../src/ui/responsive.js')
+  const photo = responsiveSource('/api/public/catalog/7/photo')
+  assert.equal(photo.src, '/api/public/catalog/7/photo?w=960')
+  assert.equal(photo.srcSet.split(', ').length, WIDTHS.length)
+  assert.match(photo.srcSet, /\/api\/public\/catalog\/7\/photo\?w=320 320w/)
+  assert.equal(responsiveSource('/media/cover-0123456789ab.jpg').src, '/api/public/media/cover-0123456789ab.jpg?w=960')
+  for (const url of ['https://cdn.example/a.jpg', '/media/../x.jpg', '', null, '/api/public/catalog/7/photo?w=1'])
+    assert.equal(responsiveSource(url), null)
+})
+test('favicon, touch icon and manifest are linked outside the SEO block', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  const outside = html.split('<!--# block name="seo_default" -->')[0]
+  for (const tag of ['rel="icon" href="/favicon.ico"', 'rel="apple-touch-icon" href="/apple-touch-icon.png"', 'rel="manifest" href="/site.webmanifest"'])
+    assert.ok(outside.includes(tag), tag)
+  const manifest = JSON.parse(readFileSync(new URL('../public/site.webmanifest', import.meta.url), 'utf8'))
+  assert.equal(manifest.lang, 'uk')
+  for (const icon of manifest.icons) assert.ok(readFileSync(new URL('../public' + icon.src, import.meta.url)).length > 500, icon.src)
+})
