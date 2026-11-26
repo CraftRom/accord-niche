@@ -43,6 +43,12 @@ function isTransientStatus(status) {
   return status === 408 || status === 425 || status === 429 || status >= 500
 }
 
+function retryAfterSeconds(res) {
+  const raw = res.headers?.get?.('Retry-After')
+  const value = Number.parseInt(raw || '', 10)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
 async function fetchTimed(url, options) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -129,7 +135,12 @@ async function request(path, { method = 'GET', body } = {}) {
         signalAuthFailure(detail)
         throw authFailureError(detail)
       }
+      // Сервер прямо каже, що сервіс на паузі (Retry-After на 503, як у
+      // довідника Нової пошти). Повтор через 350 мс гарантовано впаде й лише
+      // затримає покупця — краще одразу показати запасний шлях.
+      const retryAfter = retryAfterSeconds(res)
       const retry = method === 'GET' && attempt < maxAttempts && isTransientStatus(res.status)
+        && !(res.status === 503 && retryAfter > 2)
       if (retry) {
         clientLog('storefront.api.retry', {
           level: 'warning', message: `${detail} — повтор GET`, status: res.status,
@@ -149,6 +160,7 @@ async function request(path, { method = 'GET', body } = {}) {
       })
       const error = new Error(detail)
       error.status = res.status
+      if (retryAfter) error.retryAfter = retryAfter
       throw error
     }
 
