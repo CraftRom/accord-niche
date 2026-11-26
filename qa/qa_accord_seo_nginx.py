@@ -101,22 +101,22 @@ try:
     try:
         st, body = get('/__seo_head'); check('internal location exposes nothing', st in (204, 404) and not body, body)
     except urllib.error.HTTPError as e: check('internal location exposes nothing', e.code == 404)
-    # Test mode: the SSI head subrequest carries the administrator's cookie; other visitors see the shop.
-    enable = 'import asyncio\nfrom shop.services import test_mode\nprint(test_mode.token(asyncio.run(test_mode.enable("qa", 1))))'
-    token = subprocess.run([sys.executable, '-c', enable], env=env, cwd=ROOT / 'backend', check=True, capture_output=True, text=True).stdout.strip()
-    # A real browser also carries Google sign-in's g_state={...} (it hid the test cookie on 26.11).
-    cookie = 'g_state={"i_l":0,"i_ll":1764150000000}; __Host-accord_test=' + token
-    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/aroma/1-creed-aventus', headers={'Host': 'accordniche.pp.ua', 'Cookie': cookie})
-    with urllib.request.urlopen(req, timeout=5) as r: head = r.read().decode().split('</head>')[0]
-    check('test-mode browser gets sandbox head, noindex', '[ТЕСТ] Creed Aventus' in head and 'noindex' in head, head)
+    # Site-wide test mode: no link or cookie; browsers get the sandbox, crawlers the live site.
+    enable = 'import asyncio\nfrom shop.services import test_mode\nasyncio.run(test_mode.enable("qa", 1))'
+    subprocess.run([sys.executable, '-c', enable], env=env, cwd=ROOT / 'backend', check=True, capture_output=True, text=True)
+    time.sleep(1.2)  # the API re-reads the test-mode state at most once a second
     import json as _json
-    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/api/public/aromas?limit=30', headers={'Host': 'accordniche.pp.ua', 'Cookie': cookie})
-    with urllib.request.urlopen(req, timeout=5) as r: aromas = _json.loads(r.read().decode())
-    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/api/public/blog', headers={'Host': 'accordniche.pp.ua', 'Cookie': cookie})
-    with urllib.request.urlopen(req, timeout=5) as r: posts = _json.loads(r.read().decode())
-    check('test-mode browser sees 10 test aromas and 3 posts through nginx', aromas['total'] == 10 and len(posts['items']) == 3, str(aromas.get('total')))
+    browser = {'Host': 'accordniche.pp.ua', 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) Safari/604.1'}
+    with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{web_port}/aroma/1-creed-aventus', headers=browser), timeout=5) as r:
+        head = r.read().decode().split('</head>')[0]
+    check('test mode is on for a browser without any link, noindex', '[ТЕСТ] Creed Aventus' in head and 'noindex' in head, head)
+    with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{web_port}/api/public/aromas?limit=30', headers=browser), timeout=5) as r:
+        aromas = _json.loads(r.read().decode())
+    with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{web_port}/api/public/blog', headers=browser), timeout=5) as r:
+        posts = _json.loads(r.read().decode())
+    check('every browser sees 10 test aromas and 3 posts through nginx', aromas['total'] == 10 and len(posts['items']) == 3, str(aromas.get('total')))
     st, body = get('/aroma/7'); head = body.split('</head>')[0]
-    check('other visitors still get the live shop', 'Aventus &lt;/script&gt;' in head and '[ТЕСТ]' not in head, head)
+    check('crawlers and link previews still get the live shop', 'Aventus &lt;/script&gt;' in head and '[ТЕСТ]' not in head, head)
     api.terminate(); api.wait(timeout=10)
     st, body = get('/aroma/7'); head = body.split('</head>')[0]
     check('API down: page still served with fallback tags', st == 200 and head.count('<title>') == 1 and 'розпив оригінальної' in head and 'error' not in head.lower(), head)

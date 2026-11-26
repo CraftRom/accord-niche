@@ -1,4 +1,4 @@
-"""Test mode: sandbox data only for the administrator's signed browser, main data untouched."""
+"""Site-wide test mode: every visitor sees the sandbox, crawlers the live site; main data untouched."""
 import time
 from decimal import Decimal
 
@@ -49,41 +49,39 @@ async def site(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def enter(client):
-    info = (await client.post('/api/system/test-mode', json={'hours': 2})).json()
+BROWSER = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1'}
+GOOGLEBOT = {'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'}
+
+
+async def enable(client, hours=2):
+    info = (await client.post('/api/system/test-mode', json={'hours': hours})).json()
     assert info['active'] and info['aromas'] == 10 and info['products'] == 30 and info['posts'] == 3
-    token = info['enter_url'].split('token=')[1]
-    response = await client.get('/api/public/test-mode/enter', params={'token': token})
-    assert response.status_code == 303 and response.headers['location'] == '/'
-    cookie = response.headers['set-cookie']
-    assert cookie.startswith('__Host-accord_test=') and 'Secure' in cookie and 'HttpOnly' in cookie
-    return token
+    assert info['site_url'] == 'https://accordniche.pp.ua/' and 'enter_url' not in info, 'no link needed'
+    return info
 
 
 @pytest.mark.asyncio
-async def test_only_the_signed_browser_sees_the_sandbox(site):
+async def test_every_visitor_sees_the_sandbox_as_soon_as_it_is_on(site):
     client, maker = site
-    token = await enter(client)
-    sandbox = (await client.get('/api/public/aromas', params={'limit': 30})).json()
-    assert sandbox['total'] == 10 and 'Creed' in sandbox['brands'] and 'Real' not in sandbox['brands']
-    aventus = next(item for item in sandbox['items'] if item['name'] == 'Aventus')
-    assert aventus['path'] == '/aroma/1-creed-aventus' and aventus['volumes'] == [2, 5, 10]
-    assert aventus['top_notes'].startswith('Ананас') and aventus['image'].startswith(test_mode.MEDIA_PREFIX)
-    response = await client.get('/api/public/aromas')
-    assert response.headers['x-accord-test-mode'] == '1' and 'no-store' in response.headers['cache-control']
-    assert len((await client.get('/api/public/blog')).json()['items']) == 3
-    picture = await client.get('/api/public/test-mode/media/creed-aventus.png')
-    assert picture.status_code == 200 and picture.headers['content-type'] == 'image/png'
-    # Every other visitor: the live shop, no sandbox images.
+    assert [i['name'] for i in (await client.get('/api/public/aromas', headers=BROWSER)).json()['items']] == ['Main Only']
+    await enable(client)
+    # A fresh visitor: no link, no cookie.
     async with httpx.AsyncClient(transport=client._transport, base_url=SITE) as visitor:
-        main = (await visitor.get('/api/public/aromas')).json()
-        assert [item['name'] for item in main['items']] == ['Main Only']
-        assert 'x-accord-test-mode' not in (await visitor.get('/api/public/aromas')).headers
-        assert (await visitor.get('/api/public/test-mode/media/creed-aventus.png')).status_code == 404
-        assert (await visitor.get('/api/public/test-mode/status')).json() == {'active': False, 'expires_at': None}
-        forged = token.rsplit('.', 1)[0] + '.' + '0' * 64
-        visitor.cookies.set(test_mode.COOKIE, forged)
-        assert [item['name'] for item in (await visitor.get('/api/public/aromas')).json()['items']] == ['Main Only']
+        first = await visitor.get('/api/public/aromas', params={'limit': 30}, headers=BROWSER)
+        assert 'accord_test_view=1' in first.headers['set-cookie'], 'the website switches to the test cart'
+        sandbox = first.json()
+        assert sandbox['total'] == 10 and 'Creed' in sandbox['brands'] and 'Real' not in sandbox['brands']
+        aventus = next(item for item in sandbox['items'] if item['name'] == 'Aventus')
+        assert aventus['path'] == '/aroma/1-creed-aventus' and aventus['volumes'] == [2, 5, 10]
+        assert aventus['top_notes'].startswith('Ананас') and aventus['image'].startswith(test_mode.MEDIA_PREFIX)
+        response = await visitor.get('/api/public/blog', headers=BROWSER)
+        assert len(response.json()['items']) == 3
+        assert response.headers['x-accord-test-mode'] == '1' and 'no-store' in response.headers['cache-control']
+        assert 'set-cookie' not in response.headers, 'the marker is set once'
+        picture = await visitor.get('/api/public/test-mode/media/creed-aventus.png', headers=BROWSER)
+        assert picture.status_code == 200 and picture.headers['content-type'] == 'image/png'
+        status = (await visitor.get('/api/public/test-mode/status', headers=BROWSER)).json()
+        assert status['active'] is True and status['expires_at']
     # Nothing reached the main database.
     async with maker() as session:
         assert await session.scalar(select(func.count()).select_from(m.Product)) == 1
@@ -91,35 +89,48 @@ async def test_only_the_signed_browser_sees_the_sandbox(site):
 
 
 @pytest.mark.asyncio
-async def test_sandbox_pages_are_noindex_and_outside_writes_are_refused(site):
+async def test_crawlers_and_link_previews_keep_the_live_site(site):
     client, _ = site
-    await enter(client)
-    head = (await client.get('/api/public/seo/head', headers={'X-Accord-Path': '/aroma/1-creed-aventus'})).text
-    assert '<title>[ТЕСТ] Creed Aventus EDP' in head and 'noindex, follow' in head
-    assert '"@type":"ProductGroup"' in head
-    for path, body in (('/api/web/checkout', {}), ('/api/web/auth/google', {}), ('/api/web/profile/phone/send', {})):
-        refused = await client.post(path, json=body)
-        assert refused.status_code == 403 and 'Тест-режим' in refused.json()['detail']
-    status = (await client.get('/api/public/test-mode/status')).json()
-    assert status['active'] is True and status['expires_at']
+    await enable(client)
+    for agent in (GOOGLEBOT, {'User-Agent': 'TelegramBot (like TwitterBot)'}, {'User-Agent': 'facebookexternalhit/1.1'}):
+        live = (await client.get('/api/public/aromas', headers=agent))
+        assert [i['name'] for i in live.json()['items']] == ['Main Only'] and 'x-accord-test-mode' not in live.headers
+        assert (await client.get('/api/public/test-mode/status', headers=agent)).json()['active'] is False
+    head = (await client.get('/api/public/seo/head', headers={**GOOGLEBOT, 'X-Accord-Path': '/catalog'})).text
+    assert '[ТЕСТ]' not in head
 
 
 @pytest.mark.asyncio
-async def test_disable_and_expiry_end_the_sandbox(site):
+async def test_sandbox_pages_are_noindex_and_outside_writes_are_refused(site):
     client, _ = site
-    await enter(client)
-    files = list(test_mode.root().iterdir())
-    assert any(f.name.startswith('sandbox-') for f in files)
+    await enable(client)
+    head = (await client.get('/api/public/seo/head', headers={**BROWSER, 'X-Accord-Path': '/aroma/1-creed-aventus'})).text
+    assert '<title>[ТЕСТ] Creed Aventus EDP' in head and 'noindex, follow' in head
+    assert '"@type":"ProductGroup"' in head
+    for path in ('/api/web/checkout', '/api/web/auth/google', '/api/web/profile/phone/send'):
+        refused = await client.post(path, json={}, headers=BROWSER)
+        assert refused.status_code == 403 and 'тест-режимі' in refused.json()['detail']
+
+
+@pytest.mark.asyncio
+async def test_disable_and_expiry_end_the_sandbox_and_clear_the_cart_marker(site):
+    client, _ = site
+    await enable(client)
+    assert any(f.name.startswith('sandbox-') for f in test_mode.root().iterdir())
     assert (await client.delete('/api/system/test-mode')).json() == {'active': False}
     assert not any(f.name.startswith('sandbox-') for f in test_mode.root().iterdir())
-    assert [i['name'] for i in (await client.get('/api/public/aromas')).json()['items']] == ['Main Only']
-    await enter(client)
+    back = await client.get('/api/public/aromas', headers={**BROWSER, 'Cookie': 'g_state={"i_l":0}; accord_test_view=1'})
+    assert [i['name'] for i in back.json()['items']] == ['Main Only']
+    assert 'accord_test_view=; Max-Age=0' in back.headers['set-cookie'], 'the website drops its test cart'
+    assert (await client.get('/api/public/test-mode/media/creed-aventus.png', headers=BROWSER)).status_code == 404
+    await enable(client)
     import json
     state = json.loads((test_mode.root() / 'state.json').read_text())
     state['expires'] = int(time.time()) - 1
     (test_mode.root() / 'state.json').write_text(json.dumps(state))
+    test_mode._forget_cache()
     assert (await client.get('/api/system/test-mode')).json() == {'active': False}
-    assert [i['name'] for i in (await client.get('/api/public/aromas')).json()['items']] == ['Main Only']
+    assert [i['name'] for i in (await client.get('/api/public/aromas', headers=BROWSER)).json()['items']] == ['Main Only']
     assert list(test_mode.root().iterdir()) == []
 
 
@@ -127,8 +138,8 @@ async def test_disable_and_expiry_end_the_sandbox(site):
 async def test_sandbox_never_fills_the_shared_settings_cache(site):
     client, _ = site
     shop_settings.invalidate_cache()
-    await enter(client)
-    await client.get('/api/public/site-config')
+    await enable(client)
+    await client.get('/api/public/site-config', headers=BROWSER)
     assert shop_settings._cache is None, 'live settings are not replaced by sandbox values'
 
 
@@ -152,40 +163,38 @@ async def test_missing_driver_is_a_clear_503_not_a_crash(site, monkeypatch):
     assert (await client.get('/api/system/test-mode')).json() == {'active': False}
 
 
-@pytest.mark.asyncio
-async def test_google_sign_in_cookie_does_not_hide_the_sandbox(site):
-    """Production 26.11: banner said «test mode», but products and posts were the live shop's.
-
-    Google sign-in leaves g_state={"i_l":0} in the browser; the stdlib cookie
-    parser stopped there and never saw the test-mode cookie.
-    """
-    client, _ = site
-    token = await enter(client)
-    client.cookies.clear()
-    header = 'g_state={"i_l":0,"i_ll":1764150000000}; __Host-accord_csrf=' + 'a' * 48 + '; ' + test_mode.COOKIE + '=' + token
-    banner = (await client.get('/api/public/test-mode/status', headers={'Cookie': header})).json()
-    data = (await client.get('/api/public/aromas', params={'limit': 30}, headers={'Cookie': header})).json()
-    posts = (await client.get('/api/public/blog', headers={'Cookie': header})).json()
-    assert banner['active'] is True
-    assert data['total'] == 10 and 'Real' not in data['brands'], 'banner and data agree'
-    assert len(posts['items']) == 3
-
-
-def test_cookie_split_over_several_headers_is_read():
-    from api.test_mode_middleware import _cookie
-    scope = {'headers': [(b'cookie', b'g_state={"i_l":0}'), (b'cookie', b'__Host-accord_test=x.1.y')]}
-    assert _cookie(scope) == 'x.1.y'
-    assert _cookie({'headers': []}) is None
+def test_runtime_image_installs_the_sandbox_driver():
+    """Production log 26.11: enabling test mode failed with 500, no aiosqlite in the image."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for name in ('requirements.txt', 'requirements-lock.txt'):
+        lines = [line.split('#')[0].strip().lower() for line in (root / name).read_text().splitlines()]
+        assert any(line.startswith('aiosqlite==') for line in lines), name
 
 
 @pytest.mark.asyncio
-async def test_enter_sets_the_cart_marker_and_exit_clears_both(site):
+async def test_missing_driver_is_a_clear_503_not_a_crash(site, monkeypatch):
     client, _ = site
-    info = (await client.post('/api/system/test-mode', json={'hours': 1})).json()
-    entered = await client.get('/api/public/test-mode/enter', params={'token': info['enter_url'].split('token=')[1]})
-    cookies = entered.headers.get_list('set-cookie')
-    marker = next(c for c in cookies if c.startswith('accord_test_view=1'))
-    assert 'HttpOnly' not in marker and 'Secure' in marker
-    left = (await client.get('/api/public/test-mode/exit')).headers.get_list('set-cookie')
-    assert any(c.startswith(test_mode.COOKIE + '=""') or c.startswith(test_mode.COOKIE + '=;') or 'Max-Age=0' in c and c.startswith(test_mode.COOKIE) for c in left)
-    assert any(c.startswith('accord_test_view=') and 'Max-Age=0' in c for c in left)
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, 'find_spec', lambda name, *a: None if name == 'aiosqlite' else real(name, *a))
+    response = await client.post('/api/system/test-mode', json={'hours': 1})
+    assert response.status_code == 503 and 'aiosqlite' in response.json()['detail']
+    assert (await client.get('/api/system/test-mode')).json() == {'active': False}
+
+
+
+
+def test_reading_the_state_never_needs_a_writable_data_directory(tmp_path, monkeypatch):
+    """The state is read on every website API request: a read-only /data must not break the shop."""
+    import shop.paths
+    readonly = tmp_path / 'ro'
+    readonly.mkdir()
+    readonly.chmod(0o500)
+    monkeypatch.setattr(shop.paths, 'DATA_ROOT', readonly / 'data')
+    test_mode._forget_cache()
+    try:
+        assert test_mode.current() is None and not (readonly / 'data').exists()
+    finally:
+        readonly.chmod(0o700)
+        test_mode._forget_cache()

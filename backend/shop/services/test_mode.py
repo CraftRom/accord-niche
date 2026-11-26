@@ -1,4 +1,4 @@
-"""Test mode: a temporary sandbox copy of the storefront for the system administrator.
+"""Test mode: the whole website temporarily shows a sandbox catalog and blog.
 
 What it is
     A separate SQLite database in /data/test-mode with ten real niche perfumes
@@ -6,9 +6,11 @@ What it is
     It never touches the main PostgreSQL database.
 
 Who sees it
-    Only a browser holding the signed test-mode cookie, which the system
-    administrator gets from the panel. Every other visitor, crawler, the
-    Mini App, the bot and the panel itself keep working on the main data.
+    Turned on by the system administrator in the panel, it applies to every
+    website visitor at once: no link or key is needed. Search engines and
+    link previews (crawler user agents) keep getting the live site, so a test
+    session never reaches search results. The Mini App, the bot and the panel
+    keep working on the main data.
 
 What it can do
     Read requests of the website API (/api/public, /api/web) and the SEO head
@@ -24,9 +26,8 @@ How it ends
 from __future__ import annotations
 
 import contextvars
-import hashlib
-import hmac
 import json
+import re
 import os
 import secrets
 import shutil
@@ -37,10 +38,12 @@ from pathlib import Path
 
 from shop.domain_security import DOMAIN
 
-COOKIE = "__Host-accord_test"
-# Readable marker for the website: which browser cart to use. It grants
-# nothing; only the signed COOKIE opens the sandbox.
+# Readable marker for the website: which browser cart to use. Test goods have
+# their own ids (1-30), so they must never share the live cart.
 VIEW_COOKIE = "accord_test_view"
+# Crawlers and link previews always get the live site.
+CRAWLER = re.compile(r"bot|crawler|spider|slurp|facebookexternalhit|preview|lighthouse|headless|"
+                     r"viber|whatsapp|skype|discord|telegram|embedly|quora|pinterest|vkshare|yandex|bing", re.I)
 ASSETS = Path(__file__).resolve().parents[1] / "test_mode_assets"
 DEFAULT_HOURS = 2
 MAX_HOURS = 24
@@ -61,22 +64,19 @@ def root() -> Path:
     return path
 
 
+def _base() -> Path:
+    from shop.paths import DATA_ROOT
+    return DATA_ROOT / "test-mode"
+
+
+# Reading never creates directories: the state is checked on every website
+# API request, and a read-only /data must not break the live shop.
 def _state_file() -> Path:
-    return root() / "state.json"
+    return _base() / "state.json"
 
 
 def _db_file(sandbox_id: str) -> Path:
-    return root() / f"sandbox-{sandbox_id}.db"
-
-
-def _secret() -> bytes:
-    from shop.config import settings
-    return hashlib.sha256(b"accord-test-mode:" + str(settings.jwt_secret).encode()).digest()
-
-
-def _sign(sandbox_id: str, expires: int) -> str:
-    body = f"{sandbox_id}.{expires}"
-    return body + "." + hmac.new(_secret(), body.encode(), hashlib.sha256).hexdigest()
+    return _base() / f"sandbox-{sandbox_id}.db"
 
 
 def state() -> dict | None:
@@ -93,21 +93,28 @@ def state() -> dict | None:
     return data
 
 
-def token(data: dict) -> str:
-    return _sign(data["id"], int(data["expires"]))
+_state_cache: tuple[float, dict | None] = (0.0, None)
+STATE_CACHE_SECONDS = 1.0
 
 
-def verify(raw: str | None) -> dict | None:
-    """The sandbox this cookie opens, if the signature, id and time all match."""
-    if not raw or raw.count(".") != 2 or len(raw) > 200:
-        return None
-    sandbox_id, expires, _ = raw.split(".")
-    if not expires.isdigit() or not hmac.compare_digest(_sign(sandbox_id, int(expires)), raw):
-        return None
-    current = state()
-    if not current or current["id"] != sandbox_id or int(current["expires"]) != int(expires):
-        return None
-    return current
+def current() -> dict | None:
+    """state() read at most once a second per process: it is checked on every website API request."""
+    global _state_cache
+    now = time.monotonic()
+    if now - _state_cache[0] < STATE_CACHE_SECONDS:
+        return _state_cache[1]
+    data = state()
+    _state_cache = (now, data)
+    return data
+
+
+def _forget_cache() -> None:
+    global _state_cache
+    _state_cache = (0.0, None)
+
+
+def crawler(user_agent: str) -> bool:
+    return bool(CRAWLER.search(user_agent or ""))
 
 
 def public(data: dict | None) -> dict:
@@ -116,8 +123,7 @@ def public(data: dict | None) -> dict:
     return {"active": True, "created_by": data.get("created_by", ""), "created_at": data.get("created_at"),
             "expires_at": datetime.fromtimestamp(int(data["expires"]), timezone.utc).isoformat(),
             "products": data.get("products", 0), "aromas": data.get("aromas", 0), "posts": data.get("posts", 0),
-            "enter_url": f"https://{DOMAIN}/api/public/test-mode/enter?token={token(data)}",
-            "exit_url": f"https://{DOMAIN}/api/public/test-mode/exit"}
+            "site_url": f"https://{DOMAIN}/"}
 
 
 # ------------------------------------------------------------------ request scope
@@ -148,13 +154,16 @@ def session_maker(data: dict):
 # ------------------------------------------------------------------ lifecycle
 
 def disable_sync() -> None:
+    _forget_cache()
     for sandbox_id in list(_engines):
         engine, _ = _engines.pop(sandbox_id)
         try:
             engine.sync_engine.dispose()
         except Exception:
             pass
-    path = root()
+    path = _base()
+    if not path.is_dir():
+        return
     for item in path.iterdir():
         if item.name == "state.json" or item.name.startswith("sandbox-"):
             item.unlink(missing_ok=True) if item.is_file() else shutil.rmtree(item, ignore_errors=True)
@@ -184,6 +193,7 @@ async def enable(actor: str, hours: int = DEFAULT_HOURS) -> dict:
     await disable()
     hours = max(1, min(MAX_HOURS, int(hours)))
     sandbox_id = secrets.token_hex(8)
+    root()  # only enabling creates the directory
     from sqlalchemy.ext.asyncio import create_async_engine
     from shop import models as m
     engine = create_async_engine("sqlite+aiosqlite:///" + str(_db_file(sandbox_id)))
@@ -198,6 +208,7 @@ async def enable(actor: str, hours: int = DEFAULT_HOURS) -> dict:
     temporary = _state_file().with_suffix(".tmp")
     temporary.write_text(json.dumps(data), encoding="utf-8")
     os.replace(temporary, _state_file())
+    _forget_cache()
     return data
 
 

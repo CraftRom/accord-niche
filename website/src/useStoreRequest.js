@@ -21,7 +21,9 @@ export function useStoreRequest(url, interval = 60000) {
           throw error
         }
         const data = await response.json()
-        if (!disposed) setState({url, data, loading: false, error: ''})
+        // Answered from the test-mode sandbox (the site-wide test mode).
+        const sandbox = response.headers?.get?.('x-accord-test-mode') === '1'
+        if (!disposed) setState({url, data, sandbox, loading: false, error: ''})
       } catch (error) {
         if (!disposed) setState(old => ({...old,url,data:[404,410].includes(error.status)?null:old.data,
           loading:false,errorStatus:error.status || 0,error:error.name==='AbortError'?'Сервер відповідає надто довго. Спробуйте ще раз.':error.message}))

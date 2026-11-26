@@ -1,8 +1,8 @@
-"""Test mode: enabled by the system administrator, opened in the browser through a signed link."""
+"""Test mode: the system administrator turns the sandbox on for the whole website."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from api.auth import Principal, require_sysadmin
@@ -39,40 +39,10 @@ async def disable(who: Principal = Depends(require_sysadmin)):
     return test_mode.public(None)
 
 
-def _cookie(request: Request):
-    return test_mode.verify(request.cookies.get(test_mode.COOKIE))
-
-
-@public.get("/enter", include_in_schema=False)
-async def enter(token: str = Query(max_length=200)):
-    data = test_mode.verify(token)
-    response = RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
-    if data is None:
-        _forget(response)
-        return response
-    import time
-    age = max(1, int(data["expires"] - time.time()))
-    response.set_cookie(test_mode.COOKIE, token, max_age=age, path="/", secure=True, httponly=True, samesite="lax")
-    response.set_cookie(test_mode.VIEW_COOKIE, "1", max_age=age, path="/", secure=True, httponly=False, samesite="lax")
-    return response
-
-
-def _forget(response):
-    response.delete_cookie(test_mode.COOKIE, path="/", secure=True, httponly=True, samesite="lax")
-    response.delete_cookie(test_mode.VIEW_COOKIE, path="/", secure=True, httponly=False, samesite="lax")
-
-
-@public.get("/exit", include_in_schema=False)
-async def leave():
-    response = RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store"})
-    _forget(response)
-    return response
-
-
 @public.get("/status", include_in_schema=False)
 async def visitor_status(request: Request):
-    """For the website banner: is this browser in test mode, and until when."""
-    data = _cookie(request)
+    """For the website banner: is the site in test mode for this visitor, and until when."""
+    data = None if test_mode.crawler(request.headers.get("user-agent", "")) else test_mode.current()
     info = test_mode.public(data)
     return {"active": info["active"], "expires_at": info.get("expires_at")}
 
@@ -80,7 +50,7 @@ async def visitor_status(request: Request):
 @public.get("/media/{name}", include_in_schema=False)
 async def media(name: str, request: Request):
     path = test_mode.asset(name)
-    if path is None or _cookie(request) is None:
+    if path is None or test_mode.current() is None:
         raise HTTPException(404, "Not found")
     return FileResponse(path, media_type="image/png", headers={
         "Cache-Control": "private, max-age=3600", "X-Robots-Tag": "noindex", "X-Content-Type-Options": "nosniff"})
