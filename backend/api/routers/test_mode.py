@@ -48,18 +48,24 @@ async def enter(token: str = Query(max_length=200)):
     data = test_mode.verify(token)
     response = RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
     if data is None:
-        response.delete_cookie(test_mode.COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        _forget(response)
         return response
     import time
-    response.set_cookie(test_mode.COOKIE, token, max_age=max(1, int(data["expires"] - time.time())), path="/",
-                        secure=True, httponly=True, samesite="lax")
+    age = max(1, int(data["expires"] - time.time()))
+    response.set_cookie(test_mode.COOKIE, token, max_age=age, path="/", secure=True, httponly=True, samesite="lax")
+    response.set_cookie(test_mode.VIEW_COOKIE, "1", max_age=age, path="/", secure=True, httponly=False, samesite="lax")
     return response
+
+
+def _forget(response):
+    response.delete_cookie(test_mode.COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.delete_cookie(test_mode.VIEW_COOKIE, path="/", secure=True, httponly=False, samesite="lax")
 
 
 @public.get("/exit", include_in_schema=False)
 async def leave():
     response = RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store"})
-    response.delete_cookie(test_mode.COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    _forget(response)
     return response
 
 

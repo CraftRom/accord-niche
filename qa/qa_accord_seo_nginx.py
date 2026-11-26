@@ -104,9 +104,17 @@ try:
     # Test mode: the SSI head subrequest carries the administrator's cookie; other visitors see the shop.
     enable = 'import asyncio\nfrom shop.services import test_mode\nprint(test_mode.token(asyncio.run(test_mode.enable("qa", 1))))'
     token = subprocess.run([sys.executable, '-c', enable], env=env, cwd=ROOT / 'backend', check=True, capture_output=True, text=True).stdout.strip()
-    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/aroma/1-creed-aventus', headers={'Host': 'accordniche.pp.ua', 'Cookie': f'__Host-accord_test={token}'})
+    # A real browser also carries Google sign-in's g_state={...} (it hid the test cookie on 26.11).
+    cookie = 'g_state={"i_l":0,"i_ll":1764150000000}; __Host-accord_test=' + token
+    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/aroma/1-creed-aventus', headers={'Host': 'accordniche.pp.ua', 'Cookie': cookie})
     with urllib.request.urlopen(req, timeout=5) as r: head = r.read().decode().split('</head>')[0]
     check('test-mode browser gets sandbox head, noindex', '[ТЕСТ] Creed Aventus' in head and 'noindex' in head, head)
+    import json as _json
+    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/api/public/aromas?limit=30', headers={'Host': 'accordniche.pp.ua', 'Cookie': cookie})
+    with urllib.request.urlopen(req, timeout=5) as r: aromas = _json.loads(r.read().decode())
+    req = urllib.request.Request(f'http://127.0.0.1:{web_port}/api/public/blog', headers={'Host': 'accordniche.pp.ua', 'Cookie': cookie})
+    with urllib.request.urlopen(req, timeout=5) as r: posts = _json.loads(r.read().decode())
+    check('test-mode browser sees 10 test aromas and 3 posts through nginx', aromas['total'] == 10 and len(posts['items']) == 3, str(aromas.get('total')))
     st, body = get('/aroma/7'); head = body.split('</head>')[0]
     check('other visitors still get the live shop', 'Aventus &lt;/script&gt;' in head and '[ТЕСТ]' not in head, head)
     api.terminate(); api.wait(timeout=10)
@@ -116,5 +124,5 @@ finally:
     ng.terminate(); ng.wait(timeout=10)
     if api.poll() is None: api.terminate()
     shutil.rmtree(work, ignore_errors=True)
-print(f'SEO E2E: {ok}/21')
-sys.exit(0 if ok == 21 else 1)
+print(f'SEO E2E: {ok}/22')
+sys.exit(0 if ok == 22 else 1)

@@ -15,7 +15,7 @@ import { Home, HowItWorks } from './home/HomePage'
 import { Footer } from './layout/Footer'
 import { Header } from './layout/Header'
 import { InfoModal } from './layout/InfoModal'
-import { TestModeBanner } from './layout/TestModeBanner'
+import { CART_KEY, TestModeBanner } from './layout/TestModeBanner'
 import { startReveal } from './motion'
 import { ProfilePage } from './profile/ProfilePage'
 import { useRoute } from './router'
@@ -37,14 +37,14 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [lineNotes, setLineNotes] = useState({})
   const [cart, setCart] = useState(() => {try {
-    const saved = JSON.parse(localStorage.getItem('accord:niche:cart') || '{}')
+    const saved = JSON.parse(localStorage.getItem(CART_KEY) || '{}')
     return saved && typeof saved === 'object' && !Array.isArray(saved) ? Object.fromEntries(Object.entries(saved).filter(([id,qty]) => /^[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id)) && Number.isInteger(Number(qty)) && Number(qty) > 0).slice(0,30)) : {}
   } catch {return {}}})
   const ids = Object.keys(cart).sort((a,b) => Number(a) - Number(b)).join(',')
   const cartRequest = useStoreRequest(ids ? '/api/public/products?ids=' + ids : null)
   const siteRequest = useStoreRequest('/api/public/site-config')
   const site = siteRequest.data || {}
-  useEffect(() => {try {localStorage.setItem('accord:niche:cart', JSON.stringify(cart))} catch {}}, [cart])
+  useEffect(() => {try {localStorage.setItem(CART_KEY, JSON.stringify(cart))} catch {}}, [cart])
   useEffect(() => {
     if (Array.isArray(cartRequest.data)) {
       const next=sanitizeCart(cart,cartRequest.data)

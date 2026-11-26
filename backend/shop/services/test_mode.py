@@ -38,6 +38,9 @@ from pathlib import Path
 from shop.domain_security import DOMAIN
 
 COOKIE = "__Host-accord_test"
+# Readable marker for the website: which browser cart to use. It grants
+# nothing; only the signed COOKIE opens the sandbox.
+VIEW_COOKIE = "accord_test_view"
 ASSETS = Path(__file__).resolve().parents[1] / "test_mode_assets"
 DEFAULT_HOURS = 2
 MAX_HOURS = 24
