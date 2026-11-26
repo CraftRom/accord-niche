@@ -6,10 +6,21 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 
-# Public files whose endpoint chooses its own Cache-Control (every other API
-# answer is no-store). assetlinks.json: no-store while empty, 5 minutes once
-# filled, so Cloudflare never keeps an empty answer for an hour.
-OWN_CACHE_PATHS = frozenset({"/api/public/android/assetlinks.json"})
+def keeps_own_cache(path: str, method: str, headers) -> bool:
+    """Whether an API answer may keep the Cache-Control its endpoint chose.
+
+    Every API answer is no-store by default. Public read-only files (sitemap,
+    SEO head, legal pages, product and blog images, assetlinks.json) choose a
+    ``public`` lifetime themselves; it is kept for GET/HEAD under /api/public/
+    when the answer sets no cookie. A ``no-store`` or ``private`` choice is
+    replaced by no-store as before, and so is a test-mode answer.
+    """
+    if method not in ("GET", "HEAD") or not path.startswith("/api/public/"):
+        return False
+    cache = [v for k, v in headers if k.lower() == b"cache-control"]
+    if len(cache) != 1 or any(k.lower() == b"set-cookie" for k, _ in headers):
+        return False
+    return cache[0].strip().lower().startswith(b"public")
 
 
 class SecurityMiddleware:
@@ -139,7 +150,7 @@ class SecurityMiddleware:
             async def protected_send(message):
                 if message["type"] == "http.response.start" and path.startswith("/api/"):
                     response_headers = list(message.get("headers", []))
-                    if path not in OWN_CACHE_PATHS or not any(k.lower() == b"cache-control" for k, _ in response_headers):
+                    if not keeps_own_cache(path, scope.get("method", ""), response_headers):
                         response_headers = [(k, v) for k, v in response_headers if k.lower() != b"cache-control"]
                         response_headers.append((b"cache-control", b"no-store"))
                     response_headers.extend([(b"x-content-type-options", b"nosniff"), (b"referrer-policy", b"no-referrer")])
