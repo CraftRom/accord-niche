@@ -8,6 +8,12 @@ updates:
     schedule: {interval: weekly}
     cooldown: {default-days: 14}
     open-pull-requests-limit: 5
+    groups:
+      # aiogram pins a pydantic range and pydantic pins one pydantic-core:
+      # updated one by one they never install (pydantic 2.14 needs
+      # pydantic-core 2.50 and aiogram 3.32+), so they move together.
+      telegram-pydantic:
+        patterns: ["aiogram", "pydantic", "pydantic-core", "pydantic-settings"]
   - package-ecosystem: npm
     directory: /website
     schedule: {interval: weekly}
