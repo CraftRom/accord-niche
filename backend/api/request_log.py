@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import ipaddress
 import re
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from urllib.parse import urlsplit, urlunsplit, urlencode
 from shop.config import settings
 import time
 import uuid

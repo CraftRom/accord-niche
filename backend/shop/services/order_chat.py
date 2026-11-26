@@ -11,8 +11,7 @@ from __future__ import annotations
 from shop.formatting import money as format_money
 
 import logging
-from datetime import datetime, timedelta
-from shop.services.chat_access import OPEN_STATUSES, CLOSED_GRACE_DAYS, can_chat, is_closed
+from shop.services.chat_access import OPEN_STATUSES, can_chat, is_closed  # OPEN_STATUSES is re-exported
 from html import escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup

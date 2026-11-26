@@ -25,7 +25,6 @@ from shop.backup_files import (BackupBusy, BackupError, SIGNATURE, backup_lock,
 
 from shop import security_log as security
 from api.auth import Principal, require_sysadmin
-from shop.config import settings
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 

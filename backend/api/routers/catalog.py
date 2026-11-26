@@ -230,7 +230,6 @@ async def delete_product(product_id: int, repo: Repository = Depends(get_repo)):
 # ------------------------------- bulk product import / export
 from fastapi import BackgroundTasks, File, Form, UploadFile
 from fastapi.responses import JSONResponse
-from fastapi.responses import Response
 from shop.services.product_io import export_xlsx, parse_salesdrive_xlsx
 
 IMPORT_REPLAY_WINDOW = timedelta(hours=24)

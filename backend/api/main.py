@@ -126,7 +126,6 @@ app.add_middleware(
 )
 
 from api.security_middleware import SecurityMiddleware, SiteHostMiddleware, DomainBoundaryMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from urllib.parse import urlsplit
 allowed_hosts = [h.strip() for h in settings.trusted_hosts.split(",") if h.strip()]
 if not allowed_hosts:
