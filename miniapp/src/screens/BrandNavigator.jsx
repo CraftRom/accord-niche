@@ -7,11 +7,11 @@ import { backButton } from '../telegram'
 // Бренди замість категорій: парфумерію шукають за брендом. Ряд брендів над
 // каталогом і повний список із пошуком (брендів може бути багато).
 function BrandCount({ brand }) {
-  return Number.isFinite(brand.products_count) ? <span className="taxonomy-count" title="Усього товарів бренду, до пошуку та фільтра наявності" aria-label={`Усього товарів бренду: ${brand.products_count}`}>{brand.products_count}</span> : null
+  return Number.isFinite(brand.products_count) ? <span className="taxonomy-count" title="Усього товарів бренду, до пошуку та фільтра наявності" >{brand.products_count}<span className="sr-only"> товарів</span></span> : null
 }
 
 function BrandTile({ name, selected, onClick, brand, detail, icon = 'box' }) {
-  return <button className="category-tile" aria-label={name} aria-pressed={selected} onClick={onClick}>
+  return <button className="category-tile" aria-pressed={selected} onClick={onClick}>
     <span className="category-tile-symbol"><StoreIcon name={icon} /></span>
     <span className="category-tile-name">{name}</span>
     <span className="category-tile-detail">{brand && <BrandCount brand={brand} />}{detail}</span>
@@ -33,7 +33,7 @@ function BrandPicker({ brands, active, onBrand, onClose }) {
       <div className="field category-search"><Field value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Назва бренду" aria-label="Пошук брендів" inputMode="search" /></div>
       {!needle && <div className="category-quick-actions"><button aria-pressed={active === null} onClick={() => select(null)}><StoreIcon name="catalog" />Усі аромати</button></div>}
       <div className="category-tree brand-list">
-        {shown.map((brand) => <button key={brand.id} className="category-tree-root" aria-label={brand.name} aria-pressed={active === brand.id} onClick={() => select(brand.id)}><StoreIcon name="box" /><span>{brand.name}</span><BrandCount brand={brand} />{active === brand.id && <StoreIcon name="check" />}</button>)}
+        {shown.map((brand) => <button key={brand.id} className="category-tree-root" aria-pressed={active === brand.id} onClick={() => select(brand.id)}><StoreIcon name="box" /><span>{brand.name}</span><BrandCount brand={brand} />{active === brand.id && <StoreIcon name="check" />}</button>)}
         {!shown.length && <p className="category-search-empty" role="status">Брендів за цим запитом немає. Спробуйте іншу назву.</p>}
       </div>
     </section>

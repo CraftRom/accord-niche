@@ -3,7 +3,7 @@ import { SiteLink } from '../router'
 import { Icon } from '../ui/Icon'
 
 export function Logo({dark = false, onClick}) {
-  return <SiteLink to="/" onNavigate={() => onClick()} className={'brandmark' + (dark ? ' inverse' : '')} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong><span className="brandmark-bottom" data-decorative=""><i/>NICHE<i/></span></SiteLink>
+  return <SiteLink to="/" onNavigate={() => onClick()} className={'brandmark' + (dark ? ' inverse' : '')} aria-label="ACCORD NICHE — на головну"><strong>ACCORD</strong>{' '}<span className="brandmark-bottom" data-decorative=""><i/>NICHE<i/></span></SiteLink>
 }
 
 // Which menu item is the page you are on. Catalog sections differ only by

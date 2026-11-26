@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
-BUILD = "2026-11-26-accord-merchant-feed-v1.50.0"
+BUILD = "2026-11-26-accord-dashboard-chunks-v1.50.1"
 
 BACKEND = Path(__file__).resolve().parents[1]
 RELEASE_FILE = Path(__file__).with_name("release.json")
