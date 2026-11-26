@@ -6,6 +6,29 @@ on:
 permissions:
   contents: read
 jobs:
+  # Known vulnerabilities in the pinned dependencies. A separate job: it names
+  # the package and advisory without hiding regression results.
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python runtime dependencies (requirements-lock.txt)
+        run: |
+          python -m pip install pip-audit==2.10.1
+          pip-audit -r backend/requirements-lock.txt --progress-spinner off
+      - name: Website, dashboard and Mini App dependencies
+        run: |
+          for app in website dashboard miniapp qa; do
+            echo "== $app"
+            (cd "$app" && npm audit --audit-level=high)
+          done
   regression:
     runs-on: ubuntu-latest
     timeout-minutes: 30
