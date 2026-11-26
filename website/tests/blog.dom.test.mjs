@@ -62,7 +62,9 @@ test('Markdown renders safely, comments remain plain text and guest sessions can
     assert.ok(prose.querySelector('strong'))
     assert.equal(prose.querySelectorAll('script,iframe,svg').length,0)
     assert.equal(prose.querySelectorAll('a[href^="javascript:"],img[src^="data:"]').length,0)
-    assert.equal(prose.querySelector('img').getAttribute('src'),'/media/image-123.jpg')
+    // Uploaded article images come as WebP widths through the API (srcset).
+    assert.equal(prose.querySelector('img').getAttribute('src'),'/api/public/media/image-123.jpg?w=960')
+    assert.match(prose.querySelector('img').getAttribute('srcset'),/image-123\.jpg\?w=320 320w/)
     assert.equal(prose.querySelector('a[href^="https:"]').rel,'noopener noreferrer nofollow')
     // Links to the shop are internal: same tab, followed by crawlers, SPA navigation.
     const internal=prose.querySelector('a[href="/catalog"]')

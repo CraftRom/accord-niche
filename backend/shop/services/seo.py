@@ -38,7 +38,8 @@ from shop.domain_security import DOMAIN
 
 ORIGIN = f"https://{DOMAIN}"
 SITE = "ACCORD NICHE"
-LOGO = f"{ORIGIN}/logo.svg"
+# Google wants a raster logo of at least 112 px for Organization.
+LOGO = f"{ORIGIN}/logo.png"
 DEFAULT_TITLE = "ACCORD NICHE — розпив оригінальної нішевої парфумерії"
 DEFAULT_DESCRIPTION = ("ACCORD NICHE — розпив оригінальної нішевої парфумерії. Creed, Kilian, Nasomatto, "
                        "Amouage та інші. Спробуйте аромат у форматах 2, 5 або 10 мл.")
@@ -463,6 +464,29 @@ async def head_for(repo, raw_path: str) -> str:
         meta = await _post_meta(repo, match.group(1))
     # Unknown, hidden or unpublished: generic tags and never indexed.
     return render(meta or GENERIC)
+
+
+async def page_exists(repo, raw_path: str) -> bool:
+    """Is there a page at this address? Nginx answers HTTP 404 when not.
+
+    The website is a SPA: without this every unknown address answered 200
+    with a «not found» screen and noindex, which Google reports as soft 404s.
+    Private pages (checkout, profile, order) exist: they are noindex, not missing.
+    """
+    path = normalize_path(raw_path)
+    if path == "/index.html":
+        return True
+    if path in STATIC or any(path == p.rstrip("/") or path.startswith(p) for p in PRIVATE):
+        return True
+    if match := _AROMA.match(path):
+        product_id = int(match.group(1))
+        return any(any(p.id == product_id for p in g["variants"]) for g in await _groups(repo))
+    if match := _BLOG.match(path):
+        now = datetime.now(timezone.utc)
+        found = await repo.s.scalar(select(m.BlogPost.id).join(m.BlogSlug, m.BlogSlug.post_id == m.BlogPost.id).where(
+            m.BlogSlug.slug == match.group(1), m.BlogPost.status == "published", m.BlogPost.published_at <= now))
+        return found is not None
+    return False
 
 
 # ------------------------------------------------------------------ sitemaps

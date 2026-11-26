@@ -33,6 +33,15 @@ async def _sitemap(repo, name: str, if_none_match: str | None):
     return Response(body, media_type="application/xml; charset=utf-8", headers=headers)
 
 
+@router.get("/exists", include_in_schema=False)
+async def exists(path: str = Query("/", max_length=600),
+                 x_accord_path: str | None = Header(None, max_length=600),
+                 repo: Repository = Depends(get_repo)):
+    """For nginx auth_request: 204 when the page exists, 403 when nginx should answer 404."""
+    found = await seo.page_exists(repo, x_accord_path or path)
+    return Response(status_code=204 if found else 403, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/sitemap.xml", include_in_schema=False)
 async def sitemap_index(if_none_match: str | None = Header(None, max_length=200),
                         repo: Repository = Depends(get_repo)):

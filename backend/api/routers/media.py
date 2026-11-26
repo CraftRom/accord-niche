@@ -208,4 +208,6 @@ async def remove(name: str, who: Principal = Depends(require_staff), repo: Repos
         raise HTTPException(409, 'Зображення використовується в товарах, розсилках або блозі. Спочатку приберіть його з цих записів')
 
     target.unlink()
+    from shop.services import image_variants
+    image_variants.forget(name)
     return None

@@ -152,23 +152,46 @@ async def detail(product_id: int, repo: Repository = Depends(get_repo)):
         raise HTTPException(404, "Аромат не знайдено")
     return public_product(p)
 
+_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+
+
+async def _media_file(name: str, width: int | None, cache: str):
+    """A media file, or its WebP copy at ``width`` (srcset on the website)."""
+    from fastapi.responses import FileResponse
+    from starlette.concurrency import run_in_threadpool
+    from shop.paths import media_dir
+    from shop.services import image_variants
+    path = media_dir() / name
+    if not image_variants.NAME.fullmatch(name) or not path.is_file() or path.is_symlink():
+        raise HTTPException(404, "Фото немає")
+    if width is not None:
+        if width not in image_variants.WIDTHS:
+            raise HTTPException(422, "Ширина: " + ", ".join(map(str, image_variants.WIDTHS)))
+        smaller = await run_in_threadpool(image_variants.variant, name, width)
+        if smaller is not None:
+            return FileResponse(smaller, media_type="image/webp", headers={
+                "Cache-Control": cache, "X-Content-Type-Options": "nosniff"})
+    return FileResponse(path, media_type=_MIME.get(path.suffix.lower(), "application/octet-stream"), headers={
+        "Cache-Control": cache, "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/media/{name}")
+async def media_image(name: str, w: int | None = Query(None)):
+    """Blog covers and article images at a chosen width. File names carry a content hash."""
+    return await _media_file(name, w if isinstance(w, int) else None, "public, max-age=2592000, immutable")
+
+
 @router.get("/catalog/{product_id}/photo")
-async def photo(product_id: int, repo: Repository = Depends(get_repo)):
+async def photo(product_id: int, repo: Repository = Depends(get_repo), w: int | None = Query(None)):
+    # Called directly (QA, other routers) the default is the Query marker, not a width.
+    w = w if isinstance(w, int) else None
     p = await repo.get_product(product_id)
     if not p or not p.is_published:
         raise HTTPException(404, "Фото немає")
     local_name = local_product_media_name(p.photo_url)
     if local_name:
-        from fastapi.responses import FileResponse
-        from shop.paths import media_dir
-        path = media_dir() / local_name
-        if not path.is_file() or path.is_symlink():
-            raise HTTPException(404, "Фото немає")
-        mime = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else {
-            ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"
-        }.get(path.suffix.lower(), "application/octet-stream")
-        return FileResponse(path, media_type=mime, headers={
-            "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"})
+        # The product may get another photo under the same URL: one hour.
+        return await _media_file(local_name, w, "public, max-age=3600")
     if not p.photo_file_id:
         raise HTTPException(404, "Фото немає")
     from shop.config import settings
