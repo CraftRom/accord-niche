@@ -312,7 +312,7 @@ async def download(
             # Латиниця навмисно: кирилицю в назві файлу браузер передає
             # відсотковим кодуванням, і в консолі замість імені видно
             # ланцюг %D0%BF. Файл однаково розбирають jq та grep.
-            filename=f"elfar-{service}-{stamp}-full.log",
+            filename=f"accord-{service}-{stamp}-full.log",
             media_type="application/x-ndjson",
         )
 
@@ -331,7 +331,7 @@ async def download(
         media_type="application/x-ndjson",
         headers={
             "Content-Disposition":
-                f'attachment; filename="elfar-{service}-{stamp}.log"',
+                f'attachment; filename="accord-{service}-{stamp}.log"',
             # Скільки рядків насправді у файлі — щоб не рахувати вручну,
             # коли фільтр відсіяв більше, ніж очікували.
             "X-Records": str(len(records)),

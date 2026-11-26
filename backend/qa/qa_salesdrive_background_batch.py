@@ -1,4 +1,5 @@
 """Static regression for SalesDrive background quota + scheduler discipline."""
+from qa_common import sql_repository_source
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -8,7 +9,7 @@ reconciler = (ROOT / "backend/shop/services/salesdrive_reconciler.py").read_text
 scheduler_main = (ROOT / "backend/scheduler/__main__.py").read_text(encoding="utf-8")
 config = (ROOT / "backend/shop/config.py").read_text(encoding="utf-8")
 env = (ROOT / ".env.example").read_text(encoding="utf-8")
-repo = (ROOT / "backend/shop/repo/sql.py").read_text(encoding="utf-8")
+repo = sql_repository_source()
 # The root compose file only includes the validated domain stack.
 compose = (ROOT / "deploy/docker-compose.domains.yml").read_text(encoding="utf-8")
 
