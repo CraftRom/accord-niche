@@ -1,0 +1,44 @@
+# Weekly dependency updates. New releases wait 14 days (cooldown) before a PR
+# is opened, matching the project rule that versions must be at least two
+# weeks old. React stays on 18 for the storefront and mini app (bundle budget).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule: {interval: weekly}
+    cooldown: {default-days: 14}
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /website
+    schedule: {interval: weekly}
+    cooldown: {default-days: 14}
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+  - package-ecosystem: npm
+    directory: /miniapp
+    schedule: {interval: weekly}
+    cooldown: {default-days: 14}
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule: {interval: weekly}
+    cooldown: {default-days: 14}
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /qa
+    schedule: {interval: weekly}
+    cooldown: {default-days: 14}
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    cooldown: {default-days: 14}

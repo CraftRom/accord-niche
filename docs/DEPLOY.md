@@ -1,4 +1,4 @@
-> Оновлення доменів 10.10.2026: [інструкція 520, www-редиректів і Telegram](../DOMAIN_COMPATIBILITY_2026-10-10_UA.md). Для ELFAR certbot-init.sh включає elfar.pp.ua та www.elfar.pp.ua в один сертифікат.
+> Оновлення доменів 10.10.2026: інструкція щодо 520, www-редиректів і Telegram (окремий документ у репозиторій не потрапив). Для ELFAR certbot-init.sh включає elfar.pp.ua та www.elfar.pp.ua в один сертифікат.
 
 # Розгортання: покроково
 

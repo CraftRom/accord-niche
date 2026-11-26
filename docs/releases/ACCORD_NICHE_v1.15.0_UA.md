@@ -33,7 +33,7 @@ Docker transport у сценаріях повного відновлення з�
 python3 /opt/accord-niche/scripts/connect_elfar_edge.py
 ```
 
-Команду restore для оновлення коду запускати не потрібно. Інструкція з усіма операціями, місцем на диску, TLS і підготовкою порожнього ACCORD на новому сервері: [RECOVERY_BUNDLE_UA.md](docs/RECOVERY_BUNDLE_UA.md).
+Команду restore для оновлення коду запускати не потрібно. Інструкція з усіма операціями, місцем на диску, TLS і підготовкою порожнього ACCORD на новому сервері: [RECOVERY_BUNDLE_UA.md](../RECOVERY_BUNDLE_UA.md).
 
 Створення аварійного комплекту — окрема операція з тимчасовою недоступністю дій ACCORD:
 
@@ -54,4 +54,4 @@ bash deploy/recovery.sh bundle
 
 Цей пакет закриває реалізацію наступного кроку в коді, а не весь аудит. Реальний стан VPS та перевірка двох магазинів залишаються окремою операційною роботою.
 
-[Стан виправлень](docs/REMEDIATION_PROGRESS_UA.md) · [Повний комплект](docs/RECOVERY_BUNDLE_UA.md) · [Дампи БД](docs/BACKUP_RECOVERY_UA.md)
+[Стан виправлень](../REMEDIATION_PROGRESS_UA.md) · [Повний комплект](../RECOVERY_BUNDLE_UA.md) · [Дампи БД](../BACKUP_RECOVERY_UA.md)

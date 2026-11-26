@@ -43,7 +43,7 @@ bash deploy/backup.sh
 python3 /opt/accord-niche/scripts/connect_elfar_edge.py
 ```
 
-Команду restore під час звичайного оновлення запускати не потрібно. Повний порядок аварійного відновлення: [BACKUP_RECOVERY_UA.md](docs/BACKUP_RECOVERY_UA.md).
+Команду restore під час звичайного оновлення запускати не потрібно. Повний порядок аварійного відновлення: [BACKUP_RECOVERY_UA.md](../BACKUP_RECOVERY_UA.md).
 
 ## Межі першого пакета та наступний етап
 
@@ -51,4 +51,4 @@ python3 /opt/accord-niche/scripts/connect_elfar_edge.py
 
 Наступний пакет: довговічні фонові завдання з ID/прогресом/recovery, захист від повторів після втрати відповіді та однакові файлові ліміти UI → edge → Nginx → API. Thread pool цього релізу усуває блокування event loop, але ще не є системою довговічних завдань.
 
-[Аудит модулів](docs/MODULE_AUDIT_2026-11-16_UA.md) · [Стан поетапних робіт](docs/REMEDIATION_PROGRESS_UA.md)
+[Аудит модулів](../MODULE_AUDIT_2026-11-16_UA.md) · [Стан поетапних робіт](../REMEDIATION_PROGRESS_UA.md)

@@ -7,7 +7,7 @@
 - Certbot: `deploy-certbot-1`, спільні з Nginx томи `/etc/letsencrypt` і `/var/www/certbot`.
 - ACCORD: `/opt/accord-niche`, `COMPOSE_PROJECT_NAME='accord-niche'`.
 
-Використовуйте v1.8.1 або новішу: frontend-сервіси ACCORD мають імена `accord-website`, `accord-miniapp`, `accord-dashboard`. Це запобігає конфлікту з неявними Docker DNS aliases ELFAR. При оновленні `domains.sh` одноразово замінює тільки старі frontend-контейнери ACCORD, зберігаючи дані; подробиці — [v1.8.1](../ACCORD_NICHE_v1.8.1_UA.md).
+Використовуйте v1.8.1 або новішу: frontend-сервіси ACCORD мають імена `accord-website`, `accord-miniapp`, `accord-dashboard`. Це запобігає конфлікту з неявними Docker DNS aliases ELFAR. При оновленні `domains.sh` одноразово замінює тільки старі frontend-контейнери ACCORD, зберігаючи дані; подробиці — [v1.8.1](releases/ACCORD_NICHE_v1.8.1_UA.md).
 
 ## Простий запуск із наявним Origin CA
 
