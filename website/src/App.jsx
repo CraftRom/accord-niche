@@ -15,7 +15,7 @@ import { Home, HowItWorks } from './home/HomePage'
 import { Footer } from './layout/Footer'
 import { Header } from './layout/Header'
 import { InfoModal } from './layout/InfoModal'
-import { CART_KEY, TestModeBanner } from './layout/TestModeBanner'
+import { CART_KEY, TEST_VIEW, TestModeBanner } from './layout/TestModeBanner'
 import { startReveal } from './motion'
 import { ProfilePage } from './profile/ProfilePage'
 import { useRoute } from './router'
@@ -46,7 +46,9 @@ export default function App() {
   const site = siteRequest.data || {}
   useEffect(() => {try {localStorage.setItem(CART_KEY, JSON.stringify(cart))} catch {}}, [cart])
   useEffect(() => {
-    if (Array.isArray(cartRequest.data)) {
+    // Test mode was switched on or off and the page is about to reload into the
+    // other cart: never reconcile the live cart against sandbox goods (or back).
+    if (Array.isArray(cartRequest.data) && Boolean(cartRequest.sandbox) === TEST_VIEW) {
       const next=sanitizeCart(cart,cartRequest.data)
       const changed=JSON.stringify(next)!==JSON.stringify(cart)
       const repriced=cartRequest.data.some(product=>products.some(previous=>previous.id===product.id && Number(previous.price)!==Number(product.price)))
