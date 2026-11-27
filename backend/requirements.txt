@@ -7,7 +7,7 @@ sqlalchemy[asyncio]==2.0.57
 aiosqlite==0.22.1
 asyncpg==0.32.0
 alembic==1.20.1
-pydantic==2.14.3
+pydantic==2.13.5
 pydantic-settings==2.16.2
 pyjwt==2.15.1
 httpx==0.28.1
