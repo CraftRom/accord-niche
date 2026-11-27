@@ -43,7 +43,7 @@ python-dotenv==1.2.4
 python-multipart==0.0.33
 pyyaml==6.0.3
 redis==8.1.0
-sqlalchemy==2.0.57
+sqlalchemy==2.1.8
 starlette==1.10.0
 typing-extensions==4.16.0
 typing-inspection==0.4.4
