@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from api import auth
 from api.browser_sessions import profile
-from api.routers import settings as settings_api, operators, blog
+from api.routers import settings as settings_api, operators, blog, store_audit
 from api.schemas import ShopSettingsIn
 from shop.access import MODULE_FIELDS, INFRA_FIELDS
 from shop.config import settings
@@ -59,6 +59,7 @@ async def client(monkeypatch):
     monkeypatch.setattr(settings_api, 'get_shop_settings', read)
     monkeypatch.setattr(settings_api, 'save_shop_settings', save)
     app = FastAPI()
+    app.include_router(store_audit.router)
     app.include_router(settings_api.router, prefix='/api/settings')
     app.include_router(operators.router, prefix='/api/operators')
     app.include_router(blog.admin, prefix='/api/blog')
@@ -212,3 +213,16 @@ async def test_sysadmin_can_edit_existing_highest_group_without_reassigning_it(c
     result = await client.http.put('/api/operators/3', json={'name': 'Existing system account'}, headers=headers(Role.SYSADMIN))
     assert result.status_code == 200
     assert result.json()['role'] == Role.SYSADMIN.value
+
+@pytest.mark.asyncio
+async def test_store_audit_requires_administrative_role(client):
+    for method, path in [("GET", ""), ("POST", ""), ("PUT", "/cart"),
+                         ("POST", "/cart/test"), ("GET", "/cart/history")]:
+        url = "/api/store-audit" + path + "?environment=local"
+        assert (await client.http.request(method, url, json={})).status_code == 401
+        result = await client.http.request(method, url, json={}, headers=headers(Role.MANAGER))
+        assert result.status_code == 403
+    for role in (Role.ADMIN, Role.SYSADMIN):
+        # A missing form field is validated after the administrative guard succeeds.
+        response = await client.http.post("/api/store-audit?environment=local", json={}, headers=headers(role))
+        assert response.status_code == 422

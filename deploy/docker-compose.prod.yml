@@ -83,6 +83,8 @@ services:
     networks: [internal]
 
   api:
+    environment:
+      STORE_AUDIT_ENV: ${STORE_AUDIT_ENV:-production}
     volumes:
       - ./data/logs:/data/logs
       - ./data/media:/data/media

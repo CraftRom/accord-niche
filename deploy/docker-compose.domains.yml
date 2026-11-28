@@ -73,6 +73,8 @@ services:
     logging: *logging
 
   api:
+    environment:
+      STORE_AUDIT_ENV: ${STORE_AUDIT_ENV:-production}
     build: *backend-build
     <<: *backend-env
     restart: unless-stopped

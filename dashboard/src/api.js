@@ -210,6 +210,13 @@ async function download(path, filename) {
 }
 
 export const api = {
+  storeAudit: {
+    list: environment => request("/store-audit", { params: { environment } }),
+    create: (environment, body) => request("/store-audit", { method: "POST", params: { environment }, body }),
+    edit: (environment, id, body) => request("/store-audit/" + id, { method: "PUT", params: { environment }, body }),
+    test: (environment, id, body) => request("/store-audit/" + id + "/test", { method: "POST", params: { environment }, body }),
+    history: (environment, id, before) => request("/store-audit/" + id + "/history", { params: { environment, before } }),
+  },
   blog: {
     posts: (params) => request('/blog/posts', {params}),
     post: (id) => request('/blog/posts/' + id),

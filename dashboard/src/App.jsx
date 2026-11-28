@@ -46,6 +46,7 @@ const page = (load) => lazy(() => load().then((mod) => {
   return new Promise(() => {})
 }))
 
+const StoreAudit = page(() => import('./pages/StoreAudit'))
 const Overview = page(() => import('./pages/Overview'))
 const Orders = page(() => import('./pages/Orders'))
 const Support = page(() => import('./pages/Support'))
@@ -290,6 +291,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<Protected><Overview /></Protected>} />
+        <Route path="/store-audit/:view?" element={<Protected><StoreAudit /></Protected>} />
         <Route path="/orders" element={<Protected><Orders /></Protected>} />
         <Route path="/support" element={<Protected><Support /></Protected>} />
         <Route path="/orders/:id" element={<Protected><OrderPage /></Protected>} />
