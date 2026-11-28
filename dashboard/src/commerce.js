@@ -59,7 +59,7 @@ const groups=[
   {title:'Продажі',items:[['/','Огляд магазину'],['/orders','Замовлення','orders'],['/customers','Клієнти'],['/support','Підтримка','support']]},
   {title:'Вітрина й контент',items:[['/catalog','Товари та залишки'],['/blog','Блог'],['/documents','Документи']]},
   {title:'Маркетинг',items:[['/promos','Промокоди'],['/broadcasts','Розсилки']]},
-  {title:'Керування',items:[['/operators','Команда та доступ'],['/settings','Налаштування'],['/logs','Журнал'],['/backups','Резервні копії'],['/instructions','Інструкції']]},
+  {title:'Керування',items:[['/store-audit','Контроль магазину'],['/operators','Команда та доступ'],['/settings','Налаштування'],['/logs','Журнал'],['/backups','Резервні копії'],['/instructions','Інструкції']]},
 ]
 export function navigationFor(role) {
   return groups.map(group=>({...group,items:group.items.filter(([to])=>canAccessPage(role,to)).map(([to,label,badge])=>({to,label,badge,end:to==='/'}))})).filter(group=>group.items.length)

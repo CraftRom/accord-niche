@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.routers import store_audit
 from api.auth import authenticate, create_token, Principal, require_sysadmin, require_staff
 from api.routers import (
     backups as backups_router, broadcasts, catalog, customers,
@@ -291,6 +292,7 @@ async def debug_routing(request: Request, _who: Principal = Depends(require_sysa
     }
 
 
+app.include_router(store_audit.router)
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(logs_router.router)
 app.include_router(backups_router.router)

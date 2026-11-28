@@ -1,0 +1,13 @@
+.store-audit {display:grid;gap:1rem;max-width:84rem}
+.store-audit header,.audit-row {display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.store-audit nav {display:flex;flex-wrap:wrap;gap:.5rem}
+.store-audit nav .selected {outline:2px solid currentColor;outline-offset:-2px}
+.store-audit label {display:grid;gap:.35rem}
+.store-audit :is(select,textarea) {width:100%;font:inherit;color:inherit;background:var(--surface-2);padding:.5rem;border:1px solid var(--border-strong);border-radius:.4rem}
+.store-audit textarea {min-height:3.5rem;resize:vertical}
+.audit-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(15rem,100%),1fr));gap:.8rem}
+.audit-editor form,.audit-editor fieldset {display:grid;gap:1rem}
+.audit-editor fieldset {border:0;margin:0;padding:0;min-width:0}
+.audit-editor button {justify-self:start}
+.audit-editor :is(pre,dd) {white-space:pre-wrap;overflow-wrap:anywhere}
+.store-audit p {margin:.5rem 0}

@@ -953,3 +953,14 @@ class BlogModerationSettings(Base):
     hold_links: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     updated_by: Mapped[str] = mapped_column(String(64), default="", server_default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StoreAuditEvent(Base):
+    __tablename__ = "store_audit_events"
+    environment: Mapped[str] = mapped_column(String(16), primary_key=True)
+    item: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor: Mapped[str] = mapped_column(String(255))
+    action: Mapped[str] = mapped_column(String(16))
+    created: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    snapshot: Mapped[dict] = mapped_column(JSON)
